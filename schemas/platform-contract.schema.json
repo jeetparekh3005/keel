@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://keel.dev/schemas/platform-contract.schema.json",
+  "title": "keel platform contract",
+  "type": "object",
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": { "const": "keel.dev/v1alpha1" },
+    "kind": { "const": "PlatformContract" },
+    "metadata": {
+      "type": "object",
+      "required": ["contractVersion"],
+      "properties": {
+        "contractVersion": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "required": [
+        "logging",
+        "errors",
+        "auth",
+        "config",
+        "secrets",
+        "telemetry",
+        "interservice",
+        "persistence",
+        "health",
+        "image",
+        "ports"
+      ],
+      "properties": {
+        "logging": { "type": "object" },
+        "errors": { "type": "object" },
+        "auth": { "type": "object" },
+        "config": { "type": "object" },
+        "secrets": { "type": "object" },
+        "telemetry": { "type": "object" },
+        "interservice": { "type": "object" },
+        "persistence": { "type": "object" },
+        "health": { "type": "object" },
+        "image": { "type": "object" },
+        "ports": {
+          "type": "object",
+          "required": ["driving", "driven"],
+          "properties": {
+            "driving": { "type": "array", "items": { "type": "string" } },
+            "driven": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    }
+  }
+}

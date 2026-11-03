@@ -22,6 +22,9 @@ dev = [
     "deptry>=0.20",
     "httpx>=0.27",            # Starlette TestClient transport (tests only)
     "aiosqlite>=0.20",        # async SQLite driver for fast repository tests
+    "jsonschema>=4.23",       # validate platform.yaml against its schema
+    "pyyaml>=6.0",            # load platform.yaml in tests
+    "alembic>=1.13",          # migration tool (run by the service image at deploy)
 ]
 
 # ---------------------------------------------------------------------------
@@ -31,7 +34,8 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-src = ["packages/keel-core-py/src"]
+src = ["packages/keel-core-py/src", "services/reference-service/src"]
+extend-exclude = ["**/migrations/**"]
 
 [tool.ruff.lint]
 select = [
@@ -78,6 +82,8 @@ extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path", "f
 
 [tool.ruff.lint.per-file-ignores]
 "**/tests/**" = ["S", "D", "ANN", "EM", "TRY"]
+# testkit is test-support code shipped for services; asserts are its whole point.
+"**/testkit/**" = ["S101"]
 # Domain error taxonomies use intentional names (NotFound, Forbidden, …) over an
 # Error suffix; this reads better and the base class already ends in "Error".
 "**/errors.py" = ["N818"]
@@ -93,7 +99,7 @@ warn_redundant_casts = true
 no_implicit_reexport = true
 
 [[tool.mypy.overrides]]
-module = ["grpc.*", "opentelemetry.instrumentation.*"]
+module = ["grpc.*", "opentelemetry.instrumentation.*", "opentelemetry.exporter.*"]
 ignore_missing_imports = true
 
 # ---------------------------------------------------------------------------

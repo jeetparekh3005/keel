@@ -8,7 +8,14 @@ dependencies = [
     "fastapi>=0.115",
     "sqlalchemy[asyncio]>=2.0",
     "pydantic>=2.9",
+    "uvicorn[standard]>=0.30",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.27",
+    "asyncpg>=0.29",  # Postgres driver loaded by SQLAlchemy via URL (not imported)
 ]
+
+[tool.deptry.per_rule_ignores]
+# asyncpg is selected by the database URL at runtime, never imported in source.
+DEP002 = ["asyncpg"]
 
 [build-system]
 requires = ["hatchling"]

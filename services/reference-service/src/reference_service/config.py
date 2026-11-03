@@ -13,3 +13,4 @@ class ReferenceConfig(BaseServiceConfig):
     oidc_issuer: str = ""
     oidc_audience: str = ""
     oidc_jwks_uri: str = ""
+    otlp_endpoint: str = ""  # e.g. http://otel-collector:4317; empty = no span export
