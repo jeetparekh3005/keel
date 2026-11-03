@@ -1,8 +1,14 @@
+import io
 import json
 import logging
 
 from keel_core import context
-from keel_core.adapters.outbound.logging import configure_logging
+from keel_core.adapters.outbound.logging import (
+    QueueLogWriter,
+    RateLimiter,
+    StructuredLogger,
+    configure_logging,
+)
 from keel_core.testkit.fakes import capturing_logger
 
 
@@ -84,15 +90,64 @@ def test_level_below_threshold_is_dropped():
     assert buffer.getvalue() == ""
 
 
-def test_stdlib_library_logs_are_bridged():
-    import io
+def test_secret_value_patterns_are_scrubbed():
+    logger, buffer = capturing_logger()
+    logger.info("call", aws="AKIAIOSFODNN7EXAMPLE", card="4111 1111 1111 1111")
+    record = _last_record(buffer)
+    assert record["aws"] == "[REDACTED]"
+    assert record["card"] == "[REDACTED]"
 
+
+def test_secrets_in_message_string_are_scrubbed():
+    logger, buffer = capturing_logger()
+    jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5NXgL0n3I9PlFUP"
+    logger.info(f"token {jwt}")  # noqa: G004
+    message = _last_record(buffer)["message"]
+    assert "eyJ" not in message
+    assert "[REDACTED]" in message
+
+
+def test_oversized_field_is_truncated():
+    buffer = io.StringIO()
+    logger_capped = StructuredLogger(service="t", version="0", stream=buffer, max_field_len=10)
+    logger_capped.info("big", blob="x" * 100)
+    assert "truncated" in _last_record(buffer)["blob"]
+
+
+def test_rate_limiter_drops_excess_and_reports_suppressed():
+    clock = [0.0]
+    limiter = RateLimiter(capacity=1, refill_per_sec=1.0, now=lambda: clock[0])
+    buffer = io.StringIO()
+    logger = StructuredLogger(service="t", version="0", stream=buffer, rate_limiter=limiter)
+
+    logger.info("spam")  # admitted (1 token)
+    logger.info("spam")  # dropped (no token)
+    assert len(buffer.getvalue().splitlines()) == 1
+
+    logger.error("spam")  # error level is never rate-limited
+    assert len(buffer.getvalue().splitlines()) == 2
+
+    clock[0] = 1.0  # one token refilled
+    logger.info("spam")  # admitted, carrying the suppressed count
+    assert _last_record(buffer)["rate_limited_dropped"] == 1
+
+
+def test_queue_writer_is_non_blocking_and_delivers():
+    buffer = io.StringIO()
+    writer = QueueLogWriter(buffer)
+    writer.write("a\n")
+    writer.write("b\n")
+    writer.stop()
+    assert buffer.getvalue() == "a\nb\n"
+
+
+def test_stdlib_library_logs_are_bridged():
     buffer = io.StringIO()
     root = logging.getLogger()
     saved_handlers = root.handlers[:]
     saved_level = root.level
     try:
-        configure_logging(service="svc", version="1", stream=buffer)
+        configure_logging(service="svc", version="1", stream=buffer, non_blocking=False)
         logging.getLogger("some.library").warning("bridged")
         record = json.loads(buffer.getvalue().splitlines()[-1])
         assert record["message"] == "bridged"

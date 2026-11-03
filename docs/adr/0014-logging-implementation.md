@@ -32,18 +32,21 @@ Chosen option: **implement the `Logger` port on structlog**, with a stdlib `Proc
 - `configure_logging()` installs a root handler whose `ProcessorFormatter` runs the same chain, so **library logs come out as correlated JSON** in the same schema.
 - The `Logger` port, the `platform.yaml` logging schema, and the test kit are unchanged — this is a pure adapter swap (the ports payoff).
 
-### Deferred (stated honestly, with rationale)
+### Hardening (implemented)
 
-- **Non-blocking / queue writes** — writes are synchronous to stdout. stdout latency is low and the collector handles downstream backpressure; revisit (QueueHandler + listener) if a hot path shows event-loop stalls.
-- **Sampling / rate-limiting** — not yet; add when a high-volume service needs cost/noise control.
-- **Value-pattern scrubbing and message-string redaction** — redaction is key-based (recursive). Secrets must not be placed in the message string; that is enforced separately (ADR-0007 semgrep rule) rather than scrubbed here.
-- **Field-size caps** — add if oversized payloads become a problem.
+- **Non-blocking writes** — `QueueLogWriter` enqueues to a bounded queue drained by a daemon thread; on overflow it drops-and-counts rather than blocking the caller. `configure_logging(non_blocking=True)` returns it so the service `stop()`s it at shutdown.
+- **Rate limiting** — optional `RateLimiter` (token-bucket, keyed by message, never limits error/fatal); suppressed counts surface as `rate_limited_dropped` on the next admitted event, so nothing is silently lost.
+- **Value-pattern + message scrubbing** — narrow, high-precision patterns (JWT, AWS key id, Bearer token, PEM private key, Luhn-valid card numbers) are scrubbed from every string value **and the message**, on top of key-based redaction.
+- **Field-size caps** — string values over `max_field_len` (default 8 KB) are truncated with a byte-count marker.
+
+These are defense-in-depth, not a substitute for not logging secrets: the ADR-0007 semgrep rule still bars secrets in the message at author time.
 
 ## Consequences
 
 - Good: tracebacks, recursive redaction, reserved-field safety, and a single correlated pipeline for app + library logs.
 - Good: less code owned; structlog's processors are battle-tested.
-- Bad: a dependency (structlog) and a startup step (`configure_logging`); the deferred items above are not yet covered.
+- Good: non-blocking output, rate limiting, value-pattern scrubbing, and size caps are all in place.
+- Bad: a dependency (structlog), a startup step (`configure_logging`), and a background writer thread to stop at shutdown.
 
 ## Enforcement
 
