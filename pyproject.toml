@@ -129,6 +129,7 @@ exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError", "^\\s*\\.\\.\\
 
 [tool.codespell]
 skip = "*.lock,./.git,./.venv"
+ignore-words-list = "dependant"  # FastAPI's route.dependant API term, not a typo
 
 # First-party workspace modules (extend as packages/services are added).
 [tool.deptry]
