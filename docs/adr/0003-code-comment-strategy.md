@@ -47,6 +47,7 @@ Comments rot faster than code and, done badly, actively mislead. keel generates 
 - Ruff `ERA` (eradicate) — fails CI on commented-out code.
 - Ruff `D` (pydocstyle, Google convention) — docstrings on the public surface; private exempt.
 - mypy strict — types carry the "what," removing type-describing comments.
+- **codespell** — catches typos in code, comments, and docs.
 - Review norm: "does this comment say something the code can't?" If not, it is a change request.
 
 ### Consequences

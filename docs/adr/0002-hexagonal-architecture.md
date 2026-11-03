@@ -59,6 +59,15 @@ src/<service>/
 - Bad: more indirection than n-tier; mitigated by the guardrails above.
 - Neutral: contract conformance can be checked by a port-coverage test suite.
 
+## Enforcement
+
+Hexagonal boundaries are enforced deterministically in CI, not by review:
+
+- **import-linter** contracts: `domain` must not import `application` or `adapters`; `application` must not import `adapters`; outbound adapters must not import one another.
+- **Forbidden infra in domain:** `domain` must not import `sqlalchemy`, `fastapi`, `grpc`, `httpx`, or other I/O libraries.
+- **Ruff `TID`** bans relative/forbidden imports as a first line.
+- **Port conformance** is checked by mypy (ports as `Protocol`; the composition root is typed against them) — see [ADR-0010](0010-enforcement-strategy.md).
+
 ## More information
 
 - Ports are defined by [`platform.yaml`](../../platform.yaml) and realized by each vertical (first: Python, issue #6).

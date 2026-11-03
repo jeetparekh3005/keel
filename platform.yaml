@@ -119,6 +119,29 @@ spec:
       - "trace_id/span_id are injected into structured logs (see logging)."
 
   # ----------------------------------------------------------------------
+  # Inter-service communication — see docs/adr/0012-inter-service-communication.md
+  # ----------------------------------------------------------------------
+  interservice:
+    edge: rest_openapi                # north-south; external/browser clients via APISIX
+    sync:                             # east-west request/response
+      transport: grpc                 # protobuf; codegen for all languages
+      idl: protobuf
+      tooling: buf                    # lint + breaking-change checks + codegen
+      mtls: openbao-pki               # service identity (ADR-0007)
+      ports:
+        inbound: GrpcApi              # driving adapter
+        outbound: ServiceClient       # driven adapter (client to another service)
+    async:                            # east-west events (preferred for side-effects)
+      port: MessageBus                # publish + subscribe
+      default_adapter: nats_jetstream
+      supported: [nats_jetstream, kafka, rabbitmq]
+      idl: asyncapi                   # event schemas as a versioned contract artifact
+    rules:
+      - "Prefer async events for cross-service work; use sync gRPC only when an immediate response is required."
+      - "Never expose gRPC at the browser edge; the edge is REST/OpenAPI."
+      - "Transport is an adapter; the domain never depends on gRPC or a broker."
+
+  # ----------------------------------------------------------------------
   # Persistence — repository ports, migrations mandatory.
   # ----------------------------------------------------------------------
   persistence:
@@ -168,8 +191,9 @@ spec:
   ports:
     driving:                          # inbound: who calls the application
       - HttpApi                       # REST/FastAPI router -> use cases
+      - GrpcApi                       # east-west sync RPC
       - Cli                           # optional
-      - MessageConsumer               # optional, async workers
+      - MessageConsumer               # async event subscriber
     driven:                           # outbound: what the application calls
       - Repository
       - Authenticator
@@ -179,6 +203,8 @@ spec:
       - ConfigLoader
       - SecretProvider
       - Clock                         # injectable time, for testability
+      - ServiceClient                 # gRPC client to another service
+      - MessagePublisher              # emit events to the MessageBus
 
 # --------------------------------------------------------------------------
 # Conformance: a vertical is contract-conformant when it provides a runnable

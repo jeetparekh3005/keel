@@ -47,6 +47,12 @@ Chosen option: **OpenBao as the default `SecretProvider` adapter.**
 - Bad: OpenBao is a stateful component to operate (HA, auto-unseal, backups).
 - Neutral: dev stays on `.env` for speed; prod parity is opt-in.
 
+## Enforcement
+
+- **semgrep (keel ruleset):** bans `os.environ` / `os.getenv` and direct secret-store SDK calls outside the config/secret adapters — secrets are reachable only through the `SecretProvider` port.
+- **gitleaks** (pre-commit + CI): no credentials are ever committed.
+- Redaction of secret-like log keys is part of the logging contract (see [ADR-0010](0010-enforcement-strategy.md)).
+
 ## More information
 
 - Realizes the `secrets` section of [`platform.yaml`](../../platform.yaml).
