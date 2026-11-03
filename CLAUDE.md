@@ -55,5 +55,7 @@ Integration tests need `KEEL_TEST_DATABASE_URL` (Postgres); they skip otherwise 
 - Branching/PR detail: `CONTRIBUTING.md` · Core library: `packages/keel-core-py/README.md`
 
 ## Commands
-`/gates` run the full suite · `/ship` gate+commit+push+PR · `/review` 3 independent reviewers ·
-`/adr` new ADR · `/slice` start a new vertical/feature slice · `/release` cut a release.
+Start a session with **`/audit`** (consistency sweep: drift, open PRs/issues, release due, docs/ADR gaps).
+- `/audit` session sweep · `/next` drive the top issue to done (one at a time) · `/backlog` refresh backlog
+- `/slice` start a feature slice · `/gates` full suite · `/ship` gate+commit+push+PR · `/review` 3 reviewers
+- `/adr` new ADR · `/epic` epic→tasks→subtasks · `/release` cut a release
