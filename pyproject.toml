@@ -1,0 +1,98 @@
+[project]
+name = "keel"
+version = "0.0.0"
+description = "keel monorepo workspace root"
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15",
+    "mypy>=1.13",
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "import-linter>=2",
+    "codespell>=2.3",
+    "deptry>=0.20",
+]
+
+# ---------------------------------------------------------------------------
+# Lint / format — Ruff. See docs/adr/0010-enforcement-strategy.md for the
+# rationale behind each pack.
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["packages/keel-core-py/src"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W", "F",      # pycodestyle + pyflakes
+    "I",                # isort
+    "N",                # pep8-naming
+    "D",                # pydocstyle (public-surface docstrings)
+    "UP",               # pyupgrade
+    "ANN",              # annotations
+    "ASYNC",            # async pitfalls
+    "S",                # bandit (SAST)
+    "B",                # bugbear
+    "C4",               # comprehensions
+    "DTZ",              # tz-aware datetimes
+    "T20",              # ban print()
+    "LOG", "G",         # logging hygiene
+    "PT",               # pytest style
+    "RSE", "RET",       # raise / return
+    "SIM",              # simplify
+    "TID",              # banned / relative imports
+    "TCH",              # type-checking imports
+    "PTH",              # use pathlib
+    "FBT",              # boolean trap
+    "SLF",              # private member access
+    "TRY",              # exception anti-patterns
+    "EM",               # error messages
+    "PERF",             # perflint
+    "FURB",             # refurb
+    "ERA",              # eradicate (commented-out code)
+    "RUF",              # ruff-specific
+]
+ignore = [
+    "TRY003",           # EM rules cover long messages; allow inline where sensible
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["S101", "D", "ANN"]
+
+# ---------------------------------------------------------------------------
+# Types — mypy strict.
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+warn_redundant_casts = true
+no_implicit_reexport = true
+
+# ---------------------------------------------------------------------------
+# Tests.
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["packages"]
+addopts = "-q"
+
+[tool.codespell]
+skip = "*.lock,./.git,./.venv"
+
+# First-party workspace modules (extend as packages/services are added).
+[tool.deptry]
+known_first_party = ["keel_core"]

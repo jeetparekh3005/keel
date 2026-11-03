@@ -1,0 +1,22 @@
+[importlinter]
+root_package = keel_core
+include_external_packages = True
+
+[importlinter:contract:layers]
+name = keel_core hexagonal layers
+type = layers
+layers =
+    keel_core.adapters
+    keel_core.application
+    keel_core.domain
+
+[importlinter:contract:domain-no-infra]
+name = domain is free of I/O libraries
+type = forbidden
+source_modules =
+    keel_core.domain
+forbidden_modules =
+    sqlalchemy
+    fastapi
+    grpc
+    httpx

@@ -1,0 +1,54 @@
+name: Python CI
+
+on:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - "packages/**"
+      - "services/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".importlinter"
+      - ".github/workflows/python.yml"
+  push:
+    branches: [dev, main]
+    paths:
+      - "packages/**"
+      - "services/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".importlinter"
+      - ".github/workflows/python.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: python-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Python checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Install toolchain + workspace
+        run: uv sync --frozen --all-packages
+      - name: Ruff lint
+        run: uv run ruff check --output-format=github .
+      - name: Ruff format
+        run: uv run ruff format --check .
+      - name: Types (mypy strict)
+        run: uv run mypy -p keel_core
+      - name: Architecture (import-linter)
+        run: uv run lint-imports
+      - name: Spelling (codespell)
+        run: uv run codespell packages
+      - name: Dependencies (deptry)
+        run: uv run deptry packages/keel-core-py
+      - name: Tests (pytest)
+        run: uv run pytest
