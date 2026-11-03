@@ -23,20 +23,28 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   codespell, deptry, pytest. `platform.yaml` validated against its JSON Schema.
 - Security CI gates: dependency CVE scan (pip-audit), secret scan (gitleaks), SBOM
   (CycloneDX) — see `.github/workflows/security.yml`.
+- **Authorization**: `require_scopes`/`require_roles` dependencies (403 on insufficient
+  scope); the reference service enforces per-route scopes.
+- **Edge hardening**: security headers (nosniff, frame-options, referrer-policy, HSTS) and
+  a request body-size limit (413 before any handling).
+- **Metrics**: OpenTelemetry `Meter` setup + HTTP RED middleware (request count + latency).
+- **Port-coverage conformance check**: every driven port in `platform.yaml` must have a
+  registered adapter (fails CI otherwise).
+- **Postgres integration test** (CI service container) + an 85% coverage floor.
+- gRPC is an opt-in extra (`keel-core[grpc]`), not a core dependency of every service.
 
 ## Planned — described in the contract/ADRs but NOT yet implemented
 
 | Area | Claimed in | Status |
 |------|-----------|--------|
-| **Metrics** (`Meter` port, metric emission) | platform.yaml telemetry/ports; ADR-0012 | **Not implemented** — only tracing exists |
-| **Authorization** (scope/role enforcement, deny-by-default *by construction*) | platform.yaml auth; ADR-0006 | **Not implemented** — only authentication; routes aren't scope-checked |
-| `api_key` / `mTLS` credential types | platform.yaml auth; ADR-0006 | **Not implemented** — only JWT works |
-| **Remaining supply-chain gates**: trivy image scan, cosign signing + admission, semgrep ruleset | ADR-0010 §5; platform.yaml image.supply_chain | **Partial** — pip-audit, gitleaks, SBOM now in CI; trivy/cosign are image-build-time (v0.2 publish pipeline); semgrep lands with authz |
-| **Port-coverage conformance check** | ADR-0010 | **Not implemented** |
-| **Integration tests** (real Postgres/Keycloak/NATS) + coverage floor | ADR-0010 | **Not implemented** — unit/sqlite/stub only |
+| `api_key` / `mTLS` credential types | platform.yaml auth; ADR-0006 | **Not implemented** — only JWT bearer works |
+| **Remaining supply-chain gates**: trivy image scan, cosign signing + admission, semgrep ruleset | ADR-0010 §5; platform.yaml image.supply_chain | **Partial** — pip-audit/gitleaks/SBOM in CI; trivy/cosign are image-build-time (v0.2 publish pipeline); semgrep deferred |
+| **Keycloak / NATS integration tests** | ADR-0010 | **Not implemented** — Postgres integration is wired; Keycloak/NATS still stub/in-memory |
 | **Kubernetes/Helm** + runtime `securityContext`, NetworkPolicy | ADR-0004/0008 | **Not present** — only docker-compose |
-| Image **digest pinning** | platform.yaml image; ADR-0008 | **Not done** — Dockerfile uses rolling tags |
+| Image **digest pinning** | platform.yaml image; ADR-0008 | **Not done** — Dockerfile uses rolling tags (needs Renovate + registry) |
 | **gRPC IDL/buf**, **NATS/Kafka/RabbitMQ** broker adapters, mTLS-by-default | platform.yaml interservice; ADR-0012 | **Not implemented** — dev-only factories + in-memory bus |
-| HTTP edge hardening: security headers, CORS, body-size limit | (gateway, ADR-0005) | **Not implemented** (ADR-0005/APISIX is v0.2) |
+| **CORS** policy (per-service) | ADR-0005 | **Not implemented** — security headers + body-limit are done; CORS is per-service config |
 
-See the review-driven remediation order in the project tracker. This table shrinks as Track B lands.
+This table shrinks as the gaps close. Track B (the v0.1 review remediation) closed authz,
+edge hardening, metrics, graceful shutdown, perf wiring, security CI gates, port-coverage,
+and Postgres integration; the remainder is largely v0.2 deployment/edge work.

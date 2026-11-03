@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from fastapi import Depends, FastAPI
+from fastapi import FastAPI
 
 from keel_core.adapters.inbound.http import create_app
 from keel_core.adapters.outbound.persistence import Database
@@ -46,5 +46,6 @@ def build_app(
         readiness_checks=[db.ping],
     )
     app.state.database = db
-    app.include_router(items_router, dependencies=[Depends(app.state.require_principal)])
+    # Each item route declares its own require_scopes(...) dependency (authn + authz).
+    app.include_router(items_router)
     return app

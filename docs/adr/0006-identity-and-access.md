@@ -51,10 +51,9 @@ keel needs an enterprise-grade, open-source identity story that supports multipl
 - Bad: running Keycloak is an operational component; mitigated by shipping it in the dev compose stack and a Helm chart.
 - Neutral: fine-grained policy (OPA/UMA) is opt-in per service.
 
-> **Implementation status (v0.1):** JWT authentication is implemented. **Authorization
-> (scope/role enforcement) and the `api_key`/`mTLS` credential types are not yet
-> implemented** — see [docs/STATUS.md](../STATUS.md). "Deny-by-default" today means
-> authenticated-by-default; fine-grained authz is planned.
+> **Implementation status (v0.1):** JWT authentication **and** scope/role authorization
+> (`require_scopes`/`require_roles`, 403 on insufficient scope) are implemented. The
+> `api_key` and `mTLS` credential types remain **planned** — see [docs/STATUS.md](../STATUS.md).
 
 ## Enforcement
 

@@ -53,5 +53,34 @@ jobs:
           for pkg in packages/*/ services/*/; do
             uv run --directory "$pkg" deptry src
           done
-      - name: Tests (pytest)
-        run: uv run pytest
+      - name: Tests (pytest + coverage floor)
+        run: uv run pytest --cov=keel_core --cov=reference_service
+
+  integration:
+    name: Integration (Postgres)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: keel
+          POSTGRES_PASSWORD: keel
+          POSTGRES_DB: reference
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U keel"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Install toolchain + workspace
+        run: uv sync --frozen --all-packages
+      - name: Integration tests (real Postgres)
+        env:
+          KEEL_TEST_DATABASE_URL: postgresql+asyncpg://keel:keel@localhost:5432/reference
+        run: uv run pytest -m integration

@@ -17,6 +17,7 @@ dev = [
     "mypy>=1.13",
     "pytest>=8",
     "pytest-asyncio>=0.24",
+    "pytest-cov>=6",
     "import-linter>=2",
     "codespell>=2.3",
     "deptry>=0.20",
@@ -25,6 +26,8 @@ dev = [
     "jsonschema>=4.23",       # validate platform.yaml against its schema
     "pyyaml>=6.0",            # load platform.yaml in tests
     "alembic>=1.13",          # migration tool (run by the service image at deploy)
+    "grpcio>=1.60",           # keel-core[grpc] extra — installed for the gRPC tests
+    "opentelemetry-instrumentation-grpc>=0.48b0",
 ]
 
 # ---------------------------------------------------------------------------
@@ -110,6 +113,18 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["packages", "services"]
 addopts = "-q"
+markers = [
+    "integration: requires external services (Postgres, ...); run in the integration CI job",
+]
+
+[tool.coverage.run]
+branch = true
+omit = ["*/main.py"]  # production entrypoint: runs real OIDC/OTLP, exercised in deploy
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true
+exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError", "^\\s*\\.\\.\\.$"]
 
 [tool.codespell]
 skip = "*.lock,./.git,./.venv"
