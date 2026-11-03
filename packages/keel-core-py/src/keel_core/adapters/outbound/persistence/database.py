@@ -17,9 +17,13 @@ from keel_core.adapters.outbound.persistence.base import Entity
 class Database:
     """Owns the async engine and session factory for one datasource."""
 
-    def __init__(self, url: str, *, echo: bool = False, **engine_kwargs: object) -> None:
-        """Create the async engine and session factory for ``url``."""
-        self._engine: AsyncEngine = create_async_engine(url, echo=echo, **engine_kwargs)
+    def __init__(self, url: str, **engine_kwargs: object) -> None:
+        """Create the async engine and session factory for ``url``.
+
+        Extra keyword args (``echo``, ``pool_size``, ``pool_pre_ping``, ...) pass
+        straight through to SQLAlchemy's ``create_async_engine``.
+        """
+        self._engine: AsyncEngine = create_async_engine(url, **engine_kwargs)
         self._session_factory: async_sessionmaker[AsyncSession] = async_sessionmaker(
             self._engine,
             expire_on_commit=False,

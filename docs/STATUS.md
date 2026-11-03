@@ -15,6 +15,10 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
 - Distributed **tracing** (OpenTelemetry) with log correlation; gRPC + in-memory MessageBus
   factories with trace propagation.
 - RFC 9457 problem+json; health/readiness endpoints.
+- Graceful shutdown: FastAPI lifespan disposes the DB pool, stops the log writer, and
+  flushes traces on SIGTERM.
+- Non-blocking app logger (queue writer wired into the request path), `BatchSpanProcessor`
+  for production span export, and tunable DB connection pool (size/overflow/timeout/recycle/pre-ping).
 - Static enforcement in CI: ruff (incl. bandit `S`), ruff-format, mypy strict, import-linter,
   codespell, deptry, pytest. `platform.yaml` validated against its JSON Schema.
 
@@ -25,7 +29,6 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
 | **Metrics** (`Meter` port, metric emission) | platform.yaml telemetry/ports; ADR-0012 | **Not implemented** — only tracing exists |
 | **Authorization** (scope/role enforcement, deny-by-default *by construction*) | platform.yaml auth; ADR-0006 | **Not implemented** — only authentication; routes aren't scope-checked |
 | `api_key` / `mTLS` credential types | platform.yaml auth; ADR-0006 | **Not implemented** — only JWT works |
-| **Graceful shutdown** (lifespan draining) | platform.yaml health | **Not wired** — helpers exist, no lifespan (Track B) |
 | **CI security/supply-chain gates**: semgrep, pip-audit, trivy, gitleaks-in-CI, SBOM, cosign | ADR-0010 §5; platform.yaml image.supply_chain | **Not in CI** — only bandit (via ruff) runs; gitleaks is pre-commit only |
 | **Port-coverage conformance check** | ADR-0010 | **Not implemented** |
 | **Integration tests** (real Postgres/Keycloak/NATS) + coverage floor | ADR-0010 | **Not implemented** — unit/sqlite/stub only |
