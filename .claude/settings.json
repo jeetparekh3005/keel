@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
+  "permissions": {
+    "allow": [
+      "Bash(uv sync*)",
+      "Bash(uv lock*)",
+      "Bash(uv run ruff*)",
+      "Bash(uv run mypy*)",
+      "Bash(uv run pytest*)",
+      "Bash(uv run deptry*)",
+      "Bash(uv run lint-imports*)",
+      "Bash(uv run codespell*)",
+      "Bash(uv run alembic*)",
+      "Bash(uv run --directory*)",
+      "Bash(git status*)",
+      "Bash(git log*)",
+      "Bash(git diff*)",
+      "Bash(git switch*)",
+      "Bash(git branch*)",
+      "Bash(gh pr view*)",
+      "Bash(gh pr checks*)",
+      "Bash(gh run view*)",
+      "Bash(gh run list*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cmd=$(jq -r '.tool_input.command'); if printf '%s' \"$cmd\" | grep -q 'git commit' && printf '%s' \"$cmd\" | grep -qiE 'co-authored-by|noreply@anthropic|generated with.*claude'; then echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"keel rule: commits must not carry a Claude/Anthropic Co-Authored-By trailer or attribution.\"}}'; fi"
+          }
+        ]
+      }
+    ]
+  }
+}
