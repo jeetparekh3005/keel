@@ -49,6 +49,9 @@ jobs:
       - name: Spelling (codespell)
         run: uv run codespell packages
       - name: Dependencies (deptry)
-        run: uv run deptry packages/keel-core-py
+        run: |
+          for pkg in packages/*/; do
+            uv run --directory "$pkg" deptry src
+          done
       - name: Tests (pytest)
         run: uv run pytest

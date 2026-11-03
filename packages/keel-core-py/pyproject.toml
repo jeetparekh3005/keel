@@ -3,7 +3,10 @@ name = "keel-core"
 version = "0.1.0"
 description = "keel platform core: ports, cross-cutting adapters, and test kit"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "pydantic-settings>=2.5",  # pulls pydantic; declare pydantic directly when a module imports it
+    "structlog>=24.4",
+]
 
 [build-system]
 requires = ["hatchling"]

@@ -70,4 +70,22 @@ Significant decisions are recorded as ADRs in [`docs/adr/`](docs/adr/) using the
 
 ## Local setup
 
-> Tooling is added per vertical. For now, contributions are docs, platform contract, and CI. A `pre-commit` config and language toolchains land with the first vertical.
+keel is a [uv](https://docs.astral.sh/uv/) workspace. Install uv, then:
+
+```bash
+uv sync --all-packages   # venv + all workspace members (incl. dev tools)
+pre-commit install       # run fast gates (ruff, codespell, gitleaks, mypy) on commit
+```
+
+Run the gates the way CI does before opening a PR:
+
+```bash
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy -p keel_core
+uv run lint-imports
+uv run codespell packages
+uv run pytest
+```
+
+New Python packages go under `packages/`; services under `services/`. Keep generated/service code thin — cross-cutting behavior belongs in `keel-core-py` (see [ADR-0009](docs/adr/0009-shared-library-vs-generated-code.md)).
