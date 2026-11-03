@@ -85,6 +85,10 @@ warn_unreachable = true
 warn_redundant_casts = true
 no_implicit_reexport = true
 
+[[tool.mypy.overrides]]
+module = ["grpc.*", "opentelemetry.instrumentation.*"]
+ignore_missing_imports = true
+
 # ---------------------------------------------------------------------------
 # Tests.
 # ---------------------------------------------------------------------------

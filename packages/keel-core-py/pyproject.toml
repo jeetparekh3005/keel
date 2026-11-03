@@ -9,6 +9,10 @@ dependencies = [
     "fastapi>=0.115",
     "sqlalchemy[asyncio]>=2.0",
     "pyjwt[crypto]>=2.9",
+    "starlette>=0.37",            # ASGI middleware types/utilities (fastapi pins a compatible version)
+    "opentelemetry-sdk>=1.27",    # OTLP exporter added at deployment time
+    "grpcio>=1.60",
+    "opentelemetry-instrumentation-grpc>=0.48b0",
 ]
 
 [build-system]
