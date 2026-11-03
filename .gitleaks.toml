@@ -1,0 +1,19 @@
+# gitleaks configuration for keel.
+# Extends the upstream default ruleset and adds a narrow allowlist for test
+# fixtures that intentionally contain well-known *example* secrets. These values
+# exist to prove the logging layer redacts them; they are not real credentials.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Redaction-test fixtures: documented example AWS key and a fake PAN"
+# Scope to the test files that assert redaction behaviour.
+paths = [
+  '''packages/keel-core-py/tests/test_logging\.py''',
+]
+# Belt-and-braces: the specific documented example values, anywhere they appear.
+regexes = [
+  '''AKIAIOSFODNN7EXAMPLE''',          # AWS's own docs example access key id
+  '''4111[\s-]?1111[\s-]?1111[\s-]?1111''',  # standard test Visa PAN
+]

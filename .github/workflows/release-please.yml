@@ -14,5 +14,9 @@ jobs:
     steps:
       - uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4
         with:
+          # The repo default branch is `dev` (for day-to-day PRs). Releases are cut
+          # from `main`, so pin the target explicitly; otherwise the action opens its
+          # release PR against the default branch (`dev`). See ADR-0015.
+          target-branch: main
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
