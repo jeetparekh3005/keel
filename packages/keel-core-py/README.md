@@ -13,6 +13,7 @@ keel_core/
     outbound/          # StructuredLogger, SystemClock
     outbound/auth/     # OIDCAuthenticator (JWT/JWKS validation)
     outbound/secrets/  # EnvSecretProvider (prod: OpenBao)
+    outbound/telemetry/ # OpenTelemetry tracing setup (configure_tracing)
     outbound/persistence/  # async SQLAlchemy: Database, UnitOfWork, SqlAlchemyRepository
   config.py     # BaseServiceConfig (typed, 12-factor, fail-fast)
   context.py    # request/trace/span contextvars injected into logs
@@ -27,6 +28,7 @@ keel_core/
 - **Clock** — injectable time for testability.
 - **Auth** — `Authenticator` / `Principal` port + `OIDCAuthenticator` adapter: verifies Bearer JWTs against the issuer's signing key (JWKS in prod), checks issuer/audience/expiry, maps claims (scopes, roles) to a `Principal`.
 - **Secrets** — `SecretProvider` port + `EnvSecretProvider` (dev); production uses OpenBao (ADR-0007). Secrets are reached only through the port.
+- **Distributed tracing** — `configure_tracing()` installs an OpenTelemetry provider; FastAPI/Starlette then emit spans and continue inbound W3C trace context natively. The structured logger reads the active span, so every log line carries the correct `trace_id`/`span_id` with no wiring. OTLP export is configured at deployment.
 - **FastAPI app factory** ([ADR-0013](../../docs/adr/0013-python-web-framework.md)) — `create_app` wires request-id propagation, problem+json error handling (RFC 9457), health endpoints, and a deny-by-default auth dependency. Requires an `Authenticator`, so an app cannot be built without auth.
 - **Persistence** — `Repository` port + async SQLAlchemy 2.0 adapter (`Database`, `UnitOfWork`, generic `SqlAlchemyRepository`) with a readiness `ping()`. Domain depends on the port, never the ORM.
 - **Test kit** — fakes shipped so services test against the ports.

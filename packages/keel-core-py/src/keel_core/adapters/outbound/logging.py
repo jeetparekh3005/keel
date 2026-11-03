@@ -22,6 +22,7 @@ from collections.abc import Callable
 from typing import Protocol, TextIO, cast
 
 import structlog
+from opentelemetry import trace as otel_trace
 from structlog.types import EventDict, Processor, WrappedLogger
 
 from keel_core import context
@@ -116,8 +117,15 @@ def _namespace_user_reserved(_: WrappedLogger, __: str, event_dict: EventDict) -
 
 
 def _add_correlation(_: WrappedLogger, __: str, event_dict: EventDict) -> EventDict:
-    event_dict["trace_id"] = context.trace_id_var.get()
-    event_dict["span_id"] = context.span_id_var.get()
+    # Prefer the live OpenTelemetry span (set by FastAPI/clients); fall back to
+    # the contextvars for non-HTTP paths or when tracing is unconfigured.
+    span_context = otel_trace.get_current_span().get_span_context()
+    if span_context.is_valid:
+        event_dict["trace_id"] = format(span_context.trace_id, "032x")
+        event_dict["span_id"] = format(span_context.span_id, "016x")
+    else:
+        event_dict["trace_id"] = context.trace_id_var.get()
+        event_dict["span_id"] = context.span_id_var.get()
     request_id = context.request_id_var.get()
     if request_id is not None:
         event_dict["request_id"] = request_id
