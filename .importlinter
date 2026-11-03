@@ -1,5 +1,7 @@
 [importlinter]
-root_package = keel_core
+root_packages =
+    keel_core
+    reference_service
 include_external_packages = True
 
 [importlinter:contract:layers]
@@ -15,6 +17,25 @@ name = domain is free of I/O libraries
 type = forbidden
 source_modules =
     keel_core.domain
+forbidden_modules =
+    sqlalchemy
+    fastapi
+    grpc
+    httpx
+
+[importlinter:contract:ref-layers]
+name = reference_service hexagonal layers
+type = layers
+layers =
+    reference_service.adapters
+    reference_service.application
+    reference_service.domain
+
+[importlinter:contract:ref-domain-no-infra]
+name = reference_service domain is free of I/O libraries
+type = forbidden
+source_modules =
+    reference_service.domain
 forbidden_modules =
     sqlalchemy
     fastapi

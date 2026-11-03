@@ -10,6 +10,7 @@ resolution-markers = [
 members = [
     "keel",
     "keel-core",
+    "keel-reference-service",
 ]
 
 [[package]]
@@ -702,6 +703,25 @@ requires-dist = [
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
     { name = "starlette", specifier = ">=0.37" },
     { name = "structlog", specifier = ">=24.4" },
+]
+
+[[package]]
+name = "keel-reference-service"
+version = "0.1.0"
+source = { editable = "services/reference-service" }
+dependencies = [
+    { name = "fastapi" },
+    { name = "keel-core" },
+    { name = "pydantic" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi", specifier = ">=0.115" },
+    { name = "keel-core", editable = "packages/keel-core-py" },
+    { name = "pydantic", specifier = ">=2.9" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
 ]
 
 [[package]]

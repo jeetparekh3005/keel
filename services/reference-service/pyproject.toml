@@ -1,0 +1,21 @@
+[project]
+name = "keel-reference-service"
+version = "0.1.0"
+description = "Reference service: a thin FastAPI service built on keel-core (proves the contract)"
+requires-python = ">=3.12"
+dependencies = [
+    "keel-core",
+    "fastapi>=0.115",
+    "sqlalchemy[asyncio]>=2.0",
+    "pydantic>=2.9",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/reference_service"]
+
+[tool.uv.sources]
+keel-core = { workspace = true }
