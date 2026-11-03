@@ -43,10 +43,17 @@ Integration tests need `KEEL_TEST_DATABASE_URL` (Postgres); they skip otherwise 
 - **ADRs**: MADR format in `docs/adr/`. Tool/vendor choice → comparison table; principle → prose.
 - **Comments**: say *why*, not *what*; public-API docstrings required; long rationale → an ADR.
 
+## Project management & releases
+- Planned work is tracked as GitHub issues on milestones **v0.2–v0.5** and the "keel roadmap"
+  board. PRs reference the issue they close (`Closes #N`). New planned work → open an issue first.
+- Releases: repo **SemVer via release-please**. Work lands on `dev`; merging `dev` → `main` lets
+  release-please open a release PR that tags the version + updates `CHANGELOG.md` (see `/release`).
+- The platform **`contractVersion`** (`platform.yaml`) is versioned independently of the repo (ADR-0015).
+
 ## Pointers (read on demand, not auto-loaded)
 - Architecture decisions: `docs/adr/` · Contract: `platform.yaml` · Status: `docs/STATUS.md`
 - Branching/PR detail: `CONTRIBUTING.md` · Core library: `packages/keel-core-py/README.md`
 
 ## Commands
 `/gates` run the full suite · `/ship` gate+commit+push+PR · `/review` 3 independent reviewers ·
-`/adr` new ADR · `/slice` start a new vertical/feature slice.
+`/adr` new ADR · `/slice` start a new vertical/feature slice · `/release` cut a release.
