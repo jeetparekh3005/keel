@@ -16,7 +16,12 @@ async def client():
     config = ReferenceConfig(database_url="sqlite+aiosqlite://")
     app = build_app(
         config,
-        authenticator=StubAuthenticator({"tok": Principal(subject="user-1")}),
+        authenticator=StubAuthenticator(
+            {
+                "tok": Principal(subject="user-1", scopes=frozenset({"items:read", "items:write"})),
+                "readonly": Principal(subject="user-2", scopes=frozenset({"items:read"})),
+            },
+        ),
         database=database,
     )
     await database.create_all()
