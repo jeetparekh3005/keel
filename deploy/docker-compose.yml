@@ -1,0 +1,56 @@
+# Local development stack for the reference service: real runnable adapters
+# (Postgres, Keycloak OIDC, OpenTelemetry collector, NATS JetStream).
+# Not for production — Kubernetes/Helm is the deployment target (ADR-0004).
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: keel
+      POSTGRES_PASSWORD: keel
+      POSTGRES_DB: reference
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keel"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    command: ["start-dev"]
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    ports: ["8080:8080"]
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.108.0
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports: ["4317:4317"]
+
+  nats:
+    image: nats:2.10
+    command: ["--jetstream"]
+    ports: ["4222:4222"]
+
+  reference-service:
+    build:
+      context: ..
+      dockerfile: services/reference-service/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+      otel-collector:
+        condition: service_started
+    environment:
+      KEEL_DATABASE_URL: postgresql+asyncpg://keel:keel@postgres:5432/reference
+      KEEL_OIDC_ISSUER: http://keycloak:8080/realms/keel
+      KEEL_OIDC_AUDIENCE: keel-api
+      KEEL_OIDC_JWKS_URI: http://keycloak:8080/realms/keel/protocol/openid-connect/certs
+      KEEL_OTLP_ENDPOINT: http://otel-collector:4317
+    ports: ["8000:8000"]

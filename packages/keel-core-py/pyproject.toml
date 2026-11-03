@@ -1,0 +1,28 @@
+[project]
+name = "keel-core"
+version = "0.1.0"
+description = "keel platform core: ports, cross-cutting adapters, and test kit"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic-settings>=2.5",  # pulls pydantic; declare pydantic directly when a module imports it
+    "structlog>=24.4",
+    "fastapi>=0.115",
+    "sqlalchemy[asyncio]>=2.0",
+    "pyjwt[crypto]>=2.9",
+    "starlette>=0.37",            # ASGI middleware types/utilities (fastapi pins a compatible version)
+    "opentelemetry-sdk>=1.27",    # OTLP exporter added at deployment time
+]
+
+[project.optional-dependencies]
+# gRPC is opt-in: REST-only services should not pull the grpcio C-extension.
+grpc = [
+    "grpcio>=1.60",
+    "opentelemetry-instrumentation-grpc>=0.48b0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/keel_core"]

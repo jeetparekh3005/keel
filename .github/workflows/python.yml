@@ -1,0 +1,90 @@
+name: Python CI
+
+on:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - "packages/**"
+      - "services/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".importlinter"
+      - ".github/workflows/python.yml"
+  push:
+    branches: [dev, main]
+    paths:
+      - "packages/**"
+      - "services/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".importlinter"
+      - ".github/workflows/python.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: python-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Python checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          enable-cache: true
+      - name: Install toolchain + workspace
+        run: uv sync --frozen --all-packages
+      - name: Ruff lint
+        run: uv run ruff check --output-format=github .
+      - name: Ruff format
+        run: uv run ruff format --check .
+      - name: Types (mypy strict)
+        run: uv run mypy -p keel_core -p reference_service
+      - name: Architecture (import-linter)
+        run: uv run lint-imports
+      - name: Spelling (codespell)
+        run: uv run codespell packages
+      - name: Dependencies (deptry)
+        run: |
+          for pkg in packages/*/ services/*/; do
+            uv run --directory "$pkg" deptry src
+          done
+      - name: Tests (pytest + coverage floor)
+        run: uv run pytest --cov=keel_core --cov=reference_service
+
+  integration:
+    name: Integration (Postgres)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: keel
+          POSTGRES_PASSWORD: keel
+          POSTGRES_DB: reference
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U keel"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          enable-cache: true
+      - name: Install toolchain + workspace
+        run: uv sync --frozen --all-packages
+      - name: Alembic migrations against Postgres
+        env:
+          KEEL_MIGRATION_URL: postgresql+psycopg://keel:keel@localhost:5432/reference
+        run: uv run --directory services/reference-service alembic -c alembic.ini upgrade head
+      - name: Integration tests (real Postgres)
+        env:
+          KEEL_TEST_DATABASE_URL: postgresql+asyncpg://keel:keel@localhost:5432/reference
+        run: uv run pytest -m integration

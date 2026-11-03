@@ -11,7 +11,7 @@ export default {
     'scope-enum': [
       2,
       'always',
-      ['python', 'ts', 'rust', 'go', 'java', 'ci', 'docs', 'platform', 'auth', 'db'],
+      ['python', 'ts', 'rust', 'go', 'java', 'ci', 'docs', 'platform', 'auth', 'db', 'security'],
     ],
     'scope-empty': [0], // scope is optional
     'subject-case': [0],

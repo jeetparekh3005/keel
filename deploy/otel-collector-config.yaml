@@ -1,0 +1,23 @@
+# Minimal OpenTelemetry Collector config for local development.
+# Receives OTLP from the service and logs spans to the collector's stdout.
+# Swap the exporter for your backend (Tempo, Jaeger, Datadog, ...) in real deploys.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  batch: {}
+
+exporters:
+  debug:
+    verbosity: normal
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]

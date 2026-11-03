@@ -12,7 +12,7 @@ The goal: go from zero to a secure, observable, deployable service in minutes, n
 
 ## Status
 
-🚧 **Early development.** keel is being built vertical-by-vertical. The first anchor is the **Python golden-path** (see the [roadmap](#roadmap)).
+**Early development.** keel is being built vertical-by-vertical. The first anchor is the **Python golden-path** (see the [roadmap](#roadmap)).
 
 ## Why keel
 
@@ -32,6 +32,21 @@ Teams re-derive the same "right way" to start a service over and over — and ge
 | **v0.3** | Rust vertical (contract stress-test) |
 | **v0.4** | Go & Java verticals |
 | **v0.5** | `keel update` + reusable-workflow propagation |
+
+## Development
+
+keel is a [uv](https://docs.astral.sh/uv/) workspace (ADR-0011). The Python core lives in `packages/keel-core-py`.
+
+```bash
+uv sync --all-packages          # create the venv and install all workspace members
+uv run pytest                   # tests
+uv run ruff check . && uv run ruff format --check .   # lint + format
+uv run mypy -p keel_core        # types (strict)
+uv run lint-imports             # hexagonal architecture contracts
+pre-commit install              # optional: run the fast gates on every commit
+```
+
+The full deterministic gate set (ADR-0010) runs in CI on every PR.
 
 ## Documentation
 

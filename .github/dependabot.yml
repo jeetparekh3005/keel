@@ -12,3 +12,15 @@ updates:
     labels:
       - "type:chore"
       - "area:ci"
+
+  # Python dependencies (uv workspace). Security CVEs are also gated by pip-audit in CI.
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
+    labels:
+      - "type:chore"
+      - "area:python"
