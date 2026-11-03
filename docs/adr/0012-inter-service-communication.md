@@ -61,6 +61,13 @@ Services need to talk to each other across languages without creating a distribu
 - Bad: gRPC adds a codegen pipeline and proto/event versioning discipline; mitigated by buf and AsyncAPI tooling.
 - Neutral: NATS runs first; Kafka/RabbitMQ are stood up only when a workload needs their semantics.
 
+## Enforcement
+
+- **buf lint** + **buf breaking:** protobuf style and backward-compatibility checks in CI; generated code is reproducible.
+- **spectral** / **openapi-spec-validator:** the edge OpenAPI spec must lint clean and declare the `problem+json` error schema.
+- **AsyncAPI** event schemas are validated and checked for breaking changes.
+- **semgrep:** outbound HTTP/gRPC clients must set timeouts (resilience).
+
 ## More information
 
 - Realizes the `interservice` section of [`platform.yaml`](../../platform.yaml).

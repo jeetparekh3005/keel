@@ -70,6 +70,16 @@ Generated services need a consistent, secure path from container to running work
 - Bad: forgoes some cloud-managed conveniences; more infra to template and maintain.
 - Neutral: GitOps is a new concept for some teams; it is optional.
 
+## Enforcement
+
+Manifest and IaC hardening is enforced deterministically in CI:
+
+- **kube-linter** + **conftest (OPA policies)** + **kubeconform** — rendered Kubernetes/Helm output must set `runAsNonRoot`, `readOnlyRootFilesystem`, drop all capabilities, declare resource requests/limits, carry a default-deny `NetworkPolicy`, and use digest-pinned images (no `:latest`).
+- **trivy config** / **checkov** — OpenTofu misconfiguration scanning.
+- **helm lint** — chart validity.
+
+Image-level hardening is enforced in [ADR-0008](0008-container-hardening.md).
+
 ## More information
 
 - Deploys the hexagonal services from [ADR-0002](0002-hexagonal-architecture.md) and honors [`platform.yaml`](../../platform.yaml) ports (secrets, telemetry, health).

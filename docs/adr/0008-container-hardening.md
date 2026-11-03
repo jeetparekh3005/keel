@@ -56,6 +56,13 @@ Generated images must be hardened so that a compromised container yields almost 
 - Bad: Nuitka variant adds build/debug cost; native compile is not absolute protection.
 - Honest: this does not make extraction impossible; it raises cost and restricts who can obtain the image.
 
+## Enforcement
+
+- **hadolint:** Dockerfiles must be non-root, use a digest-pinned base, avoid `:latest`, and leave no package-manager cruft.
+- **trivy:** image CVE scan with a severity gate; a **CycloneDX SBOM** must be produced.
+- **cosign verify** in CI plus an admission policy (Kyverno / sigstore policy-controller) so only signed, verified images run.
+- Runtime `securityContext` is enforced at the manifest level — see [ADR-0004](0004-infrastructure-strategy.md).
+
 ## More information
 
 - Deployment and `securityContext` live with [ADR-0004](0004-infrastructure-strategy.md).

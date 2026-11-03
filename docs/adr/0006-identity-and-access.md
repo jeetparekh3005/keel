@@ -51,6 +51,12 @@ keel needs an enterprise-grade, open-source identity story that supports multipl
 - Bad: running Keycloak is an operational component; mitigated by shipping it in the dev compose stack and a Helm chart.
 - Neutral: fine-grained policy (OPA/UMA) is opt-in per service.
 
+## Enforcement
+
+- **semgrep (keel ruleset):** every HTTP/gRPC route must declare the auth dependency — routes without it fail CI, making deny-by-default mechanical. Any auth-bypass flag or unauthenticated handler is flagged.
+- **Protected use cases** must carry a scope/role check (same ruleset).
+- Token/secret values are kept out of logs by the logging redaction contract (see [ADR-0010](0010-enforcement-strategy.md)).
+
 ## More information
 
 - Realizes the `auth` section of [`platform.yaml`](../../platform.yaml).

@@ -45,6 +45,37 @@ Runtime validation (Pydantic at boundaries, config fail-fast) backstops inputs t
 - Good: a drifting service fails its own CI.
 - Bad: not everything is enforceable — naming quality, whether an abstraction is appropriate, and domain modeling remain review/ADR concerns. Stated honestly rather than pretended away.
 
+## Deterministic enforcement catalogue
+
+Everything mechanizable is mechanized. Architecture, contract-specific, and manifest rules live in their respective ADRs (linked below); this catalogue is the central index plus the generic and meta checks.
+
+### Generic quality (Ruff)
+
+High-signal packs tied to the contract: `T20` (ban `print` → use the logger), `LOG`/`G` (logging hygiene), `DTZ` (tz-aware UTC datetimes), `ANN` (annotations), `ASYNC` (no blocking in async), `S` (bandit SAST), `TRY`/`B`/`EM`/`RSE` (exception hygiene), `TID` (banned imports), `SLF`, `FBT`, `PT`, `SIM`/`RET`/`C4`/`UP`/`PERF`/`FURB`, `ERA`, `N`/`D`/`I`. Plus `ruff format` and Ruff `banned-api`.
+
+### Distributed to their ADRs
+
+- Hexagonal boundaries (import-linter) — [ADR-0002](0002-hexagonal-architecture.md)
+- Comment/docstring rules (Ruff `D`/`ERA`, codespell) — [ADR-0003](0003-code-comment-strategy.md)
+- Manifest/IaC hardening (kube-linter, conftest, trivy config) — [ADR-0004](0004-infrastructure-strategy.md)
+- Deny-by-default auth (semgrep) — [ADR-0006](0006-identity-and-access.md)
+- Secrets via ports, gitleaks — [ADR-0007](0007-secrets-and-pki.md)
+- Image hardening (hadolint, trivy, cosign) — [ADR-0008](0008-container-hardening.md)
+- proto/OpenAPI/AsyncAPI contracts (buf, spectral) — [ADR-0012](0012-inter-service-communication.md)
+
+### Cross-cutting tooling
+
+`pip-audit`/`osv` (dependency CVEs), `deptry` (unused/missing deps), `vulture` (dead code), `pip-licenses`/`reuse` (license policy), `sqlfluff` (migrations), `actionlint` (workflows), `shellcheck`, `yamllint`, `taplo`, coverage floor.
+
+### Meta — enforce the contract itself
+
+- A **JSON Schema for `platform.yaml`**, validated in CI (the contract cannot be malformed).
+- A **port-coverage check**: every driven port in `platform.yaml` must have a registered adapter in the composition root.
+
+### Orchestration
+
+**pre-commit** runs the fast subset locally; the reusable CI workflow runs the full set — identical gates on every service. These configs ship in `keel-core` (see [ADR-0009](0009-shared-library-vs-generated-code.md)), so a scaffolded service inherits them.
+
 ## More information
 
 - The library that enforces by construction is defined in [ADR-0009](0009-shared-library-vs-generated-code.md).
