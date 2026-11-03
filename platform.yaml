@@ -139,6 +139,30 @@ spec:
     graceful_shutdown: required       # drain in-flight requests on SIGTERM
 
   # ----------------------------------------------------------------------
+  # Container image & runtime hardening — see docs/adr/0008-container-hardening.md
+  # ----------------------------------------------------------------------
+  image:
+    base: chainguard                  # shell-less, non-root (swap: distroless, ubi-micro)
+    build: multi-stage
+    pinned_by: digest
+    source_protection:
+      default: bytecode_only          # .py stripped; ship .pyc only
+      hardened: native_compile        # optional Nuitka build for max obfuscation
+    runtime_hardening:                # enforced via k8s securityContext
+      run_as_non_root: true
+      read_only_root_fs: true
+      allow_privilege_escalation: false
+      drop_capabilities: [ALL]
+      seccomp: RuntimeDefault
+    supply_chain:
+      sign: cosign
+      sbom: cyclonedx
+      scan_gate: [trivy]
+      admission: verify-signature     # only signed, verified images run
+    distribution: private-registry-rbac
+    note: "An image is extractable by anyone who holds it; access control + signing is the real guarantee."
+
+  # ----------------------------------------------------------------------
   # Ports catalogue — the interfaces every vertical implements.
   # ----------------------------------------------------------------------
   ports:

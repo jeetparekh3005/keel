@@ -29,7 +29,7 @@ Generated services need a consistent, secure path from container to running work
 
 ### Containers (settled defaults, shipped with each vertical)
 
-- Multi-stage OCI builds; **distroless/minimal, non-root** runtime image.
+- Multi-stage OCI builds on a **shell-less, non-root** base (**Chainguard** default); see [ADR-0008](0008-container-hardening.md) for hardening and code-protection.
 - Base images pinned by **digest**, bumped by Renovate/Dependabot.
 - Image healthcheck honors the contract's `/healthz` / `/readyz`.
 
