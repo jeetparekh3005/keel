@@ -21,6 +21,8 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   for production span export, and tunable DB connection pool (size/overflow/timeout/recycle/pre-ping).
 - Static enforcement in CI: ruff (incl. bandit `S`), ruff-format, mypy strict, import-linter,
   codespell, deptry, pytest. `platform.yaml` validated against its JSON Schema.
+- Security CI gates: dependency CVE scan (pip-audit), secret scan (gitleaks), SBOM
+  (CycloneDX) — see `.github/workflows/security.yml`.
 
 ## Planned — described in the contract/ADRs but NOT yet implemented
 
@@ -29,7 +31,7 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
 | **Metrics** (`Meter` port, metric emission) | platform.yaml telemetry/ports; ADR-0012 | **Not implemented** — only tracing exists |
 | **Authorization** (scope/role enforcement, deny-by-default *by construction*) | platform.yaml auth; ADR-0006 | **Not implemented** — only authentication; routes aren't scope-checked |
 | `api_key` / `mTLS` credential types | platform.yaml auth; ADR-0006 | **Not implemented** — only JWT works |
-| **CI security/supply-chain gates**: semgrep, pip-audit, trivy, gitleaks-in-CI, SBOM, cosign | ADR-0010 §5; platform.yaml image.supply_chain | **Not in CI** — only bandit (via ruff) runs; gitleaks is pre-commit only |
+| **Remaining supply-chain gates**: trivy image scan, cosign signing + admission, semgrep ruleset | ADR-0010 §5; platform.yaml image.supply_chain | **Partial** — pip-audit, gitleaks, SBOM now in CI; trivy/cosign are image-build-time (v0.2 publish pipeline); semgrep lands with authz |
 | **Port-coverage conformance check** | ADR-0010 | **Not implemented** |
 | **Integration tests** (real Postgres/Keycloak/NATS) + coverage floor | ADR-0010 | **Not implemented** — unit/sqlite/stub only |
 | **Kubernetes/Helm** + runtime `securityContext`, NetworkPolicy | ADR-0004/0008 | **Not present** — only docker-compose |
