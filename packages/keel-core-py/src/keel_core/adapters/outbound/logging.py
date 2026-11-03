@@ -40,10 +40,28 @@ class _TextSink(Protocol):
         ...
 
 
-_REDACT_KEYS: frozenset[str] = frozenset(
-    {"password", "token", "secret", "authorization", "set-cookie", "api_key", "pii"},
+# Redact any field whose (normalized) key contains one of these fragments. Family
+# matching catches x-api-key, access_token, client_secret, cookie, set-cookie, etc.
+_SECRET_KEY_FRAGMENTS: tuple[str, ...] = (
+    "password",
+    "passwd",
+    "secret",
+    "token",
+    "apikey",
+    "cookie",
+    "authorization",
+    "credential",
+    "privatekey",
+    "pii",
 )
 _REDACTED = "[REDACTED]"
+
+
+def _is_secret_key(key: str) -> bool:
+    normalized = key.lower().replace("-", "").replace("_", "")
+    return any(fragment in normalized for fragment in _SECRET_KEY_FRAGMENTS)
+
+
 _DEFAULT_MAX_FIELD_LEN = 8192
 
 # High-precision secret patterns scrubbed from any string value and the message.
@@ -94,7 +112,7 @@ def _sanitize(value: object, max_len: int) -> object:
     if isinstance(value, dict):
         out: dict[object, object] = {}
         for key, item in value.items():
-            if isinstance(key, str) and key.lower() in _REDACT_KEYS:
+            if isinstance(key, str) and _is_secret_key(key):
                 out[key] = _REDACTED
             else:
                 out[key] = _sanitize(item, max_len)

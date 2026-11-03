@@ -32,8 +32,8 @@ jobs:
     name: Python checks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
         with:
           enable-cache: true
       - name: Install toolchain + workspace
@@ -74,12 +74,16 @@ jobs:
           --health-timeout 3s
           --health-retries 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
         with:
           enable-cache: true
       - name: Install toolchain + workspace
         run: uv sync --frozen --all-packages
+      - name: Alembic migrations against Postgres
+        env:
+          KEEL_MIGRATION_URL: postgresql+psycopg://keel:keel@localhost:5432/reference
+        run: uv run alembic -c services/reference-service/alembic.ini upgrade head
       - name: Integration tests (real Postgres)
         env:
           KEEL_TEST_DATABASE_URL: postgresql+asyncpg://keel:keel@localhost:5432/reference

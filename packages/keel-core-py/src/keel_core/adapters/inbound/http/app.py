@@ -1,9 +1,10 @@
 """FastAPI application factory (ADR-0013).
 
-Deny-by-default by construction: ``create_app`` requires an ``Authenticator``, so
-an app cannot be built without one. It wires request-id propagation, problem+json
-error handling, and health endpoints; business routers depend on
-``app.state.require_principal`` for authentication.
+Deny-by-default is **enforced**, not conventional: at startup a conformance check
+fails if any non-exempt route lacks an auth dependency, so a route added without
+``require_scopes``/``require_principal`` cannot ship. ``create_app`` also requires an
+``Authenticator`` and wires request-id, security headers, a body-size limit,
+problem+json errors, metrics, and health endpoints.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
 
+from keel_core.adapters.inbound.http.conformance import assert_routes_require_auth
 from keel_core.adapters.inbound.http.edge import BodyLimitMiddleware, SecurityHeadersMiddleware
 from keel_core.adapters.inbound.http.health import ReadinessCheck, build_health_router
 from keel_core.adapters.inbound.http.metrics import MetricsMiddleware
@@ -33,7 +35,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     Resources are read lazily from ``app.state`` so the composition root can set
     them after ``create_app`` returns (``database``, ``log_writer``, ``tracer_provider``).
+    Startup fails if any non-exempt route lacks an auth dependency (deny-by-default).
     """
+    assert_routes_require_auth(app)
     yield
     database = getattr(app.state, "database", None)
     if database is not None:

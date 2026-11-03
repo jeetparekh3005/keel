@@ -78,9 +78,20 @@ class OIDCAuthenticator:
         return Principal(subject=subject, scopes=_scopes(claims), roles=_roles(claims))
 
     @classmethod
-    def from_jwks(cls, *, jwks_uri: str, issuer: str, audience: str) -> OIDCAuthenticator:
-        """Build an authenticator that fetches signing keys from a JWKS endpoint."""
-        client = jwt.PyJWKClient(jwks_uri)
+    def from_jwks(
+        cls,
+        *,
+        jwks_uri: str,
+        issuer: str,
+        audience: str,
+        timeout: float = 5.0,
+    ) -> OIDCAuthenticator:
+        """Build an authenticator that fetches signing keys from a JWKS endpoint.
+
+        ``timeout`` bounds the blocking JWKS fetch (verification is run off the event
+        loop by the HTTP adapter); the key set is cached between refreshes.
+        """
+        client = jwt.PyJWKClient(jwks_uri, timeout=timeout)
 
         def resolver(token: str) -> jwt.PyJWK:
             return client.get_signing_key_from_jwt(token)

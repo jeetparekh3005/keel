@@ -1,3 +1,4 @@
+from fastapi import Request
 from fastapi.testclient import TestClient
 
 from keel_core.adapters.inbound.http import create_app
@@ -34,3 +35,17 @@ def test_within_limit_body_passes_the_guard():
     client = TestClient(_app(max_request_bytes=1024))
     response = client.post("/missing", content=b"small")
     assert response.status_code != 413
+
+
+def test_streaming_body_without_content_length_is_capped():
+    app = _app(max_request_bytes=16)
+
+    @app.post("/echo")
+    async def echo(request: Request):
+        return {"len": len(await request.body())}
+
+    def chunks():
+        yield b"x" * 100  # no Content-Length -> chunked; guard counts as it streams
+
+    response = TestClient(app).post("/echo", content=chunks())
+    assert response.status_code == 413

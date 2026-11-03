@@ -17,6 +17,10 @@ _SECURITY_HEADERS: tuple[tuple[str, str], ...] = (
 _DEFAULT_MAX_BYTES = 1_048_576  # 1 MiB
 
 
+class _BodyTooLargeError(Exception):
+    """Raised mid-stream when the accumulated request body exceeds the limit."""
+
+
 class SecurityHeadersMiddleware:
     """Adds baseline security headers to every HTTP response."""
 
@@ -53,7 +57,7 @@ class BodyLimitMiddleware:
         self._max_bytes = max_bytes
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        """Reject over-limit requests with a problem+json 413."""
+        """Reject over-limit requests with a problem+json 413 (header fast-path + streaming)."""
         if scope["type"] != "http":
             await self._app(scope, receive, send)
             return
@@ -66,7 +70,24 @@ class BodyLimitMiddleware:
         if too_large:
             await self._reject(send)
             return
-        await self._app(scope, receive, send)
+
+        # Also enforce on the body stream: chunked / lying Content-Length requests
+        # are capped as bytes arrive, not trusted on the header alone.
+        received = 0
+
+        async def guarded_receive() -> Message:
+            nonlocal received
+            message = await receive()
+            if message["type"] == "http.request":
+                received += len(message.get("body", b""))
+                if received > self._max_bytes:
+                    raise _BodyTooLargeError
+            return message
+
+        try:
+            await self._app(scope, guarded_receive, send)
+        except _BodyTooLargeError:
+            await self._reject(send)
 
     async def _reject(self, send: Send) -> None:
         body = json.dumps(

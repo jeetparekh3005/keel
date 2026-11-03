@@ -30,17 +30,20 @@ class _FakeProvider:
 
 def test_lifespan_disposes_registered_resources():
     app = create_app(service="t", version="0", authenticator=StubAuthenticator({}))
-    database, writer, provider = _FakeDatabase(), _FakeWriter(), _FakeProvider()
+    database, writer = _FakeDatabase(), _FakeWriter()
+    tracer_provider, meter_provider = _FakeProvider(), _FakeProvider()
     app.state.database = database
     app.state.log_writer = writer
-    app.state.tracer_provider = provider
+    app.state.tracer_provider = tracer_provider
+    app.state.meter_provider = meter_provider
 
     with TestClient(app):  # context manager runs startup + shutdown (lifespan)
         pass
 
     assert database.disposed
     assert writer.stopped
-    assert provider.shut_down
+    assert tracer_provider.shut_down
+    assert meter_provider.shut_down
 
 
 def test_lifespan_is_noop_without_resources():

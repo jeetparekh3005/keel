@@ -40,9 +40,13 @@ class MetricsMiddleware:
         try:
             await self._app(scope, receive, send_wrapper)
         finally:
+            # Use the matched route TEMPLATE (/items/{id}), never the raw path, to
+            # avoid unbounded metric cardinality. Unmatched requests share one bucket.
+            route = scope.get("route")
+            http_route = getattr(route, "path_format", None) or "__unmatched__"
             attributes: dict[str, str | int] = {
                 "http.method": str(scope.get("method", "")),
-                "http.route": str(scope.get("path", "")),
+                "http.route": http_route,
                 "http.status_code": status,
             }
             self._requests.add(1, attributes)

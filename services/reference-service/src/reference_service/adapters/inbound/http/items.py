@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -54,7 +54,11 @@ async def get_item(item_id: str, session: AsyncSession = Depends(_session)) -> I
 
 
 @router.get("", dependencies=[Depends(require_scopes("items:read"))])
-async def list_items(session: AsyncSession = Depends(_session)) -> list[ItemOut]:
-    """List all items (requires scope ``items:read``)."""
-    items = await _service(session).list()
+async def list_items(
+    session: AsyncSession = Depends(_session),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> list[ItemOut]:
+    """List items with pagination (requires scope ``items:read``)."""
+    items = await _service(session).list(limit=limit, offset=offset)
     return [ItemOut(id=item.id, name=item.name) for item in items]
