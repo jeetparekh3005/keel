@@ -8,7 +8,8 @@ error handling, and health endpoints; business routers depend on
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
+from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
@@ -22,6 +23,25 @@ from keel_core.adapters.outbound.logging import StructuredLogger
 if TYPE_CHECKING:
     from keel_core.ports.auth import Authenticator
     from keel_core.ports.logging import Logger
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Graceful shutdown: dispose the DB, stop the log writer, flush traces.
+
+    Resources are read lazily from ``app.state`` so the composition root can set
+    them after ``create_app`` returns (``database``, ``log_writer``, ``tracer_provider``).
+    """
+    yield
+    database = getattr(app.state, "database", None)
+    if database is not None:
+        await database.dispose()
+    log_writer = getattr(app.state, "log_writer", None)
+    if log_writer is not None:
+        log_writer.stop()
+    tracer_provider = getattr(app.state, "tracer_provider", None)
+    if tracer_provider is not None:
+        tracer_provider.shutdown()
 
 
 def create_app(
@@ -44,7 +64,7 @@ def create_app(
     log: Logger = (
         logger if logger is not None else StructuredLogger(service=service, version=version)
     )
-    app = FastAPI(title=service, version=version)
+    app = FastAPI(title=service, version=version, lifespan=_lifespan)
     # FastAPI/Starlette emit OTel spans natively once a provider is configured
     # (see keel_core.adapters.outbound.telemetry); the logger reads the active span.
     app.add_middleware(RequestIdMiddleware)

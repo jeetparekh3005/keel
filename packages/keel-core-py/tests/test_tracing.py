@@ -10,7 +10,7 @@ from keel_core.testkit.fakes import StubAuthenticator, capturing_logger
 
 # set_tracer_provider can only be set once per process; configure globally.
 _EXPORTER = InMemorySpanExporter()
-configure_tracing(service="t", version="0", exporter=_EXPORTER)
+configure_tracing(service="t", version="0", exporter=_EXPORTER, batch=False)
 
 
 @pytest.fixture(autouse=True)

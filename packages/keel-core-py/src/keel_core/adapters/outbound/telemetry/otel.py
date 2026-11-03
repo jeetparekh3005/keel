@@ -10,7 +10,11 @@ from __future__ import annotations
 from opentelemetry import trace
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import SimpleSpanProcessor, SpanExporter
+from opentelemetry.sdk.trace.export import (
+    BatchSpanProcessor,
+    SimpleSpanProcessor,
+    SpanExporter,
+)
 
 
 def configure_tracing(
@@ -18,16 +22,20 @@ def configure_tracing(
     service: str,
     version: str,
     exporter: SpanExporter | None = None,
+    batch: bool = True,
 ) -> TracerProvider:
     """Install a global TracerProvider for ``service``; export spans if an exporter is given.
 
-    Safe to call once at startup. In production pass an OTLP exporter; in tests pass
-    an in-memory exporter. With no exporter, spans are created but not exported.
+    Safe to call once at startup. In production pass an OTLP exporter (``batch=True``
+    uses a non-blocking BatchSpanProcessor). Tests pass an in-memory exporter with
+    ``batch=False`` so spans are available synchronously. With no exporter, spans are
+    created but not exported. Call ``provider.shutdown()`` at shutdown to flush.
     """
     resource = Resource.create({"service.name": service, "service.version": version})
     provider = TracerProvider(resource=resource)
     if exporter is not None:
-        provider.add_span_processor(SimpleSpanProcessor(exporter))
+        processor = BatchSpanProcessor(exporter) if batch else SimpleSpanProcessor(exporter)
+        provider.add_span_processor(processor)
     trace.set_tracer_provider(provider)
     return provider
 

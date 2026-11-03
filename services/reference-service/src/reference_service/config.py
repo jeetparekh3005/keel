@@ -14,3 +14,7 @@ class ReferenceConfig(BaseServiceConfig):
     oidc_audience: str = ""
     oidc_jwks_uri: str = ""
     otlp_endpoint: str = ""  # e.g. http://otel-collector:4317; empty = no span export
+    db_pool_size: int = 10
+    db_max_overflow: int = 20
+    db_pool_timeout: int = 30
+    db_pool_recycle: int = 1800

@@ -1,0 +1,49 @@
+from fastapi.testclient import TestClient
+
+from keel_core.adapters.inbound.http import create_app
+from keel_core.testkit.fakes import StubAuthenticator
+
+
+class _FakeDatabase:
+    def __init__(self) -> None:
+        self.disposed = False
+
+    async def dispose(self) -> None:
+        self.disposed = True
+
+
+class _FakeWriter:
+    def __init__(self) -> None:
+        self.stopped = False
+
+    def stop(self) -> None:
+        self.stopped = True
+
+
+class _FakeProvider:
+    def __init__(self) -> None:
+        self.shut_down = False
+
+    def shutdown(self) -> None:
+        self.shut_down = True
+
+
+def test_lifespan_disposes_registered_resources():
+    app = create_app(service="t", version="0", authenticator=StubAuthenticator({}))
+    database, writer, provider = _FakeDatabase(), _FakeWriter(), _FakeProvider()
+    app.state.database = database
+    app.state.log_writer = writer
+    app.state.tracer_provider = provider
+
+    with TestClient(app):  # context manager runs startup + shutdown (lifespan)
+        pass
+
+    assert database.disposed
+    assert writer.stopped
+    assert provider.shut_down
+
+
+def test_lifespan_is_noop_without_resources():
+    app = create_app(service="t", version="0", authenticator=StubAuthenticator({}))
+    with TestClient(app) as client:
+        assert client.get("/healthz").status_code == 200
