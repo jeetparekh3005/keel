@@ -29,10 +29,24 @@ import-linter enforces the same layer rules as `keel-core`: the domain imports n
 
 Auth is deny-by-default: the items router is mounted with the `Authenticator` dependency, so no endpoint is reachable without a valid Bearer/API-key credential.
 
-## Run
+## Run the full stack
+
+`deploy/docker-compose.yml` brings up the runnable adapters (Postgres, Keycloak OIDC, OpenTelemetry collector, NATS JetStream) and the service:
 
 ```bash
-uv run uvicorn reference_service.main:app   # needs OIDC + DB env (see docker-compose, slice 6b)
+docker compose -f deploy/docker-compose.yml up --build
 ```
 
-Tests run the composed app in-process over `httpx.ASGITransport` with SQLite + a stub authenticator — no external services needed.
+The service image (`Dockerfile`) is hardened per [ADR-0008](../../docs/adr/0008-container-hardening.md): a multi-stage build on a shell-less, non-root Chainguard base, shipping **bytecode only** (source stripped). Config is injected via `KEEL_`-prefixed env (`KEEL_DATABASE_URL`, `KEEL_OIDC_*`, `KEEL_OTLP_ENDPOINT`).
+
+## Migrations
+
+Schema is managed by Alembic (`migrations/`); production runs them before the service starts:
+
+```bash
+alembic -c alembic.ini upgrade head
+```
+
+## Tests
+
+Run the composed app in-process over `httpx.ASGITransport` with SQLite + a stub authenticator — no external services needed. Conformance tests reuse `keel_core.testkit.contract`; a migration test applies Alembic to a temp SQLite DB. The `platform.yaml` contract is validated against its JSON Schema in `keel-core`.
