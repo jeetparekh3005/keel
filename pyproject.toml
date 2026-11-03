@@ -68,7 +68,7 @@ ignore = [
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
-"**/tests/**" = ["S", "D", "ANN", "EM"]
+"**/tests/**" = ["S", "D", "ANN", "EM", "TRY"]
 # Domain error taxonomies use intentional names (NotFound, Forbidden, …) over an
 # Error suffix; this reads better and the base class already ends in "Error".
 "**/errors.py" = ["N818"]
