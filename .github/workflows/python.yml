@@ -43,14 +43,14 @@ jobs:
       - name: Ruff format
         run: uv run ruff format --check .
       - name: Types (mypy strict)
-        run: uv run mypy -p keel_core
+        run: uv run mypy -p keel_core -p reference_service
       - name: Architecture (import-linter)
         run: uv run lint-imports
       - name: Spelling (codespell)
         run: uv run codespell packages
       - name: Dependencies (deptry)
         run: |
-          for pkg in packages/*/; do
+          for pkg in packages/*/ services/*/; do
             uv run --directory "$pkg" deptry src
           done
       - name: Tests (pytest)
