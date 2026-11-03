@@ -49,6 +49,7 @@ jobs:
             platform
             auth
             db
+            security
           requireScope: false
 
   governance:
