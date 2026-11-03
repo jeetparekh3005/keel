@@ -1,0 +1,188 @@
+# platform.yaml — the keel platform contract.
+#
+# This is the keystone of keel. Every generated service, in ANY language,
+# MUST satisfy this contract. The contract defines the *ports* (stable,
+# language-agnostic concerns); each language vertical provides the *adapters*
+# that implement them (see docs/adr/0002-hexagonal-architecture.md).
+#
+# The contract is versioned independently of keel itself. A generated project
+# records the contractVersion it targets; `keel update` migrates it forward.
+
+apiVersion: keel.dev/v1alpha1
+kind: PlatformContract
+metadata:
+  contractVersion: 0.1.0
+
+spec:
+  # ----------------------------------------------------------------------
+  # Structured logging — one log schema across all languages.
+  # ----------------------------------------------------------------------
+  logging:
+    format: json                      # machine-parseable, one line per event
+    timestamp: rfc3339                # UTC, e.g. 2026-11-03T12:34:56.789Z
+    levels: [trace, debug, info, warn, error, fatal]
+    required_fields:
+      - timestamp
+      - level
+      - message
+      - service                       # logical service name
+      - version                       # service version / git sha
+      - trace_id                      # W3C trace id when in a request context
+      - span_id
+    optional_fields: [user_id, request_id, duration_ms, error]
+    redaction:                        # these keys are NEVER logged in clear
+      - password
+      - token
+      - secret
+      - authorization
+      - set-cookie
+      - api_key
+      - pii                           # anything tagged pii by the domain
+    sink: stdout                      # 12-factor: logs are an event stream
+
+  # ----------------------------------------------------------------------
+  # Error model — RFC 9457 problem+json, one taxonomy across services.
+  # ----------------------------------------------------------------------
+  errors:
+    standard: rfc9457                 # application/problem+json
+    body_fields: [type, title, status, detail, instance]
+    taxonomy:                         # domain category -> HTTP status
+      validation: 400
+      unauthenticated: 401
+      forbidden: 403
+      not_found: 404
+      conflict: 409
+      rate_limited: 429
+      internal: 500
+      unavailable: 503
+    rules:
+      - "Never leak stack traces, secrets, or internal identifiers in the body."
+      - "Every error carries a stable machine-readable `type` URI."
+      - "5xx responses are logged at error level with trace_id."
+
+  # ----------------------------------------------------------------------
+  # Authentication & access control.
+  # ----------------------------------------------------------------------
+  auth:
+    port: Authenticator               # driven port; one verification interface
+    idp: keycloak                     # default identity provider (swappable)
+    credential_types:                 # all enterprise-grade, all OSS at the edge
+      - oauth2_oidc                   # user & delegated auth; Auth Code + PKCE
+      - jwt                           # Bearer access tokens; validated via JWKS
+      - api_key                       # machine/partner clients; mapped to a principal
+      - mtls                          # optional service-to-service; certs from OpenBao PKI
+    principal: [sub, scopes, roles]
+    access_control: deny-by-default   # endpoints are closed unless opened
+    boundary:                         # see docs/adr/0006-identity-and-access.md
+      gateway: "edge: TLS, routing, rate-limit, COARSE authn (JWT / api_key / OIDC)"
+      service: "re-verify token and enforce FINE-GRAINED authz; never trust the gateway alone"
+    rules:
+      - "Authorization is enforced at the service boundary, not in the UI or gateway alone."
+      - "Local dev uses a real OIDC provider (Keycloak); no auth bypass flags in code."
+
+  # ----------------------------------------------------------------------
+  # Configuration — typed, 12-factor, explicit precedence.
+  # ----------------------------------------------------------------------
+  config:
+    port: ConfigLoader
+    typed: true                       # validated into a typed object at startup
+    precedence:                       # later overrides earlier
+      - built_in_defaults
+      - config_file                   # committed, non-secret
+      - environment_variables
+      - secret_provider               # highest precedence, never committed
+    env_naming: "KEEL_<SERVICE>_<KEY>"
+    fail_fast: true                   # invalid/missing config aborts startup
+
+  # ----------------------------------------------------------------------
+  # Secrets — never in source, config, or logs.
+  # ----------------------------------------------------------------------
+  secrets:
+    port: SecretProvider
+    dev_adapter: env                  # .env (gitignored) for local only
+    prod_adapters: [vault, aws_secrets_manager, gcp_secret_manager]
+    rules:
+      - "Secrets are fetched via the port, never read directly from env in domain code."
+      - "No secret is ever written to a log sink (see logging.redaction)."
+
+  # ----------------------------------------------------------------------
+  # Telemetry — OpenTelemetry, vendor-neutral.
+  # ----------------------------------------------------------------------
+  telemetry:
+    standard: opentelemetry
+    signals: [traces, metrics, logs]
+    propagation: w3c-tracecontext
+    ports: [Tracer, Meter]
+    exporter: otlp                    # to a collector; backend is swappable
+    rules:
+      - "Every inbound request starts or continues a trace."
+      - "trace_id/span_id are injected into structured logs (see logging)."
+
+  # ----------------------------------------------------------------------
+  # Persistence — repository ports, migrations mandatory.
+  # ----------------------------------------------------------------------
+  persistence:
+    port: Repository                  # one per aggregate; no ORM in domain
+    default_adapter: postgres
+    swappable: [postgres, mysql, sqlite]
+    migrations: required              # versioned, forward-only, in CI
+    rules:
+      - "Domain code depends on Repository ports, never on the ORM/driver."
+      - "All queries are parameterized; raw SQL is lint-forbidden by default."
+
+  # ----------------------------------------------------------------------
+  # Health & lifecycle — uniform probe endpoints.
+  # ----------------------------------------------------------------------
+  health:
+    liveness: /healthz                # process is up
+    readiness: /readyz                # dependencies (db, auth) are reachable
+    graceful_shutdown: required       # drain in-flight requests on SIGTERM
+
+  # ----------------------------------------------------------------------
+  # Container image & runtime hardening — see docs/adr/0008-container-hardening.md
+  # ----------------------------------------------------------------------
+  image:
+    base: chainguard                  # shell-less, non-root (swap: distroless, ubi-micro)
+    build: multi-stage
+    pinned_by: digest
+    source_protection:
+      default: bytecode_only          # .py stripped; ship .pyc only
+      hardened: native_compile        # optional Nuitka build for max obfuscation
+    runtime_hardening:                # enforced via k8s securityContext
+      run_as_non_root: true
+      read_only_root_fs: true
+      allow_privilege_escalation: false
+      drop_capabilities: [ALL]
+      seccomp: RuntimeDefault
+    supply_chain:
+      sign: cosign
+      sbom: cyclonedx
+      scan_gate: [trivy]
+      admission: verify-signature     # only signed, verified images run
+    distribution: private-registry-rbac
+    note: "An image is extractable by anyone who holds it; access control + signing is the real guarantee."
+
+  # ----------------------------------------------------------------------
+  # Ports catalogue — the interfaces every vertical implements.
+  # ----------------------------------------------------------------------
+  ports:
+    driving:                          # inbound: who calls the application
+      - HttpApi                       # REST/FastAPI router -> use cases
+      - Cli                           # optional
+      - MessageConsumer               # optional, async workers
+    driven:                           # outbound: what the application calls
+      - Repository
+      - Authenticator
+      - Logger
+      - Tracer
+      - Meter
+      - ConfigLoader
+      - SecretProvider
+      - Clock                         # injectable time, for testability
+
+# --------------------------------------------------------------------------
+# Conformance: a vertical is contract-conformant when it provides a runnable
+# adapter for every driven port, exposes the health endpoints, emits logs in
+# the schema above, returns problem+json errors, and passes the contract test
+# suite. See docs/architecture/README.md (§8 cross-cutting concepts).
+# --------------------------------------------------------------------------

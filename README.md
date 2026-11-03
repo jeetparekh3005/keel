@@ -12,7 +12,7 @@ The goal: go from zero to a secure, observable, deployable service in minutes, n
 
 ## Status
 
-🚧 **Early development.** keel is being built vertical-by-vertical. The first anchor is the **Python golden-path** (see the [roadmap](#roadmap)).
+**Early development.** keel is being built vertical-by-vertical. The first anchor is the **Python golden-path** (see the [roadmap](#roadmap)).
 
 ## Why keel
 
