@@ -1,0 +1,14 @@
+version: 2
+updates:
+  # Keep GitHub Actions pinned and patched. Language ecosystems are added
+  # per vertical (pip/uv, npm, cargo, gomod, gradle) as they land.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
+    labels:
+      - "type:chore"
+      - "area:ci"
