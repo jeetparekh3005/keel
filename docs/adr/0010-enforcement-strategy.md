@@ -45,6 +45,12 @@ Runtime validation (Pydantic at boundaries, config fail-fast) backstops inputs t
 - Good: a drifting service fails its own CI.
 - Bad: not everything is enforceable — naming quality, whether an abstraction is appropriate, and domain modeling remain review/ADR concerns. Stated honestly rather than pretended away.
 
+> **Implementation status (v0.1):** the static layers (types, lint/arch, pytest) and
+> bandit (via ruff `S`) are wired in CI today. The security/supply-chain scanners below
+> (semgrep, pip-audit, trivy, gitleaks-in-CI, SBOM, cosign) and the port-coverage check
+> are **planned, not yet in CI** — see [docs/STATUS.md](../STATUS.md). This section is the
+> target, not the current pipeline.
+
 ## Deterministic enforcement catalogue
 
 Everything mechanizable is mechanized. Architecture, contract-specific, and manifest rules live in their respective ADRs (linked below); this catalogue is the central index plus the generic and meta checks.

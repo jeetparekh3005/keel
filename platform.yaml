@@ -8,6 +8,9 @@
 # The contract is versioned independently of keel itself. A generated project
 # records the contractVersion it targets; `keel update` migrates it forward.
 
+# NOTE: this contract describes the TARGET platform. Some sections are not yet
+# implemented in v0.1 (metrics, authorization, api_key/mTLS, supply-chain gates,
+# k8s hardening, broker adapters). See docs/STATUS.md for implemented-vs-planned.
 apiVersion: keel.dev/v1alpha1
 kind: PlatformContract
 metadata:
