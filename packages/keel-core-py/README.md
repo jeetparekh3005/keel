@@ -32,5 +32,5 @@ Coming next: the FastAPI app factory ([ADR-0013](../../docs/adr/0013-python-web-
 from keel_core.adapters.outbound.logging import StructuredLogger
 
 log = StructuredLogger(service="orders", version="1.0.0")
-log.info("order placed", order_id=42)   # -> one JSON line, secrets redacted
+log.info("order placed", order_id=42)  # -> one JSON line, secrets redacted
 ```
