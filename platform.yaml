@@ -64,14 +64,21 @@ spec:
   # Authentication & access control.
   # ----------------------------------------------------------------------
   auth:
-    protocol: oidc                    # default adapter: OIDC (Keycloak in dev)
-    token: jwt                        # Bearer; validated against JWKS
-    port: Authenticator               # driven port implemented per language
+    port: Authenticator               # driven port; one verification interface
+    idp: keycloak                     # default identity provider (swappable)
+    credential_types:                 # all enterprise-grade, all OSS at the edge
+      - oauth2_oidc                   # user & delegated auth; Auth Code + PKCE
+      - jwt                           # Bearer access tokens; validated via JWKS
+      - api_key                       # machine/partner clients; mapped to a principal
+      - mtls                          # optional service-to-service; certs from OpenBao PKI
     principal: [sub, scopes, roles]
     access_control: deny-by-default   # endpoints are closed unless opened
+    boundary:                         # see docs/adr/0006-identity-and-access.md
+      gateway: "edge: TLS, routing, rate-limit, COARSE authn (JWT / api_key / OIDC)"
+      service: "re-verify token and enforce FINE-GRAINED authz; never trust the gateway alone"
     rules:
-      - "Authorization is enforced at the application boundary, not in the UI."
-      - "Local dev uses a real OIDC provider (no auth bypass flags in code)."
+      - "Authorization is enforced at the service boundary, not in the UI or gateway alone."
+      - "Local dev uses a real OIDC provider (Keycloak); no auth bypass flags in code."
 
   # ----------------------------------------------------------------------
   # Configuration — typed, 12-factor, explicit precedence.

@@ -35,7 +35,8 @@ Generated services need a consistent, secure path from container to running work
 
 - No cloud-specific managed services in the golden path.
 - **Postgres**: vanilla — any managed Postgres, or in-cluster via an operator (e.g. CloudNativePG). The contract's `Repository` adapter stays provider-neutral.
-- **Secrets**: `SecretProvider` prod adapter defaults to **Vault**, synced into the cluster via the **External Secrets Operator** so any backend (incl. cloud secret managers) can be swapped in later without code change.
+- **Secrets**: `SecretProvider` prod adapter defaults to **OpenBao** (MPL-2.0, OSS fork of Vault), synced into the cluster via the **External Secrets Operator** so any backend (incl. cloud secret managers) can be swapped in later without code change. See [ADR-0007](0007-secrets-and-pki.md).
+- **Infrastructure as Code**: **OpenTofu** (MPL-2.0, OSS fork of Terraform). HashiCorp's BSL-licensed originals (Vault/Terraform) remain documented swaps.
 - **Telemetry**: in-cluster **OpenTelemetry Collector** exporting OTLP to a swappable backend.
 - Cloud-specific adapters (AWS/GCP/Azure secret managers, managed DBs) are added later *behind the existing ports* — they do not change the golden path.
 
@@ -64,4 +65,5 @@ Generated services need a consistent, secure path from container to running work
 ## More information
 
 - Deploys the hexagonal services from [ADR-0002](0002-hexagonal-architecture.md) and honors [`platform.yaml`](../../platform.yaml) ports (secrets, telemetry, health).
+- Component decisions: [ADR-0005](0005-api-gateway.md) gateway, [ADR-0006](0006-identity-and-access.md) identity, [ADR-0007](0007-secrets-and-pki.md) secrets & PKI.
 - Implementation tracked under milestone **v0.2** (monorepo + frontend) and a dedicated infra issue to be opened.
