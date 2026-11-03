@@ -11,6 +11,8 @@ keel_core/
   adapters/
     inbound/http/      # FastAPI app factory, problem+json, health, deny-by-default auth
     outbound/          # StructuredLogger, SystemClock
+    outbound/auth/     # OIDCAuthenticator (JWT/JWKS validation)
+    outbound/secrets/  # EnvSecretProvider (prod: OpenBao)
     outbound/persistence/  # async SQLAlchemy: Database, UnitOfWork, SqlAlchemyRepository
   config.py     # BaseServiceConfig (typed, 12-factor, fail-fast)
   context.py    # request/trace/span contextvars injected into logs
@@ -23,7 +25,8 @@ keel_core/
 - **Error taxonomy** — `DomainError` hierarchy with category → HTTP status mapping.
 - **Typed config** — `BaseServiceConfig` (Pydantic Settings), `KEEL_`-prefixed, immutable, fails fast.
 - **Clock** — injectable time for testability.
-- **Auth port** — `Authenticator` / `Principal` (OIDC adapter lands in a later slice).
+- **Auth** — `Authenticator` / `Principal` port + `OIDCAuthenticator` adapter: verifies Bearer JWTs against the issuer's signing key (JWKS in prod), checks issuer/audience/expiry, maps claims (scopes, roles) to a `Principal`.
+- **Secrets** — `SecretProvider` port + `EnvSecretProvider` (dev); production uses OpenBao (ADR-0007). Secrets are reached only through the port.
 - **FastAPI app factory** ([ADR-0013](../../docs/adr/0013-python-web-framework.md)) — `create_app` wires request-id propagation, problem+json error handling (RFC 9457), health endpoints, and a deny-by-default auth dependency. Requires an `Authenticator`, so an app cannot be built without auth.
 - **Persistence** — `Repository` port + async SQLAlchemy 2.0 adapter (`Database`, `UnitOfWork`, generic `SqlAlchemyRepository`) with a readiness `ping()`. Domain depends on the port, never the ORM.
 - **Test kit** — fakes shipped so services test against the ports.

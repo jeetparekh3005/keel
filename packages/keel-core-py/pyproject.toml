@@ -8,6 +8,7 @@ dependencies = [
     "structlog>=24.4",
     "fastapi>=0.115",
     "sqlalchemy[asyncio]>=2.0",
+    "pyjwt[crypto]>=2.9",
 ]
 
 [build-system]
