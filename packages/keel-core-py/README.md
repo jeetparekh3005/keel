@@ -9,8 +9,9 @@ keel_core/
   ports/        # Protocols: Logger, Clock, Authenticator (+ Principal)
   domain/       # errors: taxonomy mapped to RFC 9457 (ADR + platform.yaml)
   adapters/
-    inbound/http/ # FastAPI app factory, problem+json, health, deny-by-default auth
-    outbound/     # StructuredLogger, SystemClock
+    inbound/http/      # FastAPI app factory, problem+json, health, deny-by-default auth
+    outbound/          # StructuredLogger, SystemClock
+    outbound/persistence/  # async SQLAlchemy: Database, UnitOfWork, SqlAlchemyRepository
   config.py     # BaseServiceConfig (typed, 12-factor, fail-fast)
   context.py    # request/trace/span contextvars injected into logs
   testkit/      # fakes: FrozenClock, StubAuthenticator, capturing_logger
@@ -24,9 +25,10 @@ keel_core/
 - **Clock** — injectable time for testability.
 - **Auth port** — `Authenticator` / `Principal` (OIDC adapter lands in a later slice).
 - **FastAPI app factory** ([ADR-0013](../../docs/adr/0013-python-web-framework.md)) — `create_app` wires request-id propagation, problem+json error handling (RFC 9457), health endpoints, and a deny-by-default auth dependency. Requires an `Authenticator`, so an app cannot be built without auth.
+- **Persistence** — `Repository` port + async SQLAlchemy 2.0 adapter (`Database`, `UnitOfWork`, generic `SqlAlchemyRepository`) with a readiness `ping()`. Domain depends on the port, never the ORM.
 - **Test kit** — fakes shipped so services test against the ports.
 
-Coming next: persistence/auth/secrets adapters (SQLAlchemy/Alembic, OIDC, OpenBao).
+Coming next: OIDC auth adapter and secrets (OpenBao); real-Postgres integration arrives with the reference service's docker-compose.
 
 ## Usage
 
