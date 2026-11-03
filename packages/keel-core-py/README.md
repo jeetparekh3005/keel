@@ -9,7 +9,8 @@ keel_core/
   ports/        # Protocols: Logger, Clock, Authenticator (+ Principal)
   domain/       # errors: taxonomy mapped to RFC 9457 (ADR + platform.yaml)
   adapters/
-    outbound/   # StructuredLogger, SystemClock
+    inbound/http/ # FastAPI app factory, problem+json, health, deny-by-default auth
+    outbound/     # StructuredLogger, SystemClock
   config.py     # BaseServiceConfig (typed, 12-factor, fail-fast)
   context.py    # request/trace/span contextvars injected into logs
   testkit/      # fakes: FrozenClock, StubAuthenticator, capturing_logger
@@ -21,10 +22,11 @@ keel_core/
 - **Error taxonomy** — `DomainError` hierarchy with category → HTTP status mapping.
 - **Typed config** — `BaseServiceConfig` (Pydantic Settings), `KEEL_`-prefixed, immutable, fails fast.
 - **Clock** — injectable time for testability.
-- **Auth port** — `Authenticator` / `Principal` (OIDC adapter lands in the next slice).
+- **Auth port** — `Authenticator` / `Principal` (OIDC adapter lands in a later slice).
+- **FastAPI app factory** ([ADR-0013](../../docs/adr/0013-python-web-framework.md)) — `create_app` wires request-id propagation, problem+json error handling (RFC 9457), health endpoints, and a deny-by-default auth dependency. Requires an `Authenticator`, so an app cannot be built without auth.
 - **Test kit** — fakes shipped so services test against the ports.
 
-Coming next: the FastAPI app factory ([ADR-0013](../../docs/adr/0013-python-web-framework.md)), then persistence/auth/secrets adapters.
+Coming next: persistence/auth/secrets adapters (SQLAlchemy/Alembic, OIDC, OpenBao).
 
 ## Usage
 
