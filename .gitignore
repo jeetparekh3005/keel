@@ -1,0 +1,72 @@
+# ---- OS ----
+.DS_Store
+Thumbs.db
+
+# ---- Editors / IDEs ----
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.shared.json
+*.swp
+*~
+
+# ---- Secrets / env ----
+.env
+.env.*
+!.env.sample
+!.env.example
+*.pem
+*.key
+secrets.*
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+dist/
+*.egg-info/
+
+# ---- Node / TypeScript ----
+node_modules/
+.next/
+.turbo/
+*.tsbuildinfo
+npm-debug.log*
+pnpm-debug.log*
+.pnpm-store/
+
+# ---- Rust ----
+/target/
+**/*.rs.bk
+
+# ---- Go ----
+/bin/
+*.test
+*.out
+
+# ---- Java / JVM ----
+*.class
+target/
+.gradle/
+build/
+!docs/architecture/build/.gitkeep
+
+# ---- Build / tooling output ----
+*.log
+tmp/
+.cache/
+site/
+docs/architecture/build-html/
+docs/architecture/build-pdf/
+
+# ---- Containers / IaC ----
+*.tfstate
+*.tfstate.*
+.terraform/

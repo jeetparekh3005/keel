@@ -1,0 +1,39 @@
+name: Bug report
+description: Report a defect in keel or a generated scaffold
+title: "fix: "
+labels: ["type:fix"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the bug and the impact.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Exact commands / inputs. For scaffold bugs, include the keel options used.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options: [platform, python, ts, rust, go, java, ci, docs, auth, db]
+    validations:
+      required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: OS, keel version, language toolchain versions.
+    validations:
+      required: false

@@ -1,0 +1,32 @@
+name: Feature request
+description: Propose a new capability, vertical, or adapter for keel
+title: "feat: "
+labels: ["type:feat"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What gap or pain does this address?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should keel generate or do?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options: [platform, python, ts, rust, go, java, ci, docs, auth, db]
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false

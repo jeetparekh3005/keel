@@ -1,0 +1,15 @@
+# Normalize line endings
+* text=auto eol=lf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+
+# Generated/vendored files excluded from language stats
+*.lock linguist-generated=true
+**/migrations/** linguist-generated=true
