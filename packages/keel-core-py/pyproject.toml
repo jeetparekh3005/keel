@@ -6,6 +6,7 @@ requires-python = ">=3.12"
 dependencies = [
     "pydantic-settings>=2.5",  # pulls pydantic; declare pydantic directly when a module imports it
     "structlog>=24.4",
+    "fastapi>=0.115",
 ]
 
 [build-system]
