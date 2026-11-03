@@ -37,7 +37,8 @@ class SqlItemRepository:
         record = await self._session.get(ItemRecord, item_id)
         return Item(id=record.id, name=record.name) if record is not None else None
 
-    async def list_all(self) -> Sequence[Item]:
-        """Return all items."""
-        result = await self._session.execute(select(ItemRecord))
+    async def list_all(self, *, limit: int = 50, offset: int = 0) -> Sequence[Item]:
+        """Return a page of items (ordered by id for stable paging)."""
+        statement = select(ItemRecord).order_by(ItemRecord.id).limit(limit).offset(offset)
+        result = await self._session.execute(statement)
         return [Item(id=record.id, name=record.name) for record in result.scalars().all()]

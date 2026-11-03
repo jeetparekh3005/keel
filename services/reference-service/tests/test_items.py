@@ -34,3 +34,11 @@ async def test_missing_item_is_problem_json_404(client):
 
 async def test_health_is_live(client):
     assert (await client.get("/healthz")).status_code == 200
+
+
+async def test_list_respects_limit(client):
+    for index in range(3):
+        await client.post("/items", json={"name": f"n{index}"}, headers=_AUTH)
+    listed = await client.get("/items?limit=2", headers=_AUTH)
+    assert listed.status_code == 200
+    assert len(listed.json()) == 2

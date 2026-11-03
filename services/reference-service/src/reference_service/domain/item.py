@@ -26,6 +26,6 @@ class ItemRepository(Protocol):
         """Return the item, or None if absent."""
         ...
 
-    async def list_all(self) -> Sequence[Item]:
-        """Return all items."""
+    async def list_all(self, *, limit: int = 50, offset: int = 0) -> Sequence[Item]:
+        """Return a page of items."""
         ...

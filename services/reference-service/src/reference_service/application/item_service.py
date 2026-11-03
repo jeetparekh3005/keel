@@ -30,6 +30,6 @@ class ItemService:
             raise NotFound(msg)
         return item
 
-    async def list(self) -> Sequence[Item]:
-        """Return all items."""
-        return await self._repository.list_all()
+    async def list(self, *, limit: int = 50, offset: int = 0) -> Sequence[Item]:
+        """Return a page of items."""
+        return await self._repository.list_all(limit=limit, offset=offset)

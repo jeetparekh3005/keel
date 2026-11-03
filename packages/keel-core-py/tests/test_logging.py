@@ -51,6 +51,23 @@ def test_nested_secrets_are_redacted():
     assert data["inner"]["ok"] == 1
 
 
+def test_credential_key_families_are_redacted():
+    logger, buffer = capturing_logger()
+    logger.info(
+        "request",
+        access_token="opaque-123",
+        client_secret="shh",
+        author="jane",
+        **{"x-api-key": "sk_live_1", "cookie": "session=abc"},
+    )
+    record = _last_record(buffer)
+    assert record["access_token"] == "[REDACTED]"
+    assert record["client_secret"] == "[REDACTED]"
+    assert record["x-api-key"] == "[REDACTED]"
+    assert record["cookie"] == "[REDACTED]"
+    assert record["author"] == "jane"  # not over-redacted
+
+
 def test_reserved_fields_cannot_be_clobbered():
     logger, buffer = capturing_logger(service="real")
     logger.info("hi", service="evil", level="fatal")

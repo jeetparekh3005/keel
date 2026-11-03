@@ -13,6 +13,7 @@ from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, cast
 
 from fastapi import Request
+from starlette.concurrency import run_in_threadpool
 
 from keel_core.domain.errors import Forbidden, Unauthenticated
 
@@ -22,6 +23,12 @@ if TYPE_CHECKING:
 _BEARER_PREFIX = "bearer "
 
 PrincipalDependency = Callable[[Request], Awaitable["Principal"]]
+
+
+def _mark_auth(dependency: PrincipalDependency) -> PrincipalDependency:
+    """Tag a dependency as auth-enforcing so the route-auth conformance check can find it."""
+    dependency.__keel_auth__ = True  # type: ignore[attr-defined]
+    return dependency
 
 
 def _extract_credential(request: Request) -> str:
@@ -34,8 +41,10 @@ def _extract_credential(request: Request) -> str:
 
 
 async def _authenticate(request: Request) -> Principal:
+    # Verify off the event loop: JWKS fetch + RSA verify are blocking/CPU-bound.
     authenticator = cast("Authenticator", request.app.state.authenticator)
-    return authenticator.authenticate(_extract_credential(request))
+    credential = _extract_credential(request)
+    return await run_in_threadpool(authenticator.authenticate, credential)
 
 
 def principal_dependency(authenticator: Authenticator) -> PrincipalDependency:
@@ -46,9 +55,10 @@ def principal_dependency(authenticator: Authenticator) -> PrincipalDependency:
     """
 
     async def dependency(request: Request) -> Principal:
-        return authenticator.authenticate(_extract_credential(request))
+        credential = _extract_credential(request)
+        return await run_in_threadpool(authenticator.authenticate, credential)
 
-    return dependency
+    return _mark_auth(dependency)
 
 
 def require_scopes(*required: str) -> PrincipalDependency:
@@ -61,7 +71,7 @@ def require_scopes(*required: str) -> PrincipalDependency:
             raise Forbidden(msg)
         return principal
 
-    return dependency
+    return _mark_auth(dependency)
 
 
 def require_roles(*required: str) -> PrincipalDependency:
@@ -74,4 +84,4 @@ def require_roles(*required: str) -> PrincipalDependency:
             raise Forbidden(msg)
         return principal
 
-    return dependency
+    return _mark_auth(dependency)

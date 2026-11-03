@@ -28,6 +28,7 @@ dev = [
     "alembic>=1.13",          # migration tool (run by the service image at deploy)
     "grpcio>=1.60",           # keel-core[grpc] extra — installed for the gRPC tests
     "opentelemetry-instrumentation-grpc>=0.48b0",
+    "psycopg[binary]>=3.2",   # sync Postgres driver for Alembic migrations in CI
 ]
 
 # ---------------------------------------------------------------------------
@@ -128,6 +129,7 @@ exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError", "^\\s*\\.\\.\\
 
 [tool.codespell]
 skip = "*.lock,./.git,./.venv"
+ignore-words-list = "dependant"  # FastAPI's route.dependant API term, not a typo
 
 # First-party workspace modules (extend as packages/services are added).
 [tool.deptry]

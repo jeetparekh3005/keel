@@ -1,5 +1,6 @@
 """Alembic migration environment (sync engine; async app uses the same metadata)."""
 
+import os
 from logging.config import fileConfig
 
 from alembic import context
@@ -13,6 +14,11 @@ import reference_service.adapters.outbound.persistence  # noqa: F401
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
+
+# Allow the DB URL to come from the environment (CI runs this against Postgres).
+_env_url = os.environ.get("KEEL_MIGRATION_URL")
+if _env_url:
+    config.set_main_option("sqlalchemy.url", _env_url)
 
 target_metadata = Entity.metadata
 
