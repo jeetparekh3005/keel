@@ -16,10 +16,12 @@ Services must obtain secrets (DB credentials, API keys, signing keys) and, for m
 
 ## Considered options
 
-- **OpenBao** (MPL-2.0, Linux Foundation fork of Vault)
-- HashiCorp Vault (BSL)
-- Cloud secret managers only (AWS/GCP/Azure) — rejected as default (lock-in)
-- Sealed Secrets / SOPS — simpler, but no dynamic secrets or PKI
+| Option | Dynamic secrets | PKI | License / posture | Cloud-agnostic |
+|---|---|---|---|---|
+| **OpenBao** | Yes | Yes | MPL-2.0 (Linux Foundation fork of Vault) | Yes |
+| HashiCorp Vault | Yes | Yes | BSL 1.1 (source-available) | Yes |
+| Cloud secret managers | Limited | Via cloud CA | Proprietary (AWS/GCP/Azure) | No (lock-in) |
+| Sealed Secrets / SOPS | No | No | OSS, lightweight | Yes |
 
 ## Decision outcome
 

@@ -14,6 +14,15 @@ keel needs an enterprise-grade, open-source identity story that supports multipl
 - A single, language-agnostic verification abstraction (the `Authenticator` port).
 - Defense in depth: the gateway must not be the only thing enforcing access.
 
+## Considered options
+
+| Option | OIDC/OAuth2 | SAML | Self-host OSS | Admin UI | License |
+|---|---|---|---|---|---|
+| **Keycloak** | Yes | Yes | Yes | Full | Apache-2.0 |
+| Authentik | Yes | Yes | Yes | Full | MIT (some enterprise features) |
+| Ory (Hydra/Kratos) | Yes | No (Hydra) | Yes | Minimal (API-first) | Apache-2.0 |
+| Auth0 / Cognito / Entra | Yes | Yes | No (SaaS) | Full | Proprietary |
+
 ## Decision outcome
 
 **Keycloak is the default identity provider; the `Authenticator` port abstracts credential verification; authorization is enforced in the service, deny-by-default.**

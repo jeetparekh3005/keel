@@ -17,13 +17,13 @@ Generated services need an edge gateway for TLS termination, routing, rate limit
 
 ## Considered options
 
-| Gateway | API key | JWT | OIDC | Truly OSS |
+| Gateway | API key | JWT | OIDC | License / OSS posture |
 |---|---|---|---|---|
-| **Apache APISIX** | ✅ | ✅ | ✅ | ✅ Apache-2.0, no auth paywall |
-| Kong OSS | ✅ | ✅ | ❌ enterprise-only | partial |
-| Envoy Gateway | ⚠️ ext_authz | ✅ | ✅ | ✅ CNCF |
-| Traefik | ⚠️ ForwardAuth | ⚠️ delegated | ⚠️ oauth2-proxy | MIT, auth delegated |
-| Tyk | ✅ | ✅ | ✅ | gateway OSS, control-plane proprietary |
+| **Apache APISIX** | Yes | Yes | Yes | Apache-2.0, no auth paywall |
+| Kong OSS | Yes | Yes | No (Enterprise-only) | Apache-2.0, OIDC gated |
+| Envoy Gateway | Via ext_authz | Yes | Yes | Apache-2.0 (CNCF) |
+| Traefik | Via ForwardAuth | Delegated | Via oauth2-proxy | MIT, auth delegated |
+| Tyk | Yes | Yes | Yes | Gateway OSS, control-plane proprietary |
 
 ## Decision outcome
 

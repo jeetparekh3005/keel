@@ -15,6 +15,14 @@ Generated services need a consistent, secure path from container to running work
 - Fast inner-loop for developers; production parity when needed.
 - Fits keel's propagation model (versioned, updatable artifacts).
 
+## Considered options
+
+| Option | Portability | Ops complexity | Scales to zero | Best fit |
+|---|---|---|---|---|
+| **Kubernetes** | High (any cloud/on-prem) | High | With KEDA/add-ons | Orgs already on k8s; many services |
+| Serverless containers | Medium (cloud-specific) | Low | Yes (native) | Few services, minimal ops |
+| PaaS (Fly/Render/etc.) | Low–Medium | Lowest | Varies | Prototypes, small teams |
+
 ## Decision outcome
 
 **Deploy target: Kubernetes. Cloud posture: cloud-agnostic.**

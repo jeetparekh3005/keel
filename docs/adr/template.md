@@ -15,6 +15,18 @@
 
 ## Considered options
 
+<!--
+For a tool/vendor SELECTION (gateway, database, IdP, …), use a comparison
+table scoring candidates on shared dimensions:
+
+| Option | <dimension> | <dimension> | License |
+|--------|-------------|-------------|---------|
+| **A**  | …           | …           | …       |
+
+For a PRINCIPLE/PATTERN decision (architecture style, convention), a table is
+false precision — list the options and give prose pros/cons instead.
+-->
+
 - Option A
 - Option B
 - Option C
