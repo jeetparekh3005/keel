@@ -32,11 +32,15 @@ def _mark_auth(dependency: PrincipalDependency) -> PrincipalDependency:
 
 
 def _extract_credential(request: Request) -> str:
-    # Only Bearer JWT today; api_key/mTLS are planned (see docs/STATUS.md).
+    # Bearer JWT or an API key (X-API-Key); the configured Authenticator decides
+    # how to verify whichever credential is presented. mTLS is transport-level.
     authorization = request.headers.get("authorization")
     if authorization and authorization.lower().startswith(_BEARER_PREFIX):
         return authorization[len(_BEARER_PREFIX) :]
-    msg = "missing bearer credential"
+    api_key = request.headers.get("x-api-key")
+    if api_key:
+        return api_key
+    msg = "missing bearer or api-key credential"
     raise Unauthenticated(msg)
 
 
