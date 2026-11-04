@@ -61,6 +61,7 @@ def create_app(
     logger: Logger | None = None,
     readiness_checks: Sequence[ReadinessCheck] = (),
     max_request_bytes: int = 1_048_576,
+    expose_docs: bool = True,
 ) -> FastAPI:
     """Build a FastAPI app wired with the platform's cross-cutting middleware.
 
@@ -71,11 +72,25 @@ def create_app(
         logger: optional Logger; a StructuredLogger is created if omitted.
         readiness_checks: async callables gating ``/readyz``.
         max_request_bytes: reject requests whose Content-Length exceeds this (413).
+        expose_docs: serve the OpenAPI schema and Swagger/ReDoc UIs. Keep ``True``
+            for local/dev; pass ``False`` in production so the API map is not
+            disclosed anonymously (the schema and both doc UIs are disabled).
     """
     log: Logger = (
         logger if logger is not None else StructuredLogger(service=service, version=version)
     )
-    app = FastAPI(title=service, version=version, lifespan=_lifespan)
+    # Disabling ``openapi_url`` removes the schema and, with it, both doc UIs.
+    if expose_docs:
+        app = FastAPI(title=service, version=version, lifespan=_lifespan)
+    else:
+        app = FastAPI(
+            title=service,
+            version=version,
+            lifespan=_lifespan,
+            docs_url=None,
+            redoc_url=None,
+            openapi_url=None,
+        )
     # FastAPI/Starlette emit OTel spans natively once a provider is configured
     # (see keel_core.adapters.outbound.telemetry); the logger reads the active span.
     # Added inner-to-outer: body-limit runs first (rejects before any work).
