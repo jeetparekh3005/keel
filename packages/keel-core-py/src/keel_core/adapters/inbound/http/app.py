@@ -20,7 +20,6 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from keel_core.adapters.inbound.http.conformance import assert_routes_require_auth
 from keel_core.adapters.inbound.http.edge import BodyLimitMiddleware, SecurityHeadersMiddleware
 from keel_core.adapters.inbound.http.health import ReadinessCheck, build_health_router
-from keel_core.adapters.inbound.http.metrics import MetricsMiddleware
 from keel_core.adapters.inbound.http.problem import register_exception_handlers
 from keel_core.adapters.inbound.http.ratelimit import RateLimitMiddleware
 from keel_core.adapters.inbound.http.request_id import RequestIdMiddleware
@@ -110,14 +109,16 @@ def create_app(
             redoc_url=None,
             openapi_url=None,
         )
-    # FastAPI/Starlette emit OTel spans natively once a provider is configured
-    # (see keel_core.adapters.outbound.telemetry); the logger reads the active span.
+    # FastAPI/Starlette emit OTel spans AND http.server.* metrics natively once a
+    # provider is configured (see keel_core.adapters.outbound.telemetry); the native
+    # ASGI instrumentation wraps the whole app, so it already records our
+    # RateLimit/BodyLimit rejections (429/413) and the logger reads the active span.
+    # We add no duplicate duration histogram of our own.
     #
     # add_middleware makes the LAST-added the OUTERMOST. Add inner-to-outer so the
-    # final stack is (outer -> inner): CORS, RequestId, Metrics, SecurityHeaders,
-    # RateLimit, BodyLimit, app. Rejections from RateLimit (429) and BodyLimit (413)
-    # are therefore counted by metrics, correlated by request-id, and carry the
-    # security headers - they are not invisible to observability.
+    # final stack is (outer -> inner): CORS, RequestId, SecurityHeaders, RateLimit,
+    # BodyLimit, app. Rejections carry the request-id and security headers - they are
+    # not invisible to observability.
     app.add_middleware(BodyLimitMiddleware, max_bytes=max_request_bytes)
     if rate_limit is not None:
         max_requests, window_seconds = rate_limit
@@ -125,7 +126,6 @@ def create_app(
             RateLimitMiddleware, max_requests=max_requests, window_seconds=window_seconds
         )
     app.add_middleware(SecurityHeadersMiddleware)
-    app.add_middleware(MetricsMiddleware)
     app.add_middleware(RequestIdMiddleware)
     if trusted_hosts:
         # Reject mismatched Host headers (DNS-rebinding defense) before anything else.
