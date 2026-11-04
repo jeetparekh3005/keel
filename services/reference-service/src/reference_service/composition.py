@@ -57,6 +57,7 @@ def build_app(
         # Only expose the OpenAPI schema + docs UIs outside production.
         expose_docs=config.environment.lower() in {"dev", "local", "test"},
         cors_allow_origins=config.cors_allow_origins,
+        trusted_hosts=config.trusted_hosts,
     )
     app.state.database = db
     # Each item route declares its own require_scopes(...) dependency (authn + authz).

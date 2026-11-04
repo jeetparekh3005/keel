@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from keel_core.adapters.inbound.http.conformance import assert_routes_require_auth
 from keel_core.adapters.inbound.http.edge import BodyLimitMiddleware, SecurityHeadersMiddleware
@@ -67,6 +68,7 @@ def create_app(
     rate_limit: tuple[int, float] | None = None,
     cors_allow_origins: Sequence[str] = (),
     cors_allow_credentials: bool = False,
+    trusted_hosts: Sequence[str] = (),
 ) -> FastAPI:
     """Build a FastAPI app wired with the platform's cross-cutting middleware.
 
@@ -87,6 +89,8 @@ def create_app(
             listed explicitly (no implicit wildcard).
         cors_allow_credentials: allow credentialed cross-origin requests. Rejected with a
             wildcard origin (``*``), which the CORS spec forbids with credentials.
+        trusted_hosts: if non-empty, only these Host headers are accepted (DNS-rebinding
+            defense via Starlette's TrustedHostMiddleware); empty disables the check.
     """
     if "*" in cors_allow_origins and cors_allow_credentials:
         msg = "CORS: allow_credentials with a wildcard origin '*' is forbidden by the spec"
@@ -123,6 +127,9 @@ def create_app(
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(MetricsMiddleware)
     app.add_middleware(RequestIdMiddleware)
+    if trusted_hosts:
+        # Reject mismatched Host headers (DNS-rebinding defense) before anything else.
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(trusted_hosts))
     if cors_allow_origins:
         # Outermost (preflight + headers on every response). Default-deny: only
         # applied when origins are explicitly listed.

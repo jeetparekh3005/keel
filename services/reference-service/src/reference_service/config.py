@@ -23,6 +23,10 @@ class ReferenceConfig(BaseServiceConfig):
     db_pool_recycle: int = 1800
     # Default-deny CORS: explicit origins only (JSON list in KEEL_CORS_ALLOW_ORIGINS).
     cors_allow_origins: list[str] = Field(default_factory=list)
+    trusted_hosts: list[str] = Field(default_factory=list)  # empty = accept any Host
+    # Trust forwarded headers from this proxy range so scheme/host reflect the edge
+    # (lets HSTS fire behind a TLS-terminating gateway). "*" trusts the in-cluster proxy.
+    forwarded_allow_ips: str = "*"
     db_command_timeout: float = 30.0  # max seconds for a single statement (asyncpg)
     db_connect_timeout: float = 10.0  # max seconds to establish a connection (asyncpg)
     db_readiness_timeout: float = 5.0  # max seconds for the /readyz ping before 503
