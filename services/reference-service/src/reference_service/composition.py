@@ -25,6 +25,12 @@ def _make_database(config: ReferenceConfig) -> Database:
             max_overflow=config.db_max_overflow,
             pool_timeout=config.db_pool_timeout,
             pool_recycle=config.db_pool_recycle,
+            # Bound the driver: cap statement execution and connection setup so a
+            # stalled query cannot hold a pooled connection indefinitely (asyncpg).
+            connect_args={
+                "command_timeout": config.db_command_timeout,
+                "timeout": config.db_connect_timeout,
+            },
         )
     return Database(config.database_url, **engine_kwargs)
 
@@ -38,12 +44,16 @@ def build_app(
 ) -> FastAPI:
     """Build the reference service app, wiring auth, persistence, and the items router."""
     db = database if database is not None else _make_database(config)
+
+    async def _db_ready() -> bool:
+        return await db.ping(timeout=config.db_readiness_timeout)
+
     app = create_app(
         service=config.service_name,
         version=config.version,
         authenticator=authenticator,
         logger=logger,
-        readiness_checks=[db.ping],
+        readiness_checks=[_db_ready],
         # Only expose the OpenAPI schema + docs UIs outside production.
         expose_docs=config.environment.lower() in {"dev", "local", "test"},
     )
