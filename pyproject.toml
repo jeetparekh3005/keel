@@ -121,6 +121,9 @@ markers = [
 
 [tool.coverage.run]
 branch = true
+# Trace code that runs inside SQLAlchemy's async greenlets (and threadpools),
+# otherwise DB-path lines show as false "missing" and the report is untrustworthy.
+concurrency = ["greenlet", "thread"]
 # main.py wiring is tested (see test_main.py); only serve()/entrypoint + the
 # live-OTLP branch carry `# pragma: no cover`.
 
