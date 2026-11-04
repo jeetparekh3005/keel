@@ -28,7 +28,11 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
 - Static enforcement in CI: ruff (incl. bandit `S`), ruff-format, mypy strict, import-linter,
   codespell, deptry, pytest. `platform.yaml` validated against its JSON Schema.
 - Security CI gates: dependency CVE scan (pip-audit, blocking), secret scan (gitleaks,
-  blocking), SBOM (CycloneDX, artifact). All workflow actions are SHA-pinned.
+  blocking), **SAST (semgrep, blocking)**, SBOM (CycloneDX, artifact). All workflow actions
+  are SHA-pinned.
+- Image supply chain: the reference-service image is **built and Trivy-scanned** on every
+  image-affecting PR (HIGH/CRITICAL gate); on a release it is **pushed to GHCR, signed with
+  keyless cosign, and attested** with SLSA build provenance + an SPDX SBOM.
 - **Authorization**, enforced deny-by-default: `require_scopes`/`require_roles` (403 on
   insufficient scope), and a **route-auth conformance check** that fails app startup (and
   a shipped test) if any non-exempt route lacks an auth dependency. JWT verification runs
@@ -47,10 +51,10 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
 | Area | Claimed in | Status |
 |------|-----------|--------|
 | `api_key` / `mTLS` credential types | platform.yaml auth; ADR-0006 | **Not implemented** — only JWT bearer works |
-| **Remaining supply-chain gates**: trivy image scan, cosign signing + admission, semgrep ruleset | ADR-0010 §5; platform.yaml image.supply_chain | **Partial** — pip-audit/gitleaks/SBOM in CI; trivy/cosign are image-build-time (v0.2 publish pipeline); semgrep deferred |
+| Kubernetes **admission** policy (verify signatures at deploy) | ADR-0010 §5 | **Not implemented** — needs the k8s layer (v0.2) |
 | **Keycloak / NATS integration tests** | ADR-0010 | **Not implemented** — Postgres integration is wired; Keycloak/NATS still stub/in-memory |
 | **Kubernetes/Helm** + runtime `securityContext`, NetworkPolicy | ADR-0004/0008 | **Not present** — only docker-compose |
-| Image **digest pinning** | platform.yaml image; ADR-0008 | **Not done** — Dockerfile uses rolling tags (needs Renovate + registry) |
+| Base-image **digest pinning** | platform.yaml image; ADR-0008 | **By design, deferred to Renovate** — Chainguard bases are rolling/continuously-rebuilt, so every build is Trivy-scanned instead; static digest pins would freeze stale CVEs. Renovate-managed digests tracked for v0.2 |
 | **gRPC IDL/buf**, **NATS/Kafka/RabbitMQ** broker adapters, mTLS-by-default | platform.yaml interservice; ADR-0012 | **Not implemented** — dev-only factories + in-memory bus. gRPC *application* auth (deny-by-default Bearer interceptor) **is** implemented; mTLS transport is not (#25). |
 | **CORS** policy (per-service) | ADR-0005 | **Not implemented** — security headers + body-limit are done; CORS is per-service config |
 

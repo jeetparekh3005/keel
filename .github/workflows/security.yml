@@ -33,9 +33,26 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  sast:
+    name: SAST (semgrep)
+    runs-on: ubuntu-latest
+    # Semgrep's official image bundles a working dependency set (the pip wheel
+    # has an import bug); pinned to an exact version for a reproducible gate.
+    container:
+      image: semgrep/semgrep:1.97.0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Static analysis (keel rules + curated registry rulesets)
+        # Blocking gate. Registry rulesets are fetched at run time; custom keel
+        # rules live in .semgrep/.
+        run: >
+          semgrep scan
+          --config .semgrep --config p/python --config p/secrets
+          --error --metrics=off
 
   sbom:
     name: SBOM (CycloneDX)
