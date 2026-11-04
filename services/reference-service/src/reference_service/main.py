@@ -5,12 +5,20 @@ Run with: ``uvicorn reference_service.main:app``.
 
 from __future__ import annotations
 
+from typing import cast
+
 import uvicorn
 from fastapi import FastAPI
 
 from keel_core.adapters.outbound.auth import OIDCAuthenticator
 from keel_core.adapters.outbound.logging import StructuredLogger, configure_logging
-from keel_core.adapters.outbound.telemetry import configure_metrics, configure_tracing
+from keel_core.adapters.outbound.persistence import Database
+from keel_core.adapters.outbound.telemetry import (
+    configure_metrics,
+    configure_tracing,
+    observe_db_pool,
+    observe_log_drops,
+)
 from reference_service.composition import build_app
 from reference_service.config import ReferenceConfig
 
@@ -61,6 +69,10 @@ def create_application() -> FastAPI:
     app.state.log_writer = log_writer
     app.state.tracer_provider = tracer_provider
     app.state.meter_provider = meter_provider
+    # Saturation signals (fourth golden signal): pool usage + dropped logs.
+    observe_db_pool(cast("Database", app.state.database))
+    if log_writer is not None:
+        observe_log_drops(log_writer)
     return app
 
 
