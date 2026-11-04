@@ -19,7 +19,7 @@ import grpc
 from opentelemetry.instrumentation.grpc import aio_server_interceptor
 
 from keel_core.context import principal_var
-from keel_core.domain.errors import Unauthenticated
+from keel_core.domain.errors import Unauthenticated, Unavailable
 
 if TYPE_CHECKING:
     from keel_core.ports.auth import Authenticator, Principal
@@ -54,6 +54,9 @@ def _authorize(
             principal: Principal = await asyncio.to_thread(authenticator.authenticate, token)  # type: ignore[arg-type]
         except Unauthenticated:
             await context.abort(grpc.StatusCode.UNAUTHENTICATED, "invalid token")
+        except Unavailable:
+            # A signing-key/dependency outage is retryable, not an auth failure.
+            await context.abort(grpc.StatusCode.UNAVAILABLE, "auth dependency unavailable")
         if not required.issubset(principal.scopes):
             await context.abort(grpc.StatusCode.PERMISSION_DENIED, "insufficient scope")
         return principal

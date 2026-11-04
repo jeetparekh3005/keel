@@ -46,6 +46,7 @@ async def test_authenticates_a_real_keycloak_token() -> None:
         jwks_uri=f"{_realm_base()}/protocol/openid-connect/certs",
         issuer=_realm_base(),
         audience=_AUDIENCE,
+        allow_insecure=True,  # local Keycloak is plaintext http in CI
     )
     principal = authenticator.authenticate(token)
     assert principal.subject  # service-account user id
