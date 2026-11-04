@@ -11,12 +11,14 @@ layers =
     keel_core.adapters
     keel_core.application
     keel_core.domain
+    keel_core.ports
 
 [importlinter:contract:domain-no-infra]
-name = domain is free of I/O libraries
+name = domain and ports are free of I/O libraries
 type = forbidden
 source_modules =
     keel_core.domain
+    keel_core.ports
 forbidden_modules =
     sqlalchemy
     fastapi
