@@ -26,7 +26,7 @@ The contract must be *enforced*, not merely documented. The type system alone co
 
 Runtime validation (Pydantic at boundaries, config fail-fast) backstops inputs the above cannot see.
 
-### Concern → layer
+### Concern -> layer
 
 | Concern | Enforced by |
 |---|---|
@@ -49,7 +49,7 @@ Runtime validation (Pydantic at boundaries, config fail-fast) backstops inputs t
 > bandit `S`, import-linter), pytest + 85% coverage floor, **pip-audit** (dependency CVEs),
 > **gitleaks** (secret scan), **SBOM** (CycloneDX), the **port-coverage conformance check**,
 > and the route-auth conformance check. Still planned: **trivy** image scan and **cosign**
-> signing/admission (image-build-time → v0.2 publish pipeline) and the **semgrep** ruleset.
+> signing/admission (image-build-time -> v0.2 publish pipeline) and the **semgrep** ruleset.
 > See [docs/STATUS.md](../STATUS.md).
 
 ## Deterministic enforcement catalogue
@@ -58,7 +58,7 @@ Everything mechanizable is mechanized. Architecture, contract-specific, and mani
 
 ### Generic quality (Ruff)
 
-High-signal packs tied to the contract: `T20` (ban `print` → use the logger), `LOG`/`G` (logging hygiene), `DTZ` (tz-aware UTC datetimes), `ANN` (annotations), `ASYNC` (no blocking in async), `S` (bandit SAST), `TRY`/`B`/`EM`/`RSE` (exception hygiene), `TID` (banned imports), `SLF`, `FBT`, `PT`, `SIM`/`RET`/`C4`/`UP`/`PERF`/`FURB`, `ERA`, `N`/`D`/`I`. Plus `ruff format` and Ruff `banned-api`.
+High-signal packs tied to the contract: `T20` (ban `print` -> use the logger), `LOG`/`G` (logging hygiene), `DTZ` (tz-aware UTC datetimes), `ANN` (annotations), `ASYNC` (no blocking in async), `S` (bandit SAST), `TRY`/`B`/`EM`/`RSE` (exception hygiene), `TID` (banned imports), `SLF`, `FBT`, `PT`, `SIM`/`RET`/`C4`/`UP`/`PERF`/`FURB`, `ERA`, `N`/`D`/`I`. Plus `ruff format` and Ruff `banned-api`.
 
 ### Distributed to their ADRs
 

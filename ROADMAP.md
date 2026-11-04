@@ -1,11 +1,11 @@
 # Roadmap
 
-Milestones are tracked on GitHub (Issues → Milestones) and the **keel roadmap** project board.
+Milestones are tracked on GitHub (Issues -> Milestones) and the **keel roadmap** project board.
 This file is a human-readable mirror; the issues are the source of truth.
 
 | Milestone | Theme | Status |
 |-----------|-------|--------|
-| **v0.1** | Python golden-path vertical: `keel-core-py` + reference service | **done** (pending release cut) |
+| **v0.1** | Python golden-path vertical: `keel-core-py` + reference service | **released** ([v0.1.0](https://github.com/jeetparekh3005/keel/releases/tag/v0.1.0)) |
 | **v0.2** | Frontend monorepo (Next.js) + deployment: k8s/Helm, image publish pipeline, brokers, api_key/mTLS, CORS, IdP/broker integration tests | planned |
 | **v0.3** | Rust vertical (the contract stress-test) | planned |
 | **v0.4** | Go & Java verticals | planned |

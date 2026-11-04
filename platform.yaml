@@ -154,6 +154,9 @@ spec:
     migrations: required              # versioned, forward-only, in CI
     rules:
       - "Domain code depends on Repository ports, never on the ORM/driver."
+      - "Repository ports are service-defined (one per aggregate) and map ORM<->domain
+         explicitly; keel-core provides the Database + UnitOfWork plumbing, not a
+         generic repository, so the ORM never leaks across the boundary."
       - "All queries are parameterized; raw SQL is lint-forbidden by default."
 
   # ----------------------------------------------------------------------
