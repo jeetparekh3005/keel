@@ -26,5 +26,7 @@ def test_http_request_metrics_are_recorded():
     app = create_app(service="t", version="0", authenticator=StubAuthenticator({}))
     TestClient(app).get("/healthz")
     names = _metric_names()
-    assert "http.server.requests" in names
-    assert "http.server.duration" in names
+    # Stable OTel HTTP semconv: a duration histogram (its count is the request volume).
+    assert "http.server.request.duration" in names
+    assert "http.server.requests" not in names
+    assert "http.server.duration" not in names
