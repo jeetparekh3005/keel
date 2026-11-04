@@ -5,12 +5,12 @@ Launch **three independent review subagents in parallel** (one message, three Ag
 subagent_type general-purpose) against the currently checked-out branch. Each must be
 adversarial, cite `file:line`, and severity-rank findings. Do not be charitable.
 
-1. **Security** — authz (deny-by-default actually enforced?), OIDC/JWT, edge hardening
+1. **Security** - authz (deny-by-default actually enforced?), OIDC/JWT, edge hardening
    (headers, body-size/streaming), log redaction families, CI security gates, container,
    secrets, input validation, honesty vs `docs/STATUS.md`.
-2. **Performance** — event-loop blocking (auth/JWKS, logging CPU), DB pool + pagination,
+2. **Performance** - event-loop blocking (auth/JWKS, logging CPU), DB pool + pagination,
    metrics cardinality, span processor, per-request allocations.
-3. **Enterprise/standards** — hexagonal purity, observability completeness (metrics + port
+3. **Enterprise/standards** - hexagonal purity, observability completeness (metrics + port
    coverage), lifecycle/graceful shutdown, integration testing + coverage, CI/CD maturity,
    and where ADRs/`platform.yaml` claim more than the code does.
 

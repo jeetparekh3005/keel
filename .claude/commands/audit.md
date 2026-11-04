@@ -1,5 +1,5 @@
 ---
-description: Session consistency sweep — verify nothing is being dropped
+description: Session consistency sweep - verify nothing is being dropped
 ---
 Read-only audit of project state (run at the start of a session or before a release).
 Report a concise table with `[ok]` / `[gap]` / `[action]` per item; do NOT fix anything yet;

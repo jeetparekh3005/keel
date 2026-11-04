@@ -15,6 +15,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  style:
+    name: No emoji / em-dash
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Scan tracked files for emoji, em/en-dashes, and unicode arrows
+        run: |
+          # The repo is ASCII-punctuation only (golden rule: no emoji, no em-dashes).
+          if git grep -nP '[\x{2013}\x{2014}\x{2015}\x{2190}\x{2192}\x{2600}-\x{27BF}\x{FE0F}\x{1F000}-\x{1FAFF}]' \
+               -- ':!uv.lock' ':!pnpm-lock.yaml'; then
+            echo "::error::Found emoji / em-dash / en-dash / unicode arrow above. Use ASCII (-, ->)."
+            exit 1
+          fi
+          echo "clean: no emoji or em-dashes"
+
   pr-title:
     name: Conventional PR title
     if: github.event_name == 'pull_request'
