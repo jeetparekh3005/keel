@@ -47,7 +47,7 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
 | Area | Claimed in | Status |
 |------|-----------|--------|
 | `api_key` / `mTLS` credential types | platform.yaml auth; ADR-0006 | **Not implemented** — only JWT bearer works |
-| **Remaining supply-chain gates**: trivy image scan, cosign signing + admission, semgrep ruleset | ADR-0010 §5; platform.yaml image.supply_chain | **Partial** — pip-audit/gitleaks/SBOM in CI; trivy/cosign are image-build-time (v0.2 publish pipeline); semgrep deferred |
+| **Remaining supply-chain gates**: trivy image scan, cosign signing + admission | ADR-0010 §5; platform.yaml image.supply_chain | **Partial** — pip-audit/gitleaks/SBOM/**semgrep SAST** in CI; trivy/cosign are image-build-time (v0.2 publish pipeline) |
 | **Keycloak / NATS integration tests** | ADR-0010 | **Not implemented** — Postgres integration is wired; Keycloak/NATS still stub/in-memory |
 | **Kubernetes/Helm** + runtime `securityContext`, NetworkPolicy | ADR-0004/0008 | **Not present** — only docker-compose |
 | Image **digest pinning** | platform.yaml image; ADR-0008 | **Not done** — Dockerfile uses rolling tags (needs Renovate + registry) |
