@@ -1,4 +1,9 @@
-"""HTTP RED-metrics middleware (request count + latency), via OpenTelemetry."""
+"""HTTP server metrics middleware, following OpenTelemetry semantic conventions.
+
+Emits ``http.server.request.duration`` (a histogram, in seconds) with the stable
+semconv attributes. The histogram's own count is the request volume, so no
+separate request counter is needed.
+"""
 
 from __future__ import annotations
 
@@ -10,21 +15,20 @@ from keel_core.adapters.outbound.telemetry import get_meter
 
 
 class MetricsMiddleware:
-    """Records request count and duration per method/route/status (no-op if unconfigured)."""
+    """Records request duration per method/route/status (no-op if unconfigured)."""
 
     def __init__(self, app: ASGIApp, *, meter_name: str = "keel.http") -> None:
-        """Create request/duration instruments from the global meter."""
+        """Create the duration histogram from the global meter."""
         self._app = app
         meter = get_meter(meter_name)
-        self._requests = meter.create_counter(
-            "http.server.requests", unit="1", description="HTTP requests handled"
-        )
         self._duration = meter.create_histogram(
-            "http.server.duration", unit="ms", description="HTTP request duration"
+            "http.server.request.duration",
+            unit="s",
+            description="Duration of inbound HTTP server requests.",
         )
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        """Time the request and record the instruments on completion."""
+        """Time the request and record the histogram on completion."""
         if scope["type"] != "http":
             await self._app(scope, receive, send)
             return
@@ -45,9 +49,9 @@ class MetricsMiddleware:
             route = scope.get("route")
             http_route = getattr(route, "path_format", None) or "__unmatched__"
             attributes: dict[str, str | int] = {
-                "http.method": str(scope.get("method", "")),
+                "http.request.method": str(scope.get("method", "")),
+                "http.response.status_code": status,
                 "http.route": http_route,
-                "http.status_code": status,
             }
-            self._requests.add(1, attributes)
-            self._duration.record((time.perf_counter() - start) * 1000, attributes)
+            # Semconv duration is measured in seconds.
+            self._duration.record(time.perf_counter() - start, attributes)

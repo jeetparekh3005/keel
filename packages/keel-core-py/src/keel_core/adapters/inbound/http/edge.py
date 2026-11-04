@@ -7,12 +7,15 @@ import json
 from starlette.datastructures import Headers, MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-_SECURITY_HEADERS: tuple[tuple[str, str], ...] = (
+# Always safe for a JSON API (no HTML/scripts of our own to allow).
+_BASE_HEADERS: tuple[tuple[str, str], ...] = (
     ("x-content-type-options", "nosniff"),
     ("x-frame-options", "DENY"),
     ("referrer-policy", "no-referrer"),
-    ("strict-transport-security", "max-age=31536000; includeSubDomains"),
+    ("content-security-policy", "default-src 'none'; frame-ancestors 'none'"),
+    ("permissions-policy", "geolocation=(), camera=(), microphone=(), payment=(), usb=()"),
 )
+_HSTS_VALUE = "max-age=31536000; includeSubDomains"
 
 _DEFAULT_MAX_BYTES = 1_048_576  # 1 MiB
 
@@ -34,11 +37,16 @@ class SecurityHeadersMiddleware:
             await self._app(scope, receive, send)
             return
 
+        # HSTS is only meaningful over TLS; emitting it on plaintext is misleading.
+        is_https = scope.get("scheme") == "https"
+
         async def send_wrapper(message: Message) -> None:
             if message["type"] == "http.response.start":
                 headers = MutableHeaders(scope=message)
-                for key, value in _SECURITY_HEADERS:
+                for key, value in _BASE_HEADERS:
                     headers.setdefault(key, value)
+                if is_https:
+                    headers.setdefault("strict-transport-security", _HSTS_VALUE)
             await send(message)
 
         await self._app(scope, receive, send_wrapper)

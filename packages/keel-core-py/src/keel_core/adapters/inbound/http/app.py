@@ -20,6 +20,7 @@ from keel_core.adapters.inbound.http.edge import BodyLimitMiddleware, SecurityHe
 from keel_core.adapters.inbound.http.health import ReadinessCheck, build_health_router
 from keel_core.adapters.inbound.http.metrics import MetricsMiddleware
 from keel_core.adapters.inbound.http.problem import register_exception_handlers
+from keel_core.adapters.inbound.http.ratelimit import RateLimitMiddleware
 from keel_core.adapters.inbound.http.request_id import RequestIdMiddleware
 from keel_core.adapters.inbound.http.security import principal_dependency
 from keel_core.adapters.outbound.logging import StructuredLogger
@@ -62,6 +63,7 @@ def create_app(
     readiness_checks: Sequence[ReadinessCheck] = (),
     max_request_bytes: int = 1_048_576,
     expose_docs: bool = True,
+    rate_limit: tuple[int, float] | None = None,
 ) -> FastAPI:
     """Build a FastAPI app wired with the platform's cross-cutting middleware.
 
@@ -72,6 +74,8 @@ def create_app(
         logger: optional Logger; a StructuredLogger is created if omitted.
         readiness_checks: async callables gating ``/readyz``.
         max_request_bytes: reject requests whose Content-Length exceeds this (413).
+        rate_limit: optional ``(max_requests, window_seconds)`` enabling the per-instance
+            rate-limit middleware (defense-in-depth; the gateway is the primary control).
         expose_docs: serve the OpenAPI schema and Swagger/ReDoc UIs. Keep ``True``
             for local/dev; pass ``False`` in production so the API map is not
             disclosed anonymously (the schema and both doc UIs are disabled).
@@ -98,6 +102,12 @@ def create_app(
     app.add_middleware(RequestIdMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(BodyLimitMiddleware, max_bytes=max_request_bytes)
+    if rate_limit is not None:
+        # Outermost: reject floods before any other work (per-instance defense-in-depth).
+        max_requests, window_seconds = rate_limit
+        app.add_middleware(
+            RateLimitMiddleware, max_requests=max_requests, window_seconds=window_seconds
+        )
     register_exception_handlers(app, log)
     app.include_router(build_health_router(readiness_checks))
     # Authenticator on state powers require_scopes/require_roles; require_principal is
