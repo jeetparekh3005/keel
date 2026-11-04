@@ -22,9 +22,9 @@ import-linter enforces the same layer rules as `keel-core`: the domain imports n
 
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
-| POST | `/items` | required | create an item |
-| GET | `/items/{id}` | required | fetch an item (404 -> problem+json) |
-| GET | `/items` | required | list items |
+| POST | `/v1/items` | required | create an item |
+| GET | `/v1/items/{id}` | required | fetch an item (404 -> problem+json) |
+| GET | `/v1/items` | required | list items |
 | GET | `/healthz` `/readyz` | public | liveness / readiness (DB ping) |
 
 Auth is deny-by-default: the items router is mounted with the `Authenticator` dependency, so no endpoint is reachable without a valid Bearer/API-key credential.

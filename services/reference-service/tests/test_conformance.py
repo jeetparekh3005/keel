@@ -25,5 +25,5 @@ async def test_conforms_readiness(client):
 
 
 async def test_conforms_error_is_problem_json(client):
-    response = await client.get("/items/missing", headers=_AUTH)
+    response = await client.get("/v1/items/missing", headers=_AUTH)
     assert_problem_response(response, status=404)
