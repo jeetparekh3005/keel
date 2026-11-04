@@ -18,9 +18,11 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
 - Distributed **tracing** (OpenTelemetry) with log correlation; gRPC, in-memory MessageBus,
   and a **NATS JetStream** MessageBus adapter (`keel-core[nats]`), all propagating trace context.
 - RFC 9457 problem+json (incl. `invalid-params`); health/readiness endpoints.
-- Edge hardening: security headers (CSP, Permissions-Policy, HSTS over HTTPS), body-size
-  limit, an **opt-in** per-instance `RateLimitMiddleware`, and **default-deny CORS**
-  (explicit allowed origins only). Request rate limiting is primarily a gateway concern
+- Edge hardening: always-on security headers (CSP, nosniff, frame-options DENY,
+  referrer-policy, Permissions-Policy, HSTS over HTTPS) and a body-size limit (header
+  fast-path plus a streaming byte cap, 413); plus opt-in **default-deny CORS** (explicit
+  allowed origins only), an opt-in **trusted-host allow-list**, and an **opt-in**
+  per-instance `RateLimitMiddleware`. Request rate limiting is primarily a gateway concern
   (ADR-0005); the in-app limiter is defense-in-depth.
 - Graceful shutdown: FastAPI lifespan disposes the DB pool, stops the log writer, and
   flushes traces on SIGTERM.
@@ -38,10 +40,10 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   insufficient scope), and a **route-auth conformance check** that fails app startup (and
   a shipped test) if any non-exempt route lacks an auth dependency. JWT verification runs
   off the event loop (threadpool) with a bounded JWKS timeout.
-- **Edge hardening**: security headers (nosniff, frame-options, referrer-policy, HSTS) and
-  a request body-size limit - header fast-path **and** a streaming byte cap (413).
-- **Metrics**: OpenTelemetry `Meter` + HTTP RED middleware, labelled by **route template**
-  (bounded cardinality), request count + latency.
+- **Metrics**: HTTP server metrics (`http.server.request.duration`,
+  `http.server.active_requests`) come from FastAPI's native OpenTelemetry
+  instrumentation, labelled by **route template** (bounded cardinality); plus a DB
+  connection-pool saturation gauge and a dropped-log counter.
 - **Port-coverage conformance check**: every driven port in `platform.yaml` must have a
   registered adapter (fails CI otherwise).
 - **Postgres integration test** (CI service container) + an 85% coverage floor.

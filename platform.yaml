@@ -68,29 +68,33 @@ spec:
       - "5xx responses are logged at error level with trace_id."
 
   # ----------------------------------------------------------------------
-  # HTTP edge security - browser-facing cross-cutting defenses, enforced in
-  # keel-core (not per service). See docs/adr/0006-identity-and-access.md.
+  # HTTP edge security - browser-facing cross-cutting defenses provided by
+  # keel-core. Security headers + body limit are always-on; CORS, the host
+  # allow-list, and the in-app rate limiter are opt-in (a service enables them,
+  # and the gateway is the primary rate-limit control). See ADR-0005, ADR-0006.
   # ----------------------------------------------------------------------
   http:
     cors:
-      policy: deny-by-default         # no Origin is allowed unless explicitly listed
+      policy: deny-by-default         # opt-in: no middleware unless origins are listed
       allow_origins: []               # exact origins only; never a wildcard with credentials
       note: "Cross-origin browser access is closed until a service opts specific origins in."
-    security_headers:                 # emitted on every response by keel-core
+    security_headers:                 # always emitted on every response by keel-core
       emitted:
-        - content-security-policy
+        - content-security-policy     # default-src 'none'; frame-ancestors 'none'
         - x-content-type-options      # nosniff
-        - referrer-policy
-        - x-frame-options             # deny framing
+        - referrer-policy             # no-referrer
+        - x-frame-options             # DENY
+        - permissions-policy          # geolocation/camera/microphone/payment/usb denied
       hsts: tls-only                  # Strict-Transport-Security sent only over HTTPS
-    trusted_hosts: required           # Host/:authority allow-list; unknown hosts rejected
+    trusted_hosts: opt-in             # Host/:authority allow-list; off until a service sets hosts
     rate_limit:
-      default: enabled
-      scope: per-client               # keyed by client identity; XFF-aware behind a trusted proxy
-    body_limit: enabled               # cap request body size to bound memory
+      in_app: opt-in                  # keel-core limiter is off by default (per-client, XFF-aware)
+      primary_control: gateway        # north-south rate limiting lives at the edge (ADR-0005)
+    body_limit: enabled               # always-on: cap request body size to bound memory
     rules:
       - "CORS is deny-by-default; credentials are never combined with a wildcard origin."
-      - "Security headers and the host allow-list are enforced in keel-core, not per service."
+      - "Security headers and the body limit are always-on in keel-core; CORS, the host
+         allow-list, and the in-app rate limiter are opt-in per service."
       - "HSTS is emitted only over HTTPS, including behind a TLS-terminating proxy."
 
   # ----------------------------------------------------------------------
