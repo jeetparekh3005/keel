@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.2.0](https://github.com/jeetparekh3005/keel/compare/v0.1.3...v0.2.0) (2026-11-04)
+
+
+### Features
+
+* **auth:** api_key and mTLS credential types ([#101](https://github.com/jeetparekh3005/keel/issues/101)) ([f8a9fd8](https://github.com/jeetparekh3005/keel/commit/f8a9fd837cc498b9d562ed5a5b008fd8abbab3a5)), closes [#25](https://github.com/jeetparekh3005/keel/issues/25) [#35](https://github.com/jeetparekh3005/keel/issues/35)
+* **platform:** hardened Helm chart for the reference service ([#105](https://github.com/jeetparekh3005/keel/issues/105)) ([1f547f3](https://github.com/jeetparekh3005/keel/commit/1f547f3a9d1a452c51015d8c4d31e4b120966009)), closes [#23](https://github.com/jeetparekh3005/keel/issues/23) [#35](https://github.com/jeetparekh3005/keel/issues/35)
+* **platform:** NATS JetStream MessageBus adapter ([#103](https://github.com/jeetparekh3005/keel/issues/103)) ([670532a](https://github.com/jeetparekh3005/keel/commit/670532a4013c3ac59ecd9b39b30317662ec8c71c)), closes [#26](https://github.com/jeetparekh3005/keel/issues/26) [#35](https://github.com/jeetparekh3005/keel/issues/35)
+* **security:** default-deny CORS policy ([#102](https://github.com/jeetparekh3005/keel/issues/102)) ([3b5c002](https://github.com/jeetparekh3005/keel/commit/3b5c002858f93d37c3dd169fb2edf90e1e05b709)), closes [#33](https://github.com/jeetparekh3005/keel/issues/33) [#35](https://github.com/jeetparekh3005/keel/issues/35)
+* **ts:** Next.js frontend in a Turborepo monorepo ([#107](https://github.com/jeetparekh3005/keel/issues/107)) ([4e8f6cc](https://github.com/jeetparekh3005/keel/commit/4e8f6cce264960aae5e43f5bc9adcecc50fd52b5)), closes [#22](https://github.com/jeetparekh3005/keel/issues/22) [#35](https://github.com/jeetparekh3005/keel/issues/35)
+
+
+### Bug Fixes
+
+* **ci:** publish image from release-please run, not an on:release trigger ([#100](https://github.com/jeetparekh3005/keel/issues/100)) ([93a60eb](https://github.com/jeetparekh3005/keel/commit/93a60ebea14e75275e6809c995db1f75601c50a9)), closes [#24](https://github.com/jeetparekh3005/keel/issues/24)
+
+
+### Documentation
+
+* point ROADMAP v0.1 at v0.1.3 ([#111](https://github.com/jeetparekh3005/keel/issues/111)) ([34fc32c](https://github.com/jeetparekh3005/keel/commit/34fc32c65e795de3ca75d190864439ff33fe4fa9))
+
 ## [0.1.3](https://github.com/jeetparekh3005/keel/compare/v0.1.2...v0.1.3) (2026-11-04)
 
 
