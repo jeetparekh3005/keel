@@ -15,6 +15,21 @@ _SERVICE_ROOT = Path(__file__).resolve().parents[1]
 # structurally (ignoring sqlite type-affinity noise).
 _STRUCTURAL = {"add_table", "remove_table", "add_column", "remove_column"}
 
+# Scope the drift check to this service's own tables: Entity.metadata is a shared
+# declarative base, and other packages' test models (e.g. keel-core's) register
+# their tables on it during a full test run. A real drift on a service table
+# (a new/removed column, or the table itself) is still caught.
+_OWNED_TABLES = {"items"}
+
+
+def _diff_table(diff: tuple) -> str | None:
+    kind = diff[0]
+    if kind in {"add_table", "remove_table"}:
+        return diff[1].name
+    if kind in {"add_column", "remove_column"}:
+        return diff[2]
+    return None
+
 
 def _config(db_path: Path) -> Config:
     cfg = Config()
@@ -56,5 +71,9 @@ def test_no_pending_migration_drift(tmp_path):
             diffs = compare_metadata(context, Entity.metadata)
     finally:
         engine.dispose()
-    structural = [d for d in diffs if isinstance(d, tuple) and d and d[0] in _STRUCTURAL]
+    structural = [
+        d
+        for d in diffs
+        if isinstance(d, tuple) and d and d[0] in _STRUCTURAL and _diff_table(d) in _OWNED_TABLES
+    ]
     assert not structural, f"ORM/migration drift: {structural}"
