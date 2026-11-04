@@ -39,6 +39,16 @@ def test_oversized_body_is_rejected_before_handling():
     assert response.json()["type"] == "urn:keel:error:payload_too_large"
 
 
+def test_rejections_are_correlated_and_carry_security_headers():
+    # The 413 comes from an inner middleware; metrics/request-id/security-headers
+    # wrap it, so the rejection is observable and correlated (not invisible).
+    client = TestClient(_app(max_request_bytes=16))
+    response = client.post("/anything", content=b"x" * 100)
+    assert response.status_code == 413
+    assert "x-request-id" in response.headers
+    assert response.headers["x-content-type-options"] == "nosniff"
+
+
 def test_within_limit_body_passes_the_guard():
     # No such route -> 404, but importantly NOT 413 (the guard let it through).
     client = TestClient(_app(max_request_bytes=1024))

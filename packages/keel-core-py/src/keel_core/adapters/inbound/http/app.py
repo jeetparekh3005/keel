@@ -108,25 +108,30 @@ def create_app(
         )
     # FastAPI/Starlette emit OTel spans natively once a provider is configured
     # (see keel_core.adapters.outbound.telemetry); the logger reads the active span.
-    # Added inner-to-outer: body-limit runs first (rejects before any work).
+    #
+    # add_middleware makes the LAST-added the OUTERMOST. Add inner-to-outer so the
+    # final stack is (outer -> inner): CORS, RequestId, Metrics, SecurityHeaders,
+    # RateLimit, BodyLimit, app. Rejections from RateLimit (429) and BodyLimit (413)
+    # are therefore counted by metrics, correlated by request-id, and carry the
+    # security headers - they are not invisible to observability.
+    app.add_middleware(BodyLimitMiddleware, max_bytes=max_request_bytes)
+    if rate_limit is not None:
+        max_requests, window_seconds = rate_limit
+        app.add_middleware(
+            RateLimitMiddleware, max_requests=max_requests, window_seconds=window_seconds
+        )
+    app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(MetricsMiddleware)
     app.add_middleware(RequestIdMiddleware)
-    app.add_middleware(SecurityHeadersMiddleware)
-    app.add_middleware(BodyLimitMiddleware, max_bytes=max_request_bytes)
     if cors_allow_origins:
-        # Default-deny: only applied when origins are explicitly listed.
+        # Outermost (preflight + headers on every response). Default-deny: only
+        # applied when origins are explicitly listed.
         app.add_middleware(
             CORSMiddleware,
             allow_origins=list(cors_allow_origins),
             allow_credentials=cors_allow_credentials,
             allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
             allow_headers=["authorization", "content-type", "x-api-key"],
-        )
-    if rate_limit is not None:
-        # Outermost: reject floods before any other work (per-instance defense-in-depth).
-        max_requests, window_seconds = rate_limit
-        app.add_middleware(
-            RateLimitMiddleware, max_requests=max_requests, window_seconds=window_seconds
         )
     register_exception_handlers(app, log)
     app.include_router(build_health_router(readiness_checks))
