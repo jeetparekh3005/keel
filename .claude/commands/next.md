@@ -11,7 +11,7 @@ Work exactly ONE item end to end (one at a time):
 4. `/gates`, then `/ship`.
 5. After the PR is green and merged: confirm the issue closed, the board card moved to Done, and
    the parent epic's checklist item ticked.
-6. Report what shipped and what the next item would be. **Stop** — do not start the next item
+6. Report what shipped and what the next item would be. **Stop** - do not start the next item
    without a go.
 
 Optional target issue to work instead of the top one: $ARGUMENTS

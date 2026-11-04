@@ -13,7 +13,9 @@ contract's compatibility is tracked.
 
 ## Decision drivers
 
-- Automated, conventional-commit-driven releases (no manual version bumping).
+- Conventional-commit-driven releases (release-please computes the bump and changelog).
+- **Pre-1.0, the repo version tracks milestones**, not individual features: a whole milestone
+  (many `feat`s) is one minor bump, so the version stays legible against the roadmap (v0.1, v0.2).
 - A clear integration -> release path that matches the branching model (dev -> main).
 - Keep the contract's compatibility story separate from the repo's release version.
 
@@ -27,9 +29,14 @@ contract's compatibility is tracked.
 
 ## Decision outcome
 
-- **Repo SemVer via release-please.** Conventional commits drive the bump (`feat` -> minor,
-  `fix` -> patch, `!`/`BREAKING CHANGE` -> major). Pre-1.0 uses `bump-minor-pre-major`, so breaking
-  changes bump the minor until we reach 1.0.
+- **Repo SemVer via release-please, with a deliberate pre-1.0 milestone lever.** Config sets
+  `bump-minor-pre-major` *and* `bump-patch-for-minor-pre-major`, so pre-1.0 a `feat` bumps a
+  **patch** and only `!`/`BREAKING CHANGE` bumps the minor. This is intentional: individual
+  features accumulate as patches within a milestone, and each **milestone is released as a minor
+  via an explicit `Release-As: 0.N.0` footer** on the `dev` -> `main` integration commit (the one
+  manual lever, applied by `/release`). That keeps the repo version aligned with the roadmap
+  milestone rather than minting a new minor per feature. Post-1.0 this lever is dropped and
+  standard `feat` -> minor automation applies.
 - **Release path = dev -> main.** Work integrates on `dev`; merging `dev` -> `main` brings the
   conventional commits to `main`, where release-please maintains a release PR. Merging that PR
   tags `vX.Y.Z` and updates `CHANGELOG.md` (see `/release`).

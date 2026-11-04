@@ -26,7 +26,7 @@
 
 ### Features
 
-* **ci:** image publish pipeline — build, Trivy scan, GHCR push, keyless cosign + attest ([#97](https://github.com/jeetparekh3005/keel/issues/97)) ([2c34fc6](https://github.com/jeetparekh3005/keel/commit/2c34fc62644faf236ca24f11a1ca4ed6af909d89)), closes [#24](https://github.com/jeetparekh3005/keel/issues/24) [#35](https://github.com/jeetparekh3005/keel/issues/35)
+* **ci:** image publish pipeline - build, Trivy scan, GHCR push, keyless cosign + attest ([#97](https://github.com/jeetparekh3005/keel/issues/97)) ([2c34fc6](https://github.com/jeetparekh3005/keel/commit/2c34fc62644faf236ca24f11a1ca4ed6af909d89)), closes [#24](https://github.com/jeetparekh3005/keel/issues/24) [#35](https://github.com/jeetparekh3005/keel/issues/35)
 
 
 ### Miscellaneous Chores
