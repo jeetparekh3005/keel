@@ -19,8 +19,9 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   factories with trace propagation.
 - RFC 9457 problem+json (incl. `invalid-params`); health/readiness endpoints.
 - Edge hardening: security headers (CSP, Permissions-Policy, HSTS over HTTPS), body-size
-  limit, and an **opt-in** per-instance `RateLimitMiddleware`. Request rate limiting is
-  primarily a gateway concern (ADR-0005); the in-app limiter is defense-in-depth.
+  limit, an **opt-in** per-instance `RateLimitMiddleware`, and **default-deny CORS**
+  (explicit allowed origins only). Request rate limiting is primarily a gateway concern
+  (ADR-0005); the in-app limiter is defense-in-depth.
 - Graceful shutdown: FastAPI lifespan disposes the DB pool, stops the log writer, and
   flushes traces on SIGTERM.
 - Non-blocking app logger (queue writer wired into the request path), `BatchSpanProcessor`
@@ -56,7 +57,6 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
 | **Kubernetes/Helm** + runtime `securityContext`, NetworkPolicy | ADR-0004/0008 | **Not present** — only docker-compose |
 | Base-image **digest pinning** | platform.yaml image; ADR-0008 | **By design, deferred to Renovate** — Chainguard bases are rolling/continuously-rebuilt, so every build is Trivy-scanned instead; static digest pins would freeze stale CVEs. Renovate-managed digests tracked for v0.2 |
 | **gRPC IDL/buf**, **NATS/Kafka/RabbitMQ** broker adapters, mTLS-by-default | platform.yaml interservice; ADR-0012 | **Not implemented** — dev-only factories + in-memory bus. gRPC *application* auth (deny-by-default Bearer interceptor) **is** implemented; mTLS transport is not (#25). |
-| **CORS** policy (per-service) | ADR-0005 | **Not implemented** — security headers + body-limit are done; CORS is per-service config |
 
 This table shrinks as the gaps close. Track B (the v0.1 review remediation) closed authz,
 edge hardening, metrics, graceful shutdown, perf wiring, security CI gates, port-coverage,

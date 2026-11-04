@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
+from starlette.middleware.cors import CORSMiddleware
 
 from keel_core.adapters.inbound.http.conformance import assert_routes_require_auth
 from keel_core.adapters.inbound.http.edge import BodyLimitMiddleware, SecurityHeadersMiddleware
@@ -64,6 +65,8 @@ def create_app(
     max_request_bytes: int = 1_048_576,
     expose_docs: bool = True,
     rate_limit: tuple[int, float] | None = None,
+    cors_allow_origins: Sequence[str] = (),
+    cors_allow_credentials: bool = False,
 ) -> FastAPI:
     """Build a FastAPI app wired with the platform's cross-cutting middleware.
 
@@ -79,7 +82,15 @@ def create_app(
         expose_docs: serve the OpenAPI schema and Swagger/ReDoc UIs. Keep ``True``
             for local/dev; pass ``False`` in production so the API map is not
             disclosed anonymously (the schema and both doc UIs are disabled).
+        cors_allow_origins: explicit allowed origins. **Default-deny**: empty means no
+            CORS middleware, so browsers block all cross-origin requests. Origins must be
+            listed explicitly (no implicit wildcard).
+        cors_allow_credentials: allow credentialed cross-origin requests. Rejected with a
+            wildcard origin (``*``), which the CORS spec forbids with credentials.
     """
+    if "*" in cors_allow_origins and cors_allow_credentials:
+        msg = "CORS: allow_credentials with a wildcard origin '*' is forbidden by the spec"
+        raise ValueError(msg)
     log: Logger = (
         logger if logger is not None else StructuredLogger(service=service, version=version)
     )
@@ -102,6 +113,15 @@ def create_app(
     app.add_middleware(RequestIdMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(BodyLimitMiddleware, max_bytes=max_request_bytes)
+    if cors_allow_origins:
+        # Default-deny: only applied when origins are explicitly listed.
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=list(cors_allow_origins),
+            allow_credentials=cors_allow_credentials,
+            allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+            allow_headers=["authorization", "content-type", "x-api-key"],
+        )
     if rate_limit is not None:
         # Outermost: reject floods before any other work (per-instance defense-in-depth).
         max_requests, window_seconds = rate_limit
