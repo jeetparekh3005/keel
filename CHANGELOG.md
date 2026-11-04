@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.2.1](https://github.com/jeetparekh3005/keel/compare/v0.2.0...v0.2.1) (2026-11-04)
+
+
+### Features
+
+* **auth:** gRPC scope authorization, principal propagation, streaming-safe reject ([#139](https://github.com/jeetparekh3005/keel/issues/139)) ([3c4bd55](https://github.com/jeetparekh3005/keel/commit/3c4bd5526d04274b12adb91ad51bcb5af79c08f6)), closes [#121](https://github.com/jeetparekh3005/keel/issues/121) [#132](https://github.com/jeetparekh3005/keel/issues/132)
+* **platform:** add http edge-security to the contract; bump contractVersion ([#151](https://github.com/jeetparekh3005/keel/issues/151)) ([ab735af](https://github.com/jeetparekh3005/keel/commit/ab735af663801c381f8ea976a385917d0cd53a22)), closes [#130](https://github.com/jeetparekh3005/keel/issues/130) [#132](https://github.com/jeetparekh3005/keel/issues/132)
+
+
+### Bug Fixes
+
+* **ci:** gate image publish on non-PR event (reusable-workflow fix) ([#113](https://github.com/jeetparekh3005/keel/issues/113)) ([cb267f3](https://github.com/jeetparekh3005/keel/commit/cb267f3ef5b70f69bd3dbaa91e5d8f6901efa9ff)), closes [#24](https://github.com/jeetparekh3005/keel/issues/24)
+* **ci:** trace greenlet/thread execution in coverage ([#136](https://github.com/jeetparekh3005/keel/issues/136)) ([fb9ea88](https://github.com/jeetparekh3005/keel/commit/fb9ea886fecfd623fa99156d5d361e622eda5311)), closes [#123](https://github.com/jeetparekh3005/keel/issues/123) [#132](https://github.com/jeetparekh3005/keel/issues/132)
+* **ci:** Trivy-scan the release image before cosign sign ([#135](https://github.com/jeetparekh3005/keel/issues/135)) ([a51fc6e](https://github.com/jeetparekh3005/keel/commit/a51fc6ea600bb1ba2b37fe54649dd31baa7b8df9)), closes [#117](https://github.com/jeetparekh3005/keel/issues/117) [#132](https://github.com/jeetparekh3005/keel/issues/132)
+* **platform:** make the Helm chart deployable and tighten NetworkPolicy ([#133](https://github.com/jeetparekh3005/keel/issues/133)) ([aafec7c](https://github.com/jeetparekh3005/keel/commit/aafec7cd1e85966cb8a1f8a8995423db30cb1894)), closes [#115](https://github.com/jeetparekh3005/keel/issues/115) [#116](https://github.com/jeetparekh3005/keel/issues/116) [#132](https://github.com/jeetparekh3005/keel/issues/132)
+* **python:** durable NATS consumer with correct ack/nak/DLQ handling ([#138](https://github.com/jeetparekh3005/keel/issues/138)) ([8bcbef4](https://github.com/jeetparekh3005/keel/commit/8bcbef46fd221ca44008ca9beb1993e9053e04bf)), closes [#120](https://github.com/jeetparekh3005/keel/issues/120) [#132](https://github.com/jeetparekh3005/keel/issues/132)
+* **python:** order middleware so metrics/request-id wrap rejections ([#147](https://github.com/jeetparekh3005/keel/issues/147)) ([e9cb71c](https://github.com/jeetparekh3005/keel/commit/e9cb71c8f246b726cfd9d7d168073f4eed43df3c)), closes [#126](https://github.com/jeetparekh3005/keel/issues/126) [#132](https://github.com/jeetparekh3005/keel/issues/132)
+* **python:** rate limiter XFF-aware key + LRU-bounded state ([#137](https://github.com/jeetparekh3005/keel/issues/137)) ([3042431](https://github.com/jeetparekh3005/keel/commit/304243117378adfa47f99a063c8dc58faff46412)), closes [#122](https://github.com/jeetparekh3005/keel/issues/122) [#132](https://github.com/jeetparekh3005/keel/issues/132)
+* **security:** honor forwarded headers (HSTS behind proxy) + TrustedHost ([#148](https://github.com/jeetparekh3005/keel/issues/148)) ([b910d4b](https://github.com/jeetparekh3005/keel/commit/b910d4b4058e7095ea21a9ae94bc14b395eb2d61)), closes [#127](https://github.com/jeetparekh3005/keel/issues/127) [#132](https://github.com/jeetparekh3005/keel/issues/132)
+
 ## [0.2.0](https://github.com/jeetparekh3005/keel/compare/v0.1.3...v0.2.0) (2026-11-04)
 
 
