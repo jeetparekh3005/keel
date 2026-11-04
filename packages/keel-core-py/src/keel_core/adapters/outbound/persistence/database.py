@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import (
@@ -34,12 +36,21 @@ class Database:
         """Factory for new async sessions."""
         return self._session_factory
 
-    async def ping(self) -> bool:
-        """Return True if the datasource answers a trivial query (readiness)."""
+    # Timeout is a deliberate param: ping encapsulates the bound and maps a
+    # timeout to "not ready" (the readiness semantic), rather than making every
+    # caller wrap it. ASYNC109 prefers caller-side asyncio.timeout; not here.
+    async def ping(self, *, timeout: float = 5.0) -> bool:  # noqa: ASYNC109
+        """Return True if the datasource answers a trivial query (readiness).
+
+        Bounded by ``timeout`` seconds so ``/readyz`` fails fast instead of
+        hanging when the pool is exhausted or a connection stalls. A timeout,
+        like any driver error, reports *not ready* rather than raising.
+        """
         try:
-            async with self._engine.connect() as connection:
-                await connection.execute(text("SELECT 1"))
-        except SQLAlchemyError:
+            async with asyncio.timeout(timeout):
+                async with self._engine.connect() as connection:
+                    await connection.execute(text("SELECT 1"))
+        except (SQLAlchemyError, TimeoutError):
             return False
         return True
 
