@@ -31,7 +31,7 @@ feat/*  chore/*  fix/*  docs/*        <- short-lived work branches
 | `chore/` | tooling, deps, config, housekeeping |
 | `docs/` | documentation only |
 
-Example: `feat/python-auth-adapter`, `chore/renovate-config`.
+Example: `feat/python-auth-adapter`, `chore/dependabot-config`.
 
 ## Pull-request flow
 

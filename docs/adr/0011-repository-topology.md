@@ -19,7 +19,7 @@
 | Option | Atomic cross-cutting change | Propagation | Ownership isolation | Ceremony |
 |---|---|---|---|---|
 | **Monorepo (uv workspace)** | Yes (one PR) | Instant (local package) | Weaker | Low |
-| Polyrepo + private index | No (version + bump N) | Via release + Renovate | Strong | High |
+| Polyrepo + private index | No (version + bump N) | Via release + Dependabot | Strong | High |
 | Hybrid (core repo + service repos) | Partial | Via release | Strong | Medium |
 
 ## Decision outcome
