@@ -9,7 +9,7 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
 - Hexagonal architecture, enforced by import-linter (keel-core and the reference service).
 - Structured logging: JSON schema, recursive **family-based** key redaction (cookie,
   x-api-key, *_token, client_secret, …) + value scrubbing, reserved-field protection,
-  trace correlation, stdlib bridge, non-blocking queue writer, rate limiting.
+  trace correlation, stdlib bridge, non-blocking queue writer, log rate limiting.
 - OIDC/JWT **authentication**: RS256, `aud`/`iss`/`exp`/`sub` enforced, JWKS.
 - Typed config (pydantic-settings, frozen, fail-fast on type), secrets via `SecretProvider`.
 - Persistence: async SQLAlchemy, `Database` + `UnitOfWork` plumbing, Alembic migrations.
@@ -17,7 +17,10 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   does not ship a generic repository.
 - Distributed **tracing** (OpenTelemetry) with log correlation; gRPC + in-memory MessageBus
   factories with trace propagation.
-- RFC 9457 problem+json; health/readiness endpoints.
+- RFC 9457 problem+json (incl. `invalid-params`); health/readiness endpoints.
+- Edge hardening: security headers (CSP, Permissions-Policy, HSTS over HTTPS), body-size
+  limit, and an **opt-in** per-instance `RateLimitMiddleware`. Request rate limiting is
+  primarily a gateway concern (ADR-0005); the in-app limiter is defense-in-depth.
 - Graceful shutdown: FastAPI lifespan disposes the DB pool, stops the log writer, and
   flushes traces on SIGTERM.
 - Non-blocking app logger (queue writer wired into the request path), `BatchSpanProcessor`

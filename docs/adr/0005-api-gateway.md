@@ -39,6 +39,8 @@ Rejected: **Kong OSS** (the OIDC plugin, our primary need, is enterprise-only); 
 
 The gateway performs **coarse authn only** (validate JWT signature/expiry, look up API keys, run OIDC). Services re-verify and enforce **fine-grained, deny-by-default authz** — see [ADR-0006](0006-identity-and-access.md). Never trust the gateway alone.
 
+**Rate limiting** is a gateway responsibility: it is the single shared point in front of all replicas, so limits are coordinated and consistent. keel-core also ships an **opt-in, per-instance** `RateLimitMiddleware` (token bucket, in-memory) for single-instance deployments and local defense-in-depth; it does not coordinate across replicas and is not a substitute for the gateway.
+
 ### Consequences
 
 - Good: every required auth method is OSS and first-class.
