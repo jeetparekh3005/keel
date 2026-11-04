@@ -1,7 +1,7 @@
 """Authentication + authorization dependencies bound to an Authenticator (ADR-0006).
 
-- `principal_dependency` / `authenticated` — verify the caller (deny-by-default).
-- `require_scopes` / `require_roles` — authorize, raising `Forbidden` (403) on failure.
+- `principal_dependency` / `authenticated` - verify the caller (deny-by-default).
+- `require_scopes` / `require_roles` - authorize, raising `Forbidden` (403) on failure.
 
 The authenticator is read from `app.state.authenticator` (set by `create_app`), so the
 same scope/role dependencies work for any service without re-binding.
@@ -32,11 +32,15 @@ def _mark_auth(dependency: PrincipalDependency) -> PrincipalDependency:
 
 
 def _extract_credential(request: Request) -> str:
-    # Only Bearer JWT today; api_key/mTLS are planned (see docs/STATUS.md).
+    # Bearer JWT or an API key (X-API-Key); the configured Authenticator decides
+    # how to verify whichever credential is presented. mTLS is transport-level.
     authorization = request.headers.get("authorization")
     if authorization and authorization.lower().startswith(_BEARER_PREFIX):
         return authorization[len(_BEARER_PREFIX) :]
-    msg = "missing bearer credential"
+    api_key = request.headers.get("x-api-key")
+    if api_key:
+        return api_key
+    msg = "missing bearer or api-key credential"
     raise Unauthenticated(msg)
 
 

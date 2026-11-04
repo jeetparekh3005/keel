@@ -3,6 +3,12 @@ from opentelemetry.sdk.trace import TracerProvider
 
 from keel_core.adapters.outbound.messaging import InMemoryMessageBus
 from keel_core.ports.messaging import InboundMessage
+from keel_core.testkit.messaging import assert_pubsub_roundtrip
+
+
+async def test_in_memory_bus_satisfies_the_contract():
+    # The same contract the NATS adapter is held to (see test_nats_integration).
+    await assert_pubsub_roundtrip(InMemoryMessageBus())
 
 
 async def test_publish_delivers_to_subscribers():

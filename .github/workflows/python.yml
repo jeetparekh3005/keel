@@ -80,7 +80,32 @@ jobs:
         env:
           KEEL_MIGRATION_URL: postgresql+psycopg://keel:keel@localhost:5432/reference
         run: uv run --directory services/reference-service alembic -c alembic.ini upgrade head
-      - name: Integration tests (real Postgres)
+      - name: Start NATS (JetStream)
+        # A service container can't pass the `-js` arg, so run it as a step.
+        run: |
+          docker run -d --name nats -p 4222:4222 nats:2.10 -js
+          for _ in $(seq 1 30); do
+            (echo > /dev/tcp/127.0.0.1/4222) >/dev/null 2>&1 && break
+            sleep 1
+          done
+      - name: Start Keycloak (import realm)
+        run: |
+          docker run -d --name keycloak -p 8080:8080 \
+            -e KEYCLOAK_ADMIN=admin -e KEYCLOAK_ADMIN_PASSWORD=admin \
+            -v "$PWD/deploy/keycloak/realm.json:/opt/keycloak/data/import/realm.json:ro" \
+            quay.io/keycloak/keycloak:25.0 start-dev --import-realm
+          echo "waiting for the keel realm to be ready..."
+          for _ in $(seq 1 60); do
+            curl -sf http://localhost:8080/realms/keel/.well-known/openid-configuration >/dev/null 2>&1 && break
+            sleep 3
+          done
+      - name: Integration tests (real Postgres + NATS + Keycloak)
         env:
           KEEL_TEST_DATABASE_URL: postgresql+asyncpg://keel:keel@localhost:5432/reference
+          KEEL_NATS_URL: nats://localhost:4222
+          KEEL_KEYCLOAK_URL: http://localhost:8080
+          KEEL_KEYCLOAK_REALM: keel
+          KEEL_KEYCLOAK_CLIENT_ID: keel-api
+          KEEL_KEYCLOAK_CLIENT_SECRET: test-secret
+          KEEL_OIDC_AUDIENCE: keel-api
         run: uv run pytest -m integration

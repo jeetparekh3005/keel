@@ -6,7 +6,7 @@
 
 ## Context and problem statement
 
-Generated services need an edge gateway for TLS termination, routing, rate limiting, and coarse authentication. The gateway must support **API keys, JWT, and OAuth2/OIDC** at enterprise grade, and every one of those must be in the **truly open-source** tier — not behind an enterprise SKU. It must run on Kubernetes and stay swappable.
+Generated services need an edge gateway for TLS termination, routing, rate limiting, and coarse authentication. The gateway must support **API keys, JWT, and OAuth2/OIDC** at enterprise grade, and every one of those must be in the **truly open-source** tier - not behind an enterprise SKU. It must run on Kubernetes and stay swappable.
 
 ## Decision drivers
 
@@ -31,13 +31,13 @@ Chosen option: **Apache APISIX, placed behind the Kubernetes Gateway API.**
 
 - Auth plugins are all OSS: `key-auth`, `jwt-auth`, `openid-connect`, plus `authz-keycloak` and `opa` for fine-grained authorization.
 - Apache Foundation governance; production-proven; nginx/LuaJIT performance; k8s ingress controller.
-- **Gateway API as the interface** makes the implementation swappable — APISIX is the default, not a lock-in.
+- **Gateway API as the interface** makes the implementation swappable - APISIX is the default, not a lock-in.
 
-Rejected: **Kong OSS** (the OIDC plugin, our primary need, is enterprise-only); **Envoy Gateway** (API-key is DIY via `ext_authz`, younger wrapper) — kept as a documented swap; **Traefik** (auth delegated in OSS); **Tyk** (management plane proprietary).
+Rejected: **Kong OSS** (the OIDC plugin, our primary need, is enterprise-only); **Envoy Gateway** (API-key is DIY via `ext_authz`, younger wrapper) - kept as a documented swap; **Traefik** (auth delegated in OSS); **Tyk** (management plane proprietary).
 
 ### Boundary
 
-The gateway performs **coarse authn only** (validate JWT signature/expiry, look up API keys, run OIDC). Services re-verify and enforce **fine-grained, deny-by-default authz** — see [ADR-0006](0006-identity-and-access.md). Never trust the gateway alone.
+The gateway performs **coarse authn only** (validate JWT signature/expiry, look up API keys, run OIDC). Services re-verify and enforce **fine-grained, deny-by-default authz** - see [ADR-0006](0006-identity-and-access.md). Never trust the gateway alone.
 
 **Rate limiting** is a gateway responsibility: it is the single shared point in front of all replicas, so limits are coordinated and consistent. keel-core also ships an **opt-in, per-instance** `RateLimitMiddleware` (token bucket, in-memory) for single-instance deployments and local defense-in-depth; it does not coordinate across replicas and is not a substitute for the gateway.
 

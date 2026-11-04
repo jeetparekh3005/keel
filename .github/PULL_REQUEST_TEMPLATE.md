@@ -12,9 +12,9 @@ Closes #
 
 ## Type of change
 
-- [ ] `feat` — new feature
-- [ ] `fix` — bug fix
-- [ ] `docs` — documentation only
+- [ ] `feat` - new feature
+- [ ] `fix` - bug fix
+- [ ] `docs` - documentation only
 - [ ] `chore` / `ci` / `refactor` / `test`
 - [ ] Breaking change (add `!` to the commit type)
 

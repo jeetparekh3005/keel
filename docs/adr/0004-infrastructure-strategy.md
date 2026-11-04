@@ -10,7 +10,7 @@ Generated services need a consistent, secure path from container to running work
 
 ## Decision drivers
 
-- Portability — avoid lock-in; the same service should run across environments and clouds.
+- Portability - avoid lock-in; the same service should run across environments and clouds.
 - Security and supply-chain integrity by default.
 - Fast inner-loop for developers; production parity when needed.
 - Fits keel's propagation model (versioned, updatable artifacts).
@@ -42,11 +42,11 @@ Generated services need a consistent, secure path from container to running work
 ### Cloud-agnostic
 
 - No cloud-specific managed services in the golden path.
-- **Postgres**: vanilla — any managed Postgres, or in-cluster via an operator (e.g. CloudNativePG). The contract's `Repository` adapter stays provider-neutral.
+- **Postgres**: vanilla - any managed Postgres, or in-cluster via an operator (e.g. CloudNativePG). The contract's `Repository` adapter stays provider-neutral.
 - **Secrets**: `SecretProvider` prod adapter defaults to **OpenBao** (MPL-2.0, OSS fork of Vault), synced into the cluster via the **External Secrets Operator** so any backend (incl. cloud secret managers) can be swapped in later without code change. See [ADR-0007](0007-secrets-and-pki.md).
 - **Infrastructure as Code**: **OpenTofu** (MPL-2.0, OSS fork of Terraform). HashiCorp's BSL-licensed originals (Vault/Terraform) remain documented swaps.
 - **Telemetry**: in-cluster **OpenTelemetry Collector** exporting OTLP to a swappable backend.
-- Cloud-specific adapters (AWS/GCP/Azure secret managers, managed DBs) are added later *behind the existing ports* — they do not change the golden path.
+- Cloud-specific adapters (AWS/GCP/Azure secret managers, managed DBs) are added later *behind the existing ports* - they do not change the golden path.
 
 ### Supply chain
 
@@ -55,13 +55,13 @@ Generated services need a consistent, secure path from container to running work
 
 ### Local development
 
-- **docker-compose** remains the inner-loop (service + Postgres + Keycloak + OTel) for speed — *not* Kubernetes.
+- **docker-compose** remains the inner-loop (service + Postgres + Keycloak + OTel) for speed - *not* Kubernetes.
 - Optional k8s parity via kind/minikube + Tilt/Skaffold for engineers who need it.
 
 ### Guardrails
 
 - The **"simple service"** variant may target a simpler runtime; don't force full k8s complexity onto trivial workloads.
-- Generated manifests stay minimal and readable — no 500-line charts.
+- Generated manifests stay minimal and readable - no 500-line charts.
 
 ### Consequences
 
@@ -74,9 +74,9 @@ Generated services need a consistent, secure path from container to running work
 
 Manifest and IaC hardening is enforced deterministically in CI:
 
-- **kube-linter** + **conftest (OPA policies)** + **kubeconform** — rendered Kubernetes/Helm output must set `runAsNonRoot`, `readOnlyRootFilesystem`, drop all capabilities, declare resource requests/limits, carry a default-deny `NetworkPolicy`, and use digest-pinned images (no `:latest`).
-- **trivy config** / **checkov** — OpenTofu misconfiguration scanning.
-- **helm lint** — chart validity.
+- **kube-linter** + **conftest (OPA policies)** + **kubeconform** - rendered Kubernetes/Helm output must set `runAsNonRoot`, `readOnlyRootFilesystem`, drop all capabilities, declare resource requests/limits, carry a default-deny `NetworkPolicy`, and use digest-pinned images (no `:latest`).
+- **trivy config** / **checkov** - OpenTofu misconfiguration scanning.
+- **helm lint** - chart validity.
 
 Image-level hardening is enforced in [ADR-0008](0008-container-hardening.md).
 

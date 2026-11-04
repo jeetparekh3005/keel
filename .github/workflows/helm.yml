@@ -1,0 +1,40 @@
+name: Helm
+
+# Lint the chart and schema-validate its rendered manifests on any chart change.
+
+on:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - "deploy/charts/**"
+      - ".github/workflows/helm.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: helm-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CHART: deploy/charts/reference-service
+  KUBECONFORM_VERSION: v0.8.0
+
+jobs:
+  validate:
+    name: Helm chart (lint + kubeconform)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
+      - name: helm lint
+        run: helm lint "${CHART}"
+      - name: Install kubeconform
+        run: |
+          curl -fsSLo kubeconform.tar.gz \
+            "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
+          tar xf kubeconform.tar.gz kubeconform
+      - name: Validate rendered manifests
+        run: |
+          helm template rs "${CHART}" \
+            | ./kubeconform -strict -summary -schema-location default

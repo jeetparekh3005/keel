@@ -15,12 +15,13 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
 - Persistence: async SQLAlchemy, `Database` + `UnitOfWork` plumbing, Alembic migrations.
   `Repository` ports are service-defined (one per aggregate, mapping ORM<->domain); keel-core
   does not ship a generic repository.
-- Distributed **tracing** (OpenTelemetry) with log correlation; gRPC + in-memory MessageBus
-  factories with trace propagation.
+- Distributed **tracing** (OpenTelemetry) with log correlation; gRPC, in-memory MessageBus,
+  and a **NATS JetStream** MessageBus adapter (`keel-core[nats]`), all propagating trace context.
 - RFC 9457 problem+json (incl. `invalid-params`); health/readiness endpoints.
 - Edge hardening: security headers (CSP, Permissions-Policy, HSTS over HTTPS), body-size
-  limit, and an **opt-in** per-instance `RateLimitMiddleware`. Request rate limiting is
-  primarily a gateway concern (ADR-0005); the in-app limiter is defense-in-depth.
+  limit, an **opt-in** per-instance `RateLimitMiddleware`, and **default-deny CORS**
+  (explicit allowed origins only). Request rate limiting is primarily a gateway concern
+  (ADR-0005); the in-app limiter is defense-in-depth.
 - Graceful shutdown: FastAPI lifespan disposes the DB pool, stops the log writer, and
   flushes traces on SIGTERM.
 - Non-blocking app logger (queue writer wired into the request path), `BatchSpanProcessor`
@@ -38,25 +39,26 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   a shipped test) if any non-exempt route lacks an auth dependency. JWT verification runs
   off the event loop (threadpool) with a bounded JWKS timeout.
 - **Edge hardening**: security headers (nosniff, frame-options, referrer-policy, HSTS) and
-  a request body-size limit — header fast-path **and** a streaming byte cap (413).
+  a request body-size limit - header fast-path **and** a streaming byte cap (413).
 - **Metrics**: OpenTelemetry `Meter` + HTTP RED middleware, labelled by **route template**
   (bounded cardinality), request count + latency.
 - **Port-coverage conformance check**: every driven port in `platform.yaml` must have a
   registered adapter (fails CI otherwise).
 - **Postgres integration test** (CI service container) + an 85% coverage floor.
 - gRPC is an opt-in extra (`keel-core[grpc]`), not a core dependency of every service.
+- Frontend workspace (v0.2): a Next.js (App Router, TypeScript) app at `apps/web`, managed
+  by pnpm + Turborepo, with its own CI lane (lint/typecheck/build). See ADR-0016.
 
-## Planned — described in the contract/ADRs but NOT yet implemented
+## Planned - described in the contract/ADRs but NOT yet implemented
 
 | Area | Claimed in | Status |
 |------|-----------|--------|
-| `api_key` / `mTLS` credential types | platform.yaml auth; ADR-0006 | **Not implemented** — only JWT bearer works |
-| Kubernetes **admission** policy (verify signatures at deploy) | ADR-0010 §5 | **Not implemented** — needs the k8s layer (v0.2) |
-| **Keycloak / NATS integration tests** | ADR-0010 | **Not implemented** — Postgres integration is wired; Keycloak/NATS still stub/in-memory |
-| **Kubernetes/Helm** + runtime `securityContext`, NetworkPolicy | ADR-0004/0008 | **Not present** — only docker-compose |
-| Base-image **digest pinning** | platform.yaml image; ADR-0008 | **By design, deferred to Renovate** — Chainguard bases are rolling/continuously-rebuilt, so every build is Trivy-scanned instead; static digest pins would freeze stale CVEs. Renovate-managed digests tracked for v0.2 |
-| **gRPC IDL/buf**, **NATS/Kafka/RabbitMQ** broker adapters, mTLS-by-default | platform.yaml interservice; ADR-0012 | **Not implemented** — dev-only factories + in-memory bus. gRPC *application* auth (deny-by-default Bearer interceptor) **is** implemented; mTLS transport is not (#25). |
-| **CORS** policy (per-service) | ADR-0005 | **Not implemented** — security headers + body-limit are done; CORS is per-service config |
+| `api_key` / `mTLS` credential types | platform.yaml auth; ADR-0006 | **Implemented** - `ApiKeyAuthenticator` (hashed keys, X-API-Key over HTTP) and gRPC mTLS credential builders (`mtls_channel_credentials`/`mtls_server_credentials`). Certs are provisioned per-deployment (OpenBao PKI, ADR-0007) |
+| Kubernetes **admission** policy (verify signatures at deploy) | ADR-0010 §5 | **Not implemented** - cosign verification at admission (Kyverno/policy-controller) is a future milestone; images are signed + attested today |
+| **Keycloak / NATS integration tests** | ADR-0010 | **Implemented** - CI integration job runs Postgres, a NATS JetStream container (MessageBus roundtrip), and Keycloak with an imported realm (OIDC authenticate against a real JWKS via client_credentials) |
+| **Kubernetes/Helm** + runtime `securityContext`, NetworkPolicy | ADR-0004/0008 | **Implemented** - Helm chart at `deploy/charts/reference-service` (non-root, read-only rootfs, drop-all caps, seccomp RuntimeDefault, no SA token, default-deny NetworkPolicy, liveness/readiness probes); lint + kubeconform in CI |
+| Base-image **digest pinning** | platform.yaml image; ADR-0008 | **By design, deferred to Renovate** - Chainguard bases are rolling/continuously-rebuilt, so every build is Trivy-scanned instead; static digest pins would freeze stale CVEs. Renovate-managed digests tracked for v0.2 |
+| **gRPC IDL/buf**, **Kafka/RabbitMQ** broker adapters | platform.yaml interservice; ADR-0012 | **Partial.** NATS JetStream adapter (`keel-core[nats]`) implemented with trace propagation, held to a shared MessageBus contract; Kafka/RabbitMQ and buf/protobuf IDL still planned. gRPC application auth (deny-by-default) and mTLS credentials are implemented. |
 
 This table shrinks as the gaps close. Track B (the v0.1 review remediation) closed authz,
 edge hardening, metrics, graceful shutdown, perf wiring, security CI gates, port-coverage,

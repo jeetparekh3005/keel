@@ -1,4 +1,4 @@
-# keel — working agreement
+# keel - working agreement
 
 Polyglot golden-path bootstrapper. v0.1 vertical = **Python**: a shared library
 (`packages/keel-core-py`) + a thin reference service (`services/reference-service`),
@@ -22,7 +22,7 @@ the contract in `platform.yaml`.
   so self-merge is fine once checks are green.
 - Push uses the gh credential helper: `git -c credential.helper= -c credential.helper='!gh auth git-credential' push`.
 
-## Gates (the full local suite — see `/gates`)
+## Gates (the full local suite - see `/gates`)
 ```
 uv sync --frozen --all-packages
 uv run ruff check . && uv run ruff format --check .
@@ -53,6 +53,7 @@ Integration tests need `KEEL_TEST_DATABASE_URL` (Postgres); they skip otherwise 
 ## Pointers (read on demand, not auto-loaded)
 - Architecture decisions: `docs/adr/` · Contract: `platform.yaml` · Status: `docs/STATUS.md`
 - Branching/PR detail: `CONTRIBUTING.md` · Core library: `packages/keel-core-py/README.md`
+- Frontend (pnpm + Turborepo, Next.js): `apps/web/` · gate: `pnpm lint && pnpm typecheck && pnpm build`
 
 ## Commands
 Start a session with **`/audit`** (consistency sweep: drift, open PRs/issues, release due, docs/ADR gaps).
