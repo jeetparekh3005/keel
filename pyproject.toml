@@ -120,7 +120,8 @@ markers = [
 
 [tool.coverage.run]
 branch = true
-omit = ["*/main.py"]  # production entrypoint: runs real OIDC/OTLP, exercised in deploy
+# main.py wiring is tested (see test_main.py); only serve()/entrypoint + the
+# live-OTLP branch carry `# pragma: no cover`.
 
 [tool.coverage.report]
 fail_under = 85

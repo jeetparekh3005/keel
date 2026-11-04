@@ -33,7 +33,7 @@ def create_application() -> FastAPI:
 
     exporter = None
     metric_reader = None
-    if config.otlp_endpoint:
+    if config.otlp_endpoint:  # pragma: no cover - requires a live OTLP collector
         from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
         from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
         from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
@@ -67,10 +67,10 @@ def create_application() -> FastAPI:
 app = create_application()
 
 
-def serve() -> None:
+def serve() -> None:  # pragma: no cover - process entrypoint
     """Run the service with uvicorn (container entrypoint)."""
     uvicorn.run(app, host="0.0.0.0", port=8000)  # noqa: S104  # bind all in container
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     serve()
