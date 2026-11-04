@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.1.2](https://github.com/jeetparekh3005/keel/compare/v0.1.1...v0.1.2) (2026-11-04)
+
+
+### Features
+
+* **python:** add saturation signals (DB pool gauge, dropped-log counter) ([#86](https://github.com/jeetparekh3005/keel/issues/86)) ([806f55f](https://github.com/jeetparekh3005/keel/commit/806f55fe9879b4a5d3edac11a96be7e16a5a4fb8)), closes [#67](https://github.com/jeetparekh3005/keel/issues/67) [#73](https://github.com/jeetparekh3005/keel/issues/73)
+* **python:** API maturity — invalid-params, versioning, list envelope, Location ([#88](https://github.com/jeetparekh3005/keel/issues/88)) ([d854ecb](https://github.com/jeetparekh3005/keel/commit/d854ecbb3340d28bde62ad182a50d4653ed9166c)), closes [#69](https://github.com/jeetparekh3005/keel/issues/69) [#73](https://github.com/jeetparekh3005/keel/issues/73)
+* **security:** opt-in per-instance request rate limiting ([#90](https://github.com/jeetparekh3005/keel/issues/90)) ([0cfdaaa](https://github.com/jeetparekh3005/keel/commit/0cfdaaa6d987804271c0eec1a1b8ebed6f1333df)), closes [#71](https://github.com/jeetparekh3005/keel/issues/71) [#73](https://github.com/jeetparekh3005/keel/issues/73)
+
+
+### Bug Fixes
+
+* **python:** align HTTP metrics with OpenTelemetry semantic conventions ([#85](https://github.com/jeetparekh3005/keel/issues/85)) ([4f38e4a](https://github.com/jeetparekh3005/keel/commit/4f38e4a73afbb31108631aa59e92df0bbddc8ed9)), closes [#66](https://github.com/jeetparekh3005/keel/issues/66) [#73](https://github.com/jeetparekh3005/keel/issues/73)
+* **security:** env-gate insecure transports; add CSP/Permissions-Policy; conditional HSTS ([#89](https://github.com/jeetparekh3005/keel/issues/89)) ([049cd35](https://github.com/jeetparekh3005/keel/commit/049cd352e9223f0791c4869b800ea16855bb4139)), closes [#70](https://github.com/jeetparekh3005/keel/issues/70) [#73](https://github.com/jeetparekh3005/keel/issues/73)
+
+
+### Miscellaneous Chores
+
+* release v0.1.2 (dev to main) ([#92](https://github.com/jeetparekh3005/keel/issues/92)) ([954e53d](https://github.com/jeetparekh3005/keel/commit/954e53db9f012fe5d234897c74fc7adf503158cb))
+
 ## [0.1.1](https://github.com/jeetparekh3005/keel/compare/v0.1.0...v0.1.1) (2026-11-04)
 
 
