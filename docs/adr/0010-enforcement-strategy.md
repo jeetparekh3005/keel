@@ -67,7 +67,7 @@ High-signal packs tied to the contract: `T20` (ban `print` -> use the logger), `
 - Manifest/IaC hardening (kube-linter, conftest, trivy config) - [ADR-0004](0004-infrastructure-strategy.md)
 - Deny-by-default auth (semgrep) - [ADR-0006](0006-identity-and-access.md)
 - Secrets via ports, gitleaks - [ADR-0007](0007-secrets-and-pki.md)
-- Image hardening (hadolint, trivy, cosign) - [ADR-0008](0008-container-hardening.md)
+- Image hardening (trivy, cosign) - [ADR-0008](0008-container-hardening.md)
 - proto/OpenAPI/AsyncAPI contracts (buf, spectral) - [ADR-0012](0012-inter-service-communication.md)
 
 ### Cross-cutting tooling

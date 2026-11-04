@@ -30,7 +30,7 @@ Generated images must be hardened so that a compromised container yields almost 
 
 ### Base image & build
 
-- `cgr.dev/chainguard/python` (shell-less, non-root, typically zero-CVE), pinned by **digest**, bumped by Renovate.
+- `cgr.dev/chainguard/python` (shell-less, non-root, typically zero-CVE) on a **rolling tag**, Trivy-scanned on every build. We deliberately do not digest-pin the base: Chainguard rebuilds continuously, so a static pin would freeze stale CVEs; the published image is instead cosign-signed and attested by its built digest.
 - Multi-stage: toolchain only in the builder; runtime copies the venv + app.
 - Swappable to distroless or UBI Micro behind the same build contract.
 
@@ -59,13 +59,13 @@ Generated images must be hardened so that a compromised container yields almost 
 > **Implementation status:** the Dockerfile (multi-stage, Chainguard, non-root, bytecode-only)
 > and the **Helm chart `securityContext` + default-deny NetworkPolicy** are in place
 > (`deploy/charts/reference-service`), and release images are **Trivy-scanned, cosign-signed, and
-> SLSA/SBOM-attested**. Base-image **digest pinning** stays Renovate-managed (rolling Chainguard
-> bases are scanned every build); cluster-side **admission** verification is a future milestone.
-> See [docs/STATUS.md](../STATUS.md).
+> SLSA/SBOM-attested**. Base images stay on **rolling Chainguard tags, scanned every build**
+> (a deliberate no-digest-pin trade-off, above); cluster-side **admission** verification is a
+> future milestone. See [docs/STATUS.md](../STATUS.md).
 
 ## Enforcement
 
-- **hadolint:** Dockerfiles must be non-root, use a digest-pinned base, avoid `:latest`, and leave no package-manager cruft.
+- **hadolint** (recommended for generated services, not yet wired in CI): Dockerfiles should be non-root and leave no package-manager cruft. Note the reference image deliberately uses a rolling Chainguard tag (scanned every build), so a blanket avoid-`:latest` rule does not apply here.
 - **trivy:** image CVE scan with a severity gate; a **CycloneDX SBOM** must be produced.
 - **cosign verify** in CI plus an admission policy (Kyverno / sigstore policy-controller) so only signed, verified images run.
 - Runtime `securityContext` is enforced at the manifest level - see [ADR-0004](0004-infrastructure-strategy.md).

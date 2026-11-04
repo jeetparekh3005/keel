@@ -39,7 +39,7 @@ Reusable CI workflows (`uses: org/keel/...@v1`) and a base Helm chart the servic
 
 | If it is… | …it lives in | …and updates via |
 |---|---|---|
-| Same for every service, fix-once-propagate | **Tier 1 library** | version bump (Renovate) |
+| Same for every service, fix-once-propagate | **Tier 1 library** | version bump (Dependabot) |
 | Structure/boilerplate a team customizes | **Tier 2 template** | `keel update` diff |
 | Cross-cutting, non-code | **Tier 3 workflow/chart** | tag/chart version |
 
