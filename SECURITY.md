@@ -8,7 +8,7 @@ Instead, report privately via [GitHub Security Advisories](https://github.com/je
 
 > **Maintainership note.** keel is currently maintained by a single person (bus
 > factor 1). Response times reflect that; a second maintainer and a documented
-> escalation path are tracked for a future milestone. Report anyway — advisories
+> escalation path are tracked for a future milestone. Report anyway - advisories
 > and the email above are monitored.
 
 ## Scope
@@ -17,10 +17,10 @@ keel generates project scaffolds with security controls baked in. Security-relev
 
 - Generated **auth** adapters and access-control defaults
 - **Secret handling** (keel never commits secrets; generated projects use secret-provider ports)
-- **Supply chain** — dependency pinning, SBOM generation, and image provenance in generated CI
+- **Supply chain** - dependency pinning, SBOM generation, and image provenance in generated CI
 - **SAST / dependency scanning** defaults (bandit, pip-audit, gitleaks, semgrep, trivy)
 
-If you find a scaffold that produces insecure defaults, that is a security issue — please report it.
+If you find a scaffold that produces insecure defaults, that is a security issue - please report it.
 
 ## Supported versions
 
@@ -30,7 +30,7 @@ During early development (`0.x`), only the latest release is supported.
 
 Releases are cut by [release-please](https://github.com/googleapis/release-please)
 and tagged `vX.Y.Z`. **Signed tags and build provenance (SLSA attestation) are not
-yet in place** — tags are created by the release automation, not GPG-signed by a
+yet in place** - tags are created by the release automation, not GPG-signed by a
 maintainer key. Cryptographic signing (cosign) and provenance attestation are
 planned alongside the image publish pipeline (see ADR-0008 and the v0.2 roadmap).
 Until then, verify releases by commit SHA against this repository.

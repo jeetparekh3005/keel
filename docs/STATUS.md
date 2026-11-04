@@ -39,7 +39,7 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   a shipped test) if any non-exempt route lacks an auth dependency. JWT verification runs
   off the event loop (threadpool) with a bounded JWKS timeout.
 - **Edge hardening**: security headers (nosniff, frame-options, referrer-policy, HSTS) and
-  a request body-size limit — header fast-path **and** a streaming byte cap (413).
+  a request body-size limit - header fast-path **and** a streaming byte cap (413).
 - **Metrics**: OpenTelemetry `Meter` + HTTP RED middleware, labelled by **route template**
   (bounded cardinality), request count + latency.
 - **Port-coverage conformance check**: every driven port in `platform.yaml` must have a
@@ -47,15 +47,15 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
 - **Postgres integration test** (CI service container) + an 85% coverage floor.
 - gRPC is an opt-in extra (`keel-core[grpc]`), not a core dependency of every service.
 
-## Planned — described in the contract/ADRs but NOT yet implemented
+## Planned - described in the contract/ADRs but NOT yet implemented
 
 | Area | Claimed in | Status |
 |------|-----------|--------|
-| `api_key` / `mTLS` credential types | platform.yaml auth; ADR-0006 | **Implemented** — `ApiKeyAuthenticator` (hashed keys, X-API-Key over HTTP) and gRPC mTLS credential builders (`mtls_channel_credentials`/`mtls_server_credentials`). Certs are provisioned per-deployment (OpenBao PKI, ADR-0007) |
-| Kubernetes **admission** policy (verify signatures at deploy) | ADR-0010 §5 | **Not implemented** — needs the k8s layer (v0.2) |
-| **Keycloak / NATS integration tests** | ADR-0010 | **Not implemented** — Postgres integration is wired; Keycloak/NATS still stub/in-memory |
-| **Kubernetes/Helm** + runtime `securityContext`, NetworkPolicy | ADR-0004/0008 | **Not present** — only docker-compose |
-| Base-image **digest pinning** | platform.yaml image; ADR-0008 | **By design, deferred to Renovate** — Chainguard bases are rolling/continuously-rebuilt, so every build is Trivy-scanned instead; static digest pins would freeze stale CVEs. Renovate-managed digests tracked for v0.2 |
+| `api_key` / `mTLS` credential types | platform.yaml auth; ADR-0006 | **Implemented** - `ApiKeyAuthenticator` (hashed keys, X-API-Key over HTTP) and gRPC mTLS credential builders (`mtls_channel_credentials`/`mtls_server_credentials`). Certs are provisioned per-deployment (OpenBao PKI, ADR-0007) |
+| Kubernetes **admission** policy (verify signatures at deploy) | ADR-0010 §5 | **Not implemented** - needs the k8s layer (v0.2) |
+| **Keycloak / NATS integration tests** | ADR-0010 | **Not implemented** - Postgres integration is wired; Keycloak/NATS still stub/in-memory |
+| **Kubernetes/Helm** + runtime `securityContext`, NetworkPolicy | ADR-0004/0008 | **Not present** - only docker-compose |
+| Base-image **digest pinning** | platform.yaml image; ADR-0008 | **By design, deferred to Renovate** - Chainguard bases are rolling/continuously-rebuilt, so every build is Trivy-scanned instead; static digest pins would freeze stale CVEs. Renovate-managed digests tracked for v0.2 |
 | **gRPC IDL/buf**, **Kafka/RabbitMQ** broker adapters | platform.yaml interservice; ADR-0012 | **Partial.** NATS JetStream adapter (`keel-core[nats]`) implemented with trace propagation, held to a shared MessageBus contract; Kafka/RabbitMQ and buf/protobuf IDL still planned. gRPC application auth (deny-by-default) and mTLS credentials are implemented. |
 
 This table shrinks as the gaps close. Track B (the v0.1 review remediation) closed authz,

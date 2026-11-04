@@ -2,7 +2,7 @@
 
 A thin FastAPI service built on [`keel-core`](../../packages/keel-core-py/). It exists to **prove the platform contract**: everything cross-cutting (app factory, auth, problem+json, health, logging, tracing, persistence plumbing) comes from `keel-core`, so this service is almost entirely domain code.
 
-## Layout (hexagonal — [ADR-0002](../../docs/adr/0002-hexagonal-architecture.md))
+## Layout (hexagonal - [ADR-0002](../../docs/adr/0002-hexagonal-architecture.md))
 
 ```
 reference_service/
@@ -49,4 +49,4 @@ alembic -c alembic.ini upgrade head
 
 ## Tests
 
-Run the composed app in-process over `httpx.ASGITransport` with SQLite + a stub authenticator — no external services needed. Conformance tests reuse `keel_core.testkit.contract`; a migration test applies Alembic to a temp SQLite DB. The `platform.yaml` contract is validated against its JSON Schema in `keel-core`.
+Run the composed app in-process over `httpx.ASGITransport` with SQLite + a stub authenticator - no external services needed. Conformance tests reuse `keel_core.testkit.contract`; a migration test applies Alembic to a temp SQLite DB. The `platform.yaml` contract is validated against its JSON Schema in `keel-core`.

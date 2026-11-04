@@ -8,7 +8,7 @@
 
 Generated images must be hardened so that a compromised container yields almost nothing and no tooling to pivot with, and so application source is not readable from the image. A requirement was raised to make code extraction impossible.
 
-**Reality check (threat model):** an OCI image is a tarball of layers; anyone who holds the image (`docker save`, `skopeo`) or a running container (`kubectl cp`, debug sidecar) can read whatever the app process reads. Extraction cannot be made *impossible* for a distributed artifact — Python `.pyc` even decompiles to near-original source. The achievable goal is therefore: minimize attack surface, remove readable source, and make **access to the image itself** the real control.
+**Reality check (threat model):** an OCI image is a tarball of layers; anyone who holds the image (`docker save`, `skopeo`) or a running container (`kubectl cp`, debug sidecar) can read whatever the app process reads. Extraction cannot be made *impossible* for a distributed artifact - Python `.pyc` even decompiles to near-original source. The achievable goal is therefore: minimize attack surface, remove readable source, and make **access to the image itself** the real control.
 
 ## Decision drivers
 
@@ -36,8 +36,8 @@ Generated images must be hardened so that a compromised container yields almost 
 
 ### Code protection (two variants)
 
-- **Default — bytecode-only:** `python -m compileall -b` then delete `.py`; ship only `.pyc`. No plaintext source; decompilable with effort.
-- **Hardened — native compile:** a build flag compiles the service with **Nuitka** to a native binary; source recovery is genuinely hard. Costs: slower builds, library-compat testing, harder debugging. Opt-in per service.
+- **Default - bytecode-only:** `python -m compileall -b` then delete `.py`; ship only `.pyc`. No plaintext source; decompilable with effort.
+- **Hardened - native compile:** a build flag compiles the service with **Nuitka** to a native binary; source recovery is genuinely hard. Costs: slower builds, library-compat testing, harder debugging. Opt-in per service.
 
 ### Runtime hardening (Helm chart `securityContext`)
 
@@ -58,7 +58,7 @@ Generated images must be hardened so that a compromised container yields almost 
 
 > **Implementation status (v0.1):** the Dockerfile (multi-stage, Chainguard, non-root,
 > bytecode-only) exists, but **digest pinning and the Kubernetes `securityContext`/
-> NetworkPolicy manifests are not yet present** (no Helm/k8s in the repo) — see
+> NetworkPolicy manifests are not yet present** (no Helm/k8s in the repo) - see
 > [docs/STATUS.md](../STATUS.md). Runtime hardening is specified, not yet enforced.
 
 ## Enforcement
@@ -66,7 +66,7 @@ Generated images must be hardened so that a compromised container yields almost 
 - **hadolint:** Dockerfiles must be non-root, use a digest-pinned base, avoid `:latest`, and leave no package-manager cruft.
 - **trivy:** image CVE scan with a severity gate; a **CycloneDX SBOM** must be produced.
 - **cosign verify** in CI plus an admission policy (Kyverno / sigstore policy-controller) so only signed, verified images run.
-- Runtime `securityContext` is enforced at the manifest level — see [ADR-0004](0004-infrastructure-strategy.md).
+- Runtime `securityContext` is enforced at the manifest level - see [ADR-0004](0004-infrastructure-strategy.md).
 
 ## More information
 

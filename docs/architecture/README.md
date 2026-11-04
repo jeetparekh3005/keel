@@ -1,6 +1,6 @@
 # keel architecture (arc42)
 
-This is the arc42 skeleton for keel itself. Sections are **tiered**: the mandatory core is filled first; the rest are stubbed and filled when relevant (arc42's failure mode is empty ceremony — tiering avoids it).
+This is the arc42 skeleton for keel itself. Sections are **tiered**: the mandatory core is filled first; the rest are stubbed and filled when relevant (arc42's failure mode is empty ceremony - tiering avoids it).
 
 > The cross-language **contract** that every generated vertical implements will live in `platform.yaml` at the repo root, and is described in §5 and §8 once defined.
 
@@ -29,4 +29,4 @@ This is the arc42 skeleton for keel itself. Sections are **tiered**: the mandato
 
 ## Decisions
 
-Architecture decisions are **not** written here — they are [ADRs](../adr/) in MADR format, indexed from §9.
+Architecture decisions are **not** written here - they are [ADRs](../adr/) in MADR format, indexed from §9.

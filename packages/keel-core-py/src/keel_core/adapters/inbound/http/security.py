@@ -1,7 +1,7 @@
 """Authentication + authorization dependencies bound to an Authenticator (ADR-0006).
 
-- `principal_dependency` / `authenticated` — verify the caller (deny-by-default).
-- `require_scopes` / `require_roles` — authorize, raising `Forbidden` (403) on failure.
+- `principal_dependency` / `authenticated` - verify the caller (deny-by-default).
+- `require_scopes` / `require_roles` - authorize, raising `Forbidden` (403) on failure.
 
 The authenticator is read from `app.state.authenticator` (set by `create_app`), so the
 same scope/role dependencies work for any service without re-binding.

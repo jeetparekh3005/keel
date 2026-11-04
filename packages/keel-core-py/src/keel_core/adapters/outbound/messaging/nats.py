@@ -37,7 +37,7 @@ class NatsMessageBus:
         try:
             await self._js.add_stream(name=self._stream, subjects=self._subjects)
         except BadRequestError:
-            # Stream already exists (possibly with the same config) — reconcile subjects.
+            # Stream already exists (possibly with the same config) - reconcile subjects.
             await self._js.update_stream(name=self._stream, subjects=self._subjects)
 
     async def publish(

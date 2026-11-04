@@ -24,7 +24,7 @@ table scoring candidates on shared dimensions:
 | **A**  | …           | …           | …       |
 
 For a PRINCIPLE/PATTERN decision (architecture style, convention), a table is
-false precision — list the options and give prose pros/cons instead.
+false precision - list the options and give prose pros/cons instead.
 -->
 
 - Option A

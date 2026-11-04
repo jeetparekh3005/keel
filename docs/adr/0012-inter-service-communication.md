@@ -6,12 +6,12 @@
 
 ## Context and problem statement
 
-Services need to talk to each other across languages without creating a distributed monolith. We must choose the synchronous transport, the asynchronous messaging story, and the principle that governs when to use which — consistent with hexagonal (transport is an adapter) and the cloud-agnostic OSS posture.
+Services need to talk to each other across languages without creating a distributed monolith. We must choose the synchronous transport, the asynchronous messaging story, and the principle that governs when to use which - consistent with hexagonal (transport is an adapter) and the cloud-agnostic OSS posture.
 
 ## Decision drivers
 
 - Polyglot typed contracts (clients/servers for all five languages).
-- Decoupling and resilience — avoid synchronous call chains that cascade failures.
+- Decoupling and resilience - avoid synchronous call chains that cascade failures.
 - Cloud-agnostic, OSS, and swappable behind ports.
 
 ## Considered options
@@ -39,19 +39,19 @@ Services need to talk to each other across languages without creating a distribu
 
 1. **Prefer async events** for cross-service side-effects ("something happened").
 2. Use **sync gRPC only** when the caller needs an immediate response.
-3. **Never** expose gRPC at the browser edge — the edge is REST/OpenAPI via APISIX.
+3. **Never** expose gRPC at the browser edge - the edge is REST/OpenAPI via APISIX.
 
-### Synchronous — gRPC
+### Synchronous - gRPC
 
 - protobuf IDL; **buf** for linting, breaking-change detection, and codegen in CI.
 - Hexagonal: a gRPC server is a driving adapter (`GrpcApi`); a client to another service is a driven adapter (`ServiceClient`). The domain never depends on gRPC.
-- **mTLS via OpenBao PKI** ([ADR-0007](0007-secrets-and-pki.md)) — which is why a full service mesh is not needed yet.
+- **mTLS via OpenBao PKI** ([ADR-0007](0007-secrets-and-pki.md)) - which is why a full service mesh is not needed yet.
 
-### Asynchronous — `MessageBus` port
+### Asynchronous - `MessageBus` port
 
 - One port (publish + subscribe); `MessagePublisher` (driven) and `MessageConsumer` (driving).
 - **NATS JetStream** implemented first (lightweight, CNCF, k8s-native, OSS, cloud-agnostic).
-- **Kafka** and **RabbitMQ** adapters slot behind the same port — the port is designed for all three from day one (stream vs queue semantics abstracted).
+- **Kafka** and **RabbitMQ** adapters slot behind the same port - the port is designed for all three from day one (stream vs queue semantics abstracted).
 - Event schemas use **AsyncAPI** as a versioned contract artifact, with the same backward-compat discipline as protobuf.
 
 ### Consequences
@@ -63,7 +63,7 @@ Services need to talk to each other across languages without creating a distribu
 
 > **Implementation status (v0.1):** OTel-instrumented gRPC client/server factories and an
 > in-memory `MessageBus` exist. **No protobuf IDL/buf setup, no NATS/Kafka/RabbitMQ broker
-> adapter, and no mTLS-by-default** are implemented yet — see [docs/STATUS.md](../STATUS.md).
+> adapter, and no mTLS-by-default** are implemented yet - see [docs/STATUS.md](../STATUS.md).
 > The async story is dev-only until a broker adapter lands.
 
 ## Enforcement

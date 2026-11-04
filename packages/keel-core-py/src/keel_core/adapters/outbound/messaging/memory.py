@@ -2,7 +2,7 @@
 
 Dispatches synchronously to subscribers in-process. Trace context is injected
 into message headers on publish and re-attached around each handler, so handler
-spans and logs correlate to the publisher's trace — the same way a real broker
+spans and logs correlate to the publisher's trace - the same way a real broker
 adapter (NATS/Kafka/RabbitMQ) must behave.
 """
 

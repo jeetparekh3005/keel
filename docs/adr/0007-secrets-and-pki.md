@@ -6,11 +6,11 @@
 
 ## Context and problem statement
 
-Services must obtain secrets (DB credentials, API keys, signing keys) and, for mTLS, certificates — without secrets living in source, config, or logs, and without long-lived static credentials. The solution must be open-source and cloud-agnostic.
+Services must obtain secrets (DB credentials, API keys, signing keys) and, for mTLS, certificates - without secrets living in source, config, or logs, and without long-lived static credentials. The solution must be open-source and cloud-agnostic.
 
 ## Decision drivers
 
-- Truly OSS (the HashiCorp originals are now BSL — see [ADR-0004](0004-infrastructure-strategy.md)).
+- Truly OSS (the HashiCorp originals are now BSL - see [ADR-0004](0004-infrastructure-strategy.md)).
 - Eliminate long-lived static secrets where possible.
 - Fit the `SecretProvider` port and the Kubernetes deployment model.
 
@@ -29,10 +29,10 @@ Chosen option: **OpenBao as the default `SecretProvider` adapter.**
 
 ### Capabilities used
 
-- **Static KV** — configuration secrets.
-- **Dynamic secrets** — short-lived, per-request **Postgres credentials**, so no static DB password exists.
-- **PKI** — an internal CA issuing short-lived certs for **mTLS** between services (used by [ADR-0006](0006-identity-and-access.md)).
-- **Transit** — encryption-as-a-service for app-layer encryption.
+- **Static KV** - configuration secrets.
+- **Dynamic secrets** - short-lived, per-request **Postgres credentials**, so no static DB password exists.
+- **PKI** - an internal CA issuing short-lived certs for **mTLS** between services (used by [ADR-0006](0006-identity-and-access.md)).
+- **Transit** - encryption-as-a-service for app-layer encryption.
 
 ### Integration
 
@@ -49,7 +49,7 @@ Chosen option: **OpenBao as the default `SecretProvider` adapter.**
 
 ## Enforcement
 
-- **semgrep (keel ruleset):** bans `os.environ` / `os.getenv` and direct secret-store SDK calls outside the config/secret adapters — secrets are reachable only through the `SecretProvider` port.
+- **semgrep (keel ruleset):** bans `os.environ` / `os.getenv` and direct secret-store SDK calls outside the config/secret adapters - secrets are reachable only through the `SecretProvider` port.
 - **gitleaks** (pre-commit + CI): no credentials are ever committed.
 - Redaction of secret-like log keys is part of the logging contract (see [ADR-0010](0010-enforcement-strategy.md)).
 
