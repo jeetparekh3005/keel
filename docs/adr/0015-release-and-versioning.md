@@ -40,6 +40,15 @@ contract's compatibility is tracked.
 - **Release path = dev -> main.** Work integrates on `dev`; merging `dev` -> `main` brings the
   conventional commits to `main`, where release-please maintains a release PR. Merging that PR
   tags `vX.Y.Z` and updates `CHANGELOG.md` (see `/release`).
+- **The release PR is authored by a GitHub App, not `GITHUB_TOKEN`.** A PR opened with
+  `GITHUB_TOKEN` does not trigger other workflows, so it would run no required checks and
+  could only be merged by bypassing branch protection. The workflow mints an App token
+  (`actions/create-github-app-token`) when the `RELEASE_APP_ID` repo variable is set,
+  falling back to `GITHUB_TOKEN` otherwise. Setup: create a GitHub App with
+  `contents: write` + `pull-requests: write`, install it on the repo, then add the repo
+  variable `RELEASE_APP_ID` and the secret `RELEASE_APP_PRIVATE_KEY`. Once the App-authored
+  PR is running CI, remove the standing admin bypass on `main` (`enforce_admins = true`) so
+  releases merge through the same required checks as every other change.
 - **The platform `contractVersion` (platform.yaml) is independent** of the repo version. It
   governs cross-language contract compatibility: additive change -> minor, breaking change ->
   major with a documented migration. A service records the `contractVersion` it targets.
