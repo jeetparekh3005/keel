@@ -53,4 +53,6 @@ jobs:
     uses: ./.github/workflows/image.yml
     with:
       tag: ${{ needs.release-please.outputs.tag_name }}
-    secrets: inherit
+    # No `secrets: inherit`: that would hand RELEASE_APP_PRIVATE_KEY to a job that
+    # runs third-party build code. The image job needs only GITHUB_TOKEN (auto-
+    # available to reusable workflows) and OIDC (granted via permissions above).
