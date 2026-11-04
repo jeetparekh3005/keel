@@ -54,6 +54,29 @@ class Database:
             return False
         return True
 
+    def pool_stats(self) -> dict[str, int]:
+        """Return connection-pool counts for saturation metrics.
+
+        Keys: ``checked_out`` (in use), ``available`` (idle, within base size),
+        ``overflow`` (beyond base size). Pools without these counters (e.g. sqlite
+        StaticPool) report zeros.
+        """
+        pool = self._engine.sync_engine.pool
+
+        def _count(method: str) -> int:
+            try:
+                return int(getattr(pool, method)())
+            except (AttributeError, TypeError):
+                return 0
+
+        checked_out = _count("checkedout")
+        size = _count("size")
+        return {
+            "checked_out": checked_out,
+            "available": max(size - checked_out, 0),
+            "overflow": max(_count("overflow"), 0),
+        }
+
     async def create_all(self) -> None:
         """Create all mapped tables. For dev/tests; production uses migrations."""
         async with self._engine.begin() as connection:
