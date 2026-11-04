@@ -48,7 +48,7 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
 | **Keycloak / NATS integration tests** | ADR-0010 | **Not implemented** — Postgres integration is wired; Keycloak/NATS still stub/in-memory |
 | **Kubernetes/Helm** + runtime `securityContext`, NetworkPolicy | ADR-0004/0008 | **Not present** — only docker-compose |
 | Image **digest pinning** | platform.yaml image; ADR-0008 | **Not done** — Dockerfile uses rolling tags (needs Renovate + registry) |
-| **gRPC IDL/buf**, **NATS/Kafka/RabbitMQ** broker adapters, mTLS-by-default | platform.yaml interservice; ADR-0012 | **Not implemented** — dev-only factories + in-memory bus |
+| **gRPC IDL/buf**, **NATS/Kafka/RabbitMQ** broker adapters, mTLS-by-default | platform.yaml interservice; ADR-0012 | **Not implemented** — dev-only factories + in-memory bus. gRPC *application* auth (deny-by-default Bearer interceptor) **is** implemented; mTLS transport is not (#25). |
 | **CORS** policy (per-service) | ADR-0005 | **Not implemented** — security headers + body-limit are done; CORS is per-service config |
 
 This table shrinks as the gaps close. Track B (the v0.1 review remediation) closed authz,
