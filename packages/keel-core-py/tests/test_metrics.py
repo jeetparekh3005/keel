@@ -36,8 +36,11 @@ def test_duration_carries_semconv_attributes_with_bounded_cardinality():
     app = create_app(service="t", version="0", authenticator=StubAuthenticator({}))
     TestClient(app).get("/healthz")
     metric = _metrics_by_name()["http.server.request.duration"]
-    attrs = next(iter(metric.data.data_points)).attributes
+    # The global reader accumulates points from every test's app, so select the
+    # point for THIS request by its route template rather than taking the first.
+    points = [p for p in metric.data.data_points if p.attributes.get("http.route") == "/healthz"]
+    assert points, "no data point recorded for the /healthz route"
+    attrs = points[0].attributes
     # Semconv attribute names, and the route is the TEMPLATE (bounded cardinality).
     assert attrs["http.request.method"] == "GET"
-    assert attrs["http.route"] == "/healthz"
     assert attrs["http.response.status_code"] == 200
