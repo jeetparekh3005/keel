@@ -12,7 +12,9 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   trace correlation, stdlib bridge, non-blocking queue writer, rate limiting.
 - OIDC/JWT **authentication**: RS256, `aud`/`iss`/`exp`/`sub` enforced, JWKS.
 - Typed config (pydantic-settings, frozen, fail-fast on type), secrets via `SecretProvider`.
-- Persistence: async SQLAlchemy, `Repository` port, unit-of-work, Alembic migrations.
+- Persistence: async SQLAlchemy, `Database` + `UnitOfWork` plumbing, Alembic migrations.
+  `Repository` ports are service-defined (one per aggregate, mapping ORM<->domain); keel-core
+  does not ship a generic repository.
 - Distributed **tracing** (OpenTelemetry) with log correlation; gRPC + in-memory MessageBus
   factories with trace propagation.
 - RFC 9457 problem+json; health/readiness endpoints.
