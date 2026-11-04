@@ -127,9 +127,7 @@ class NatsMessageBus:
         except Exception:
             # A failed ack/nak/term would otherwise vanish; surface it so redelivery
             # or duplicate-processing anomalies are diagnosable.
-            self._logger.exception(
-                "jetstream control call failed", op=name, subject=subject
-            )
+            self._logger.exception("jetstream control call failed", op=name, subject=subject)
 
     async def subscribe(self, subject: str, handler: MessageHandler) -> None:
         """Deliver messages on ``subject`` to ``handler`` via a durable, explicit-ack consumer."""
