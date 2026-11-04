@@ -46,9 +46,10 @@ def create_application() -> FastAPI:
         from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
         from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 
-        exporter = OTLPSpanExporter(endpoint=config.otlp_endpoint, insecure=True)
+        # Secure (TLS) by default; KEEL_OTLP_INSECURE=true only for a plaintext collector.
+        exporter = OTLPSpanExporter(endpoint=config.otlp_endpoint, insecure=config.otlp_insecure)
         metric_reader = PeriodicExportingMetricReader(
-            OTLPMetricExporter(endpoint=config.otlp_endpoint, insecure=True)
+            OTLPMetricExporter(endpoint=config.otlp_endpoint, insecure=config.otlp_insecure)
         )
     tracer_provider = configure_tracing(
         service=config.service_name, version=config.version, exporter=exporter
