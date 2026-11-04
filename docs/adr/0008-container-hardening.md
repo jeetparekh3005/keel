@@ -46,7 +46,7 @@ Generated images must be hardened so that a compromised container yields almost 
 ### Integrity & distribution (the real guarantee)
 
 - **cosign**-sign every image; **admission policy** (Kyverno / sigstore policy-controller) runs only signed, verified images.
-- **SBOM** (CycloneDX) + **trivy** CVE gate + SLSA provenance in CI.
+- **SBOM** (SPDX, cosign-attested to the image) + **trivy** CVE gate + SLSA provenance in CI. (The separate CI *dependency* SBOM is CycloneDX.)
 - **Private registry with RBAC**; images are never publicly distributed.
 
 ### Consequences
@@ -66,7 +66,7 @@ Generated images must be hardened so that a compromised container yields almost 
 ## Enforcement
 
 - **hadolint** (recommended for generated services, not yet wired in CI): Dockerfiles should be non-root and leave no package-manager cruft. Note the reference image deliberately uses a rolling Chainguard tag (scanned every build), so a blanket avoid-`:latest` rule does not apply here.
-- **trivy:** image CVE scan with a severity gate; a **CycloneDX SBOM** must be produced.
+- **trivy:** image CVE scan with a severity gate; an **SPDX SBOM** must be produced and attested to the image.
 - **cosign verify** in CI plus an admission policy (Kyverno / sigstore policy-controller) so only signed, verified images run.
 - Runtime `securityContext` is enforced at the manifest level - see [ADR-0004](0004-infrastructure-strategy.md).
 

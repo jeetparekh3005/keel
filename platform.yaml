@@ -220,7 +220,7 @@ spec:
       seccomp: RuntimeDefault
     supply_chain:
       sign: cosign
-      sbom: cyclonedx
+      sbom: spdx                        # image SBOM attested via cosign (the CI dependency SBOM is cyclonedx)
       scan_gate: [trivy]
       admission: verify-signature     # only signed, verified images run
     distribution: private-registry-rbac
