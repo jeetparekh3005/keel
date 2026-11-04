@@ -107,13 +107,15 @@ jobs:
           # end up cosign-signed + SLSA-attested. A release builds clean.
       - name: Trivy scan the pushed image before signing (gate HIGH/CRITICAL)
         # Never sign/attest an image we have not scanned. Runs against the exact
-        # pushed digest, so the signature covers a vetted artifact.
+        # pushed digest, so the signature covers a vetted artifact. This is the
+        # signing gate and the compensating control for not digest-pinning the
+        # rolling base (ADR-0008), so it does NOT ignore-unfixed: an unpatched
+        # HIGH/CRITICAL must block signing, not ship signed.
         uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
         with:
           image-ref: ${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
           severity: HIGH,CRITICAL
           exit-code: "1"
-          ignore-unfixed: true
           vuln-type: os,library
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
       - name: Sign the image (keyless)
