@@ -27,11 +27,12 @@ def observe_db_pool(
     """Register an observable gauge of DB connection-pool usage by state."""
 
     def _callback(_: CallbackOptions) -> Iterable[Observation]:
+        # OTel DB semconv state enum is {used, idle}; checkedout() already includes
+        # any overflow connections that are in use.
         stats = database.pool_stats()
         return [
             Observation(stats["checked_out"], {"state": "used"}),
-            Observation(stats["available"], {"state": "available"}),
-            Observation(stats["overflow"], {"state": "overflow"}),
+            Observation(stats["available"], {"state": "idle"}),
         ]
 
     (meter or get_meter(meter_name)).create_observable_gauge(
