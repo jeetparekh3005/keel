@@ -36,7 +36,7 @@ Chosen option: **OpenBao as the default `SecretProvider` adapter.**
 
 ### Integration
 
-- **Kubernetes:** the **External Secrets Operator** syncs OpenBao → k8s Secrets, or workloads read directly via the SDK behind the `SecretProvider` port. OpenBao auth via the Kubernetes auth method (service-account JWT).
+- **Kubernetes:** the **External Secrets Operator** syncs OpenBao -> k8s Secrets, or workloads read directly via the SDK behind the `SecretProvider` port. OpenBao auth via the Kubernetes auth method (service-account JWT).
 - **Local dev:** `.env` (gitignored) is the dev `SecretProvider`; an OpenBao dev container is optional for parity.
 - Cloud secret managers (AWS SM, GCP SM, Azure Key Vault) are later adapters behind the same port.
 

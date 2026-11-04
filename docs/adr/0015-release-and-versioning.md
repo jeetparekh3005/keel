@@ -14,7 +14,7 @@ contract's compatibility is tracked.
 ## Decision drivers
 
 - Automated, conventional-commit-driven releases (no manual version bumping).
-- A clear integration → release path that matches the branching model (dev → main).
+- A clear integration -> release path that matches the branching model (dev -> main).
 - Keep the contract's compatibility story separate from the repo's release version.
 
 ## Considered options
@@ -27,14 +27,14 @@ contract's compatibility is tracked.
 
 ## Decision outcome
 
-- **Repo SemVer via release-please.** Conventional commits drive the bump (`feat` → minor,
-  `fix` → patch, `!`/`BREAKING CHANGE` → major). Pre-1.0 uses `bump-minor-pre-major`, so breaking
+- **Repo SemVer via release-please.** Conventional commits drive the bump (`feat` -> minor,
+  `fix` -> patch, `!`/`BREAKING CHANGE` -> major). Pre-1.0 uses `bump-minor-pre-major`, so breaking
   changes bump the minor until we reach 1.0.
-- **Release path = dev → main.** Work integrates on `dev`; merging `dev` → `main` brings the
+- **Release path = dev -> main.** Work integrates on `dev`; merging `dev` -> `main` brings the
   conventional commits to `main`, where release-please maintains a release PR. Merging that PR
   tags `vX.Y.Z` and updates `CHANGELOG.md` (see `/release`).
 - **The platform `contractVersion` (platform.yaml) is independent** of the repo version. It
-  governs cross-language contract compatibility: additive change → minor, breaking change →
+  governs cross-language contract compatibility: additive change -> minor, breaking change ->
   major with a documented migration. A service records the `contractVersion` it targets.
 - **Publishing is separate from releasing.** Today `keel-core` is consumed in-workspace (and via
   git); publishing to a private index/PyPI and image publishing (cosign/SBOM) are **planned**

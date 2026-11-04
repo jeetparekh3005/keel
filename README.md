@@ -18,7 +18,7 @@ The goal: go from zero to a secure, observable, deployable service in minutes, n
 
 Teams re-derive the same "right way" to start a service over and over — and get it subtly wrong each time. keel encodes the organization's golden path **once**, generates it **consistently** across languages, and keeps existing projects **current** through versioned updates.
 
-- **Runnable + swappable adapters** — real working auth/DB/logging/telemetry behind stable interfaces you can swap (OIDC → Auth0, Postgres → MySQL, …).
+- **Runnable + swappable adapters** — real working auth/DB/logging/telemetry behind stable interfaces you can swap (OIDC -> Auth0, Postgres -> MySQL, …).
 - **One contract, many languages** — every vertical implements the same `platform.yaml` contract for logging format, error taxonomy, auth, config, and telemetry.
 - **Governance baked in** — secret scanning, SBOM, dependency pinning, SAST, security headers, CODEOWNERS, and CI are defaults, not afterthoughts.
 - **Updatable** — `keel update` pulls template fixes (including CVE patches) into already-scaffolded projects.

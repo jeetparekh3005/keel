@@ -23,7 +23,7 @@ import-linter enforces the same layer rules as `keel-core`: the domain imports n
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
 | POST | `/items` | required | create an item |
-| GET | `/items/{id}` | required | fetch an item (404 → problem+json) |
+| GET | `/items/{id}` | required | fetch an item (404 -> problem+json) |
 | GET | `/items` | required | list items |
 | GET | `/healthz` `/readyz` | public | liveness / readiness (DB ping) |
 

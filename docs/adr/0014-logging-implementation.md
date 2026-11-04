@@ -28,7 +28,7 @@ The `Logger` port must be implemented to an enterprise-grade standard. A first h
 
 Chosen option: **implement the `Logger` port on structlog**, with a stdlib `ProcessorFormatter` bridge.
 
-- A shared **processor pipeline**: reserved-field namespacing (user `service=` becomes `x_service`), correlation ids from `keel_core.context`, `add_log_level` normalized to contract names (`warn`/`fatal`), ISO-8601 UTC timestamp, `format_exc_info` for real tracebacks, recursive redaction, event→`message` rename, JSON renderer.
+- A shared **processor pipeline**: reserved-field namespacing (user `service=` becomes `x_service`), correlation ids from `keel_core.context`, `add_log_level` normalized to contract names (`warn`/`fatal`), ISO-8601 UTC timestamp, `format_exc_info` for real tracebacks, recursive redaction, event->`message` rename, JSON renderer.
 - `configure_logging()` installs a root handler whose `ProcessorFormatter` runs the same chain, so **library logs come out as correlated JSON** in the same schema.
 - The `Logger` port, the `platform.yaml` logging schema, and the test kit are unchanged — this is a pure adapter swap (the ports payoff).
 

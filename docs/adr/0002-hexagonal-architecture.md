@@ -12,7 +12,7 @@ keel's core promise is runnable-but-swappable cross-cutting concerns (auth, pers
 
 - The platform contract defines *ports*; verticals must provide *adapters*. The architecture should make that the literal shape of the code.
 - Business logic must be testable without infrastructure.
-- Swapping a provider (OIDC → Auth0, Postgres → MySQL) must be one wiring change, not a refactor.
+- Swapping a provider (OIDC -> Auth0, Postgres -> MySQL) must be one wiring change, not a refactor.
 
 ## Considered options
 
