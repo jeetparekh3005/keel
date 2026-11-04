@@ -28,7 +28,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
       - name: helm lint
-        run: helm lint "${CHART}"
+        # ci/test-values supplies the now-required OIDC config so rendering succeeds.
+        run: helm lint "${CHART}" -f "${CHART}/ci/test-values.yaml"
       - name: Install kubeconform
         run: |
           curl -fsSLo kubeconform.tar.gz \
@@ -36,5 +37,5 @@ jobs:
           tar xf kubeconform.tar.gz kubeconform
       - name: Validate rendered manifests
         run: |
-          helm template rs "${CHART}" \
+          helm template rs "${CHART}" -f "${CHART}/ci/test-values.yaml" \
             | ./kubeconform -strict -summary -schema-location default
