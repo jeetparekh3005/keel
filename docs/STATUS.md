@@ -1,4 +1,4 @@
-# Implementation status (v0.1)
+# Implementation status
 
 The ADRs and `platform.yaml` describe the **target** platform. This file is the honest
 record of what the code actually implements today versus what is still **planned**, so the
@@ -47,7 +47,8 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
 - **Postgres integration test** (CI service container) + an 85% coverage floor.
 - gRPC is an opt-in extra (`keel-core[grpc]`), not a core dependency of every service.
 - Frontend workspace (v0.2): a Next.js (App Router, TypeScript) app at `apps/web`, managed
-  by pnpm + Turborepo, with its own CI lane (lint/typecheck/build). See ADR-0016.
+  by pnpm + Turborepo, with its own CI lane (lint/typecheck/test/build, plus a CVE
+  audit gate). Unit tests run on vitest + Testing Library. See ADR-0016.
 
 ## Planned - described in the contract/ADRs but NOT yet implemented
 
@@ -60,6 +61,7 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
 | Base-image **digest pinning** | platform.yaml image; ADR-0008 | **By design, deferred to Renovate** - Chainguard bases are rolling/continuously-rebuilt, so every build is Trivy-scanned instead; static digest pins would freeze stale CVEs. Renovate-managed digests tracked for v0.2 |
 | **gRPC IDL/buf**, **Kafka/RabbitMQ** broker adapters | platform.yaml interservice; ADR-0012 | **Partial.** NATS JetStream adapter (`keel-core[nats]`) implemented with trace propagation, held to a shared MessageBus contract; Kafka/RabbitMQ and buf/protobuf IDL still planned. gRPC application auth (deny-by-default) and mTLS credentials are implemented. |
 
-This table shrinks as the gaps close. Track B (the v0.1 review remediation) closed authz,
-edge hardening, metrics, graceful shutdown, perf wiring, security CI gates, port-coverage,
-and Postgres integration; the remainder is largely v0.2 deployment/edge work.
+This table shrinks as the gaps close. v0.1 delivered the Python vertical and its review
+hardening; v0.2 added the deployment surface (frontend, Helm, image pipeline, brokers,
+api_key/mTLS, CORS, IdP/broker integration) and its pre-v0.3 review remediation. What remains
+is the per-language verticals (v0.3+) and the items still marked planned above.

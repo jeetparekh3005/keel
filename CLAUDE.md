@@ -44,7 +44,7 @@ Integration tests need `KEEL_TEST_DATABASE_URL` (Postgres); they skip otherwise 
 - **Comments**: say *why*, not *what*; public-API docstrings required; long rationale -> an ADR.
 
 ## Project management & releases
-- Planned work is tracked as GitHub issues on milestones **v0.2–v0.5** and the "keel roadmap"
+- Planned work is tracked as GitHub issues on milestones **v0.2-v0.5** and the "keel roadmap"
   board. PRs reference the issue they close (`Closes #N`). New planned work -> open an issue first.
 - Releases: repo **SemVer via release-please**. Work lands on `dev`; merging `dev` -> `main` lets
   release-please open a release PR that tags the version + updates `CHANGELOG.md` (see `/release`).
@@ -53,7 +53,7 @@ Integration tests need `KEEL_TEST_DATABASE_URL` (Postgres); they skip otherwise 
 ## Pointers (read on demand, not auto-loaded)
 - Architecture decisions: `docs/adr/` · Contract: `platform.yaml` · Status: `docs/STATUS.md`
 - Branching/PR detail: `CONTRIBUTING.md` · Core library: `packages/keel-core-py/README.md`
-- Frontend (pnpm + Turborepo, Next.js): `apps/web/` · gate: `pnpm lint && pnpm typecheck && pnpm build`
+- Frontend (pnpm + Turborepo, Next.js): `apps/web/` · gate: `pnpm lint && pnpm typecheck && pnpm test && pnpm build`
 
 ## Commands
 Start a session with **`/audit`** (consistency sweep: drift, open PRs/issues, release due, docs/ADR gaps).

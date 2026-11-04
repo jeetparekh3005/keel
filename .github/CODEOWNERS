@@ -2,7 +2,7 @@
 # As verticals land, scope ownership per directory (e.g. /templates/python/ @python-guild).
 * @jeetparekh3005
 
-# Platform contract is the keystone — review carefully.
+# Platform contract is the keystone - review carefully.
 /platform.yaml @jeetparekh3005
 /docs/adr/ @jeetparekh3005
 /.github/ @jeetparekh3005

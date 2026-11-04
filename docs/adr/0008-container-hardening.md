@@ -56,10 +56,12 @@ Generated images must be hardened so that a compromised container yields almost 
 - Bad: Nuitka variant adds build/debug cost; native compile is not absolute protection.
 - Honest: this does not make extraction impossible; it raises cost and restricts who can obtain the image.
 
-> **Implementation status (v0.1):** the Dockerfile (multi-stage, Chainguard, non-root,
-> bytecode-only) exists, but **digest pinning and the Kubernetes `securityContext`/
-> NetworkPolicy manifests are not yet present** (no Helm/k8s in the repo) - see
-> [docs/STATUS.md](../STATUS.md). Runtime hardening is specified, not yet enforced.
+> **Implementation status:** the Dockerfile (multi-stage, Chainguard, non-root, bytecode-only)
+> and the **Helm chart `securityContext` + default-deny NetworkPolicy** are in place
+> (`deploy/charts/reference-service`), and release images are **Trivy-scanned, cosign-signed, and
+> SLSA/SBOM-attested**. Base-image **digest pinning** stays Renovate-managed (rolling Chainguard
+> bases are scanned every build); cluster-side **admission** verification is a future milestone.
+> See [docs/STATUS.md](../STATUS.md).
 
 ## Enforcement
 

@@ -15,9 +15,23 @@ jobs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
+      # A PR opened with GITHUB_TOKEN does not trigger other workflows, so the
+      # release PR would run no required checks and need an admin bypass to merge.
+      # Mint a GitHub App token instead: the App-authored PR triggers CI like any
+      # human PR. The step is gated on the RELEASE_APP_ID repo variable, so the
+      # workflow still works (falling back to GITHUB_TOKEN) before the App exists.
+      # Setup: see docs/adr/0015-release-and-versioning.md.
+      - id: app-token
+        if: ${{ vars.RELEASE_APP_ID != '' }}
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
       - id: release
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
+          # App token when configured (PR triggers CI); GITHUB_TOKEN otherwise.
+          token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
           # The repo default branch is `dev` (for day-to-day PRs). Releases are cut
           # from `main`, so pin the target explicitly; otherwise the action opens its
           # release PR against the default branch (`dev`). See ADR-0015.

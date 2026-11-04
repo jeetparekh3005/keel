@@ -26,14 +26,14 @@ dev = [
     "jsonschema>=4.23",       # validate platform.yaml against its schema
     "pyyaml>=6.0",            # load platform.yaml in tests
     "alembic>=1.13",          # migration tool (run by the service image at deploy)
-    "grpcio>=1.60",           # keel-core[grpc] extra — installed for the gRPC tests
+    "grpcio>=1.60",           # keel-core[grpc] extra - installed for the gRPC tests
     "opentelemetry-instrumentation-grpc>=0.48b0",
     "psycopg[binary]>=3.3.6",   # sync Postgres driver for Alembic migrations in CI
-    "nats-py>=2.6",           # keel-core[nats] extra — installed for the NATS integration test
+    "nats-py>=2.6",           # keel-core[nats] extra - installed for the NATS integration test
 ]
 
 # ---------------------------------------------------------------------------
-# Lint / format — Ruff. See docs/adr/0010-enforcement-strategy.md for the
+# Lint / format - Ruff. See docs/adr/0010-enforcement-strategy.md for the
 # rationale behind each pack.
 # ---------------------------------------------------------------------------
 [tool.ruff]
@@ -94,7 +94,7 @@ extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path", "f
 "**/errors.py" = ["N818"]
 
 # ---------------------------------------------------------------------------
-# Types — mypy strict.
+# Types - mypy strict.
 # ---------------------------------------------------------------------------
 [tool.mypy]
 python_version = "3.12"
@@ -121,6 +121,9 @@ markers = [
 
 [tool.coverage.run]
 branch = true
+# Trace code that runs inside SQLAlchemy's async greenlets (and threadpools),
+# otherwise DB-path lines show as false "missing" and the report is untrustworthy.
+concurrency = ["greenlet", "thread"]
 # main.py wiring is tested (see test_main.py); only serve()/entrypoint + the
 # live-OTLP branch carry `# pragma: no cover`.
 

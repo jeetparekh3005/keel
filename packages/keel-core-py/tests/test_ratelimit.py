@@ -1,10 +1,29 @@
-"""Opt-in per-instance rate limiting (audit #71)."""
+"""Opt-in per-instance rate limiting (audit #71, hardened #122)."""
 
 import httpx
 from httpx import ASGITransport
 
-from keel_core.adapters.inbound.http import create_app
+from keel_core.adapters.inbound.http import RateLimitMiddleware, create_app
 from keel_core.testkit.fakes import StubAuthenticator
+
+
+async def _noop_app(scope: object, receive: object, send) -> None:
+    await send({"type": "http.response.start", "status": 200, "headers": []})
+    await send({"type": "http.response.body", "body": b""})
+
+
+def _scope(xff: str | None = None) -> dict:
+    headers = [(b"x-forwarded-for", xff.encode())] if xff else []
+    return {"type": "http", "path": "/x", "headers": headers, "client": ("10.0.0.1", 1234)}
+
+
+class _Capture:
+    def __init__(self) -> None:
+        self.status: int | None = None
+
+    async def __call__(self, message: dict) -> None:
+        if message["type"] == "http.response.start":
+            self.status = message["status"]
 
 
 def _app() -> object:
@@ -35,3 +54,23 @@ async def test_no_limit_by_default() -> None:
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         for _ in range(5):
             assert (await client.get("/healthz")).status_code == 200
+
+
+async def test_forwarded_for_keys_clients_separately() -> None:
+    # Behind a proxy, each original client is limited independently (not collapsed
+    # to the proxy IP). Limit is 1/window.
+    mw = RateLimitMiddleware(_noop_app, max_requests=1, window_seconds=60)
+    for expected in (200, 429):  # same client A exhausts its single token
+        cap = _Capture()
+        await mw(_scope(xff="1.1.1.1"), None, cap)
+        assert cap.status == expected
+    cap = _Capture()  # client B is independent
+    await mw(_scope(xff="2.2.2.2"), None, cap)
+    assert cap.status == 200
+
+
+async def test_client_state_is_lru_bounded() -> None:
+    mw = RateLimitMiddleware(_noop_app, max_requests=5, window_seconds=60, max_clients=2)
+    for i in range(10):  # 10 distinct clients, cap is 2
+        await mw(_scope(xff=f"10.0.0.{i}"), None, _Capture())
+    assert len(mw._buckets) <= 2  # noqa: SLF001  (asserting the memory bound)

@@ -29,8 +29,7 @@ During early development (`0.x`), only the latest release is supported.
 ## Release integrity
 
 Releases are cut by [release-please](https://github.com/googleapis/release-please)
-and tagged `vX.Y.Z`. **Signed tags and build provenance (SLSA attestation) are not
-yet in place** - tags are created by the release automation, not GPG-signed by a
-maintainer key. Cryptographic signing (cosign) and provenance attestation are
-planned alongside the image publish pipeline (see ADR-0008 and the v0.2 roadmap).
-Until then, verify releases by commit SHA against this repository.
+and tagged `vX.Y.Z`. Release **container images are signed (keyless cosign) and carry SLSA
+build provenance + an SPDX SBOM attestation** (see `.github/workflows/image.yml`). **GPG-signed
+git tags are not yet in place** - tags are created by the release automation, not a maintainer
+key - so verify source releases by commit SHA, and verify images via `cosign verify`.

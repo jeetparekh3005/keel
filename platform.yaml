@@ -8,13 +8,17 @@
 # The contract is versioned independently of keel itself. A generated project
 # records the contractVersion it targets; `keel update` migrates it forward.
 
-# NOTE: this contract describes the TARGET platform. Some sections are not yet
-# implemented in v0.1 (metrics, authorization, api_key/mTLS, supply-chain gates,
-# k8s hardening, broker adapters). See docs/STATUS.md for implemented-vs-planned.
+# NOTE: this contract describes the TARGET platform. As of contractVersion 0.2.0
+# the Python vertical implements it broadly: logging, errors, HTTP edge security,
+# auth (OIDC/JWT + api_key + mTLS credentials + fine-grained authorization),
+# telemetry, persistence, health, the NATS broker adapter, and the supply-chain
+# and k8s-hardening gates. Still planned: the Kafka/RabbitMQ brokers and buf/
+# protobuf gRPC IDL, and the non-Python verticals. See docs/STATUS.md for the
+# precise implemented-vs-planned matrix.
 apiVersion: keel.dev/v1alpha1
 kind: PlatformContract
 metadata:
-  contractVersion: 0.1.0
+  contractVersion: 0.2.0
 
 spec:
   # ----------------------------------------------------------------------
@@ -62,6 +66,32 @@ spec:
       - "Never leak stack traces, secrets, or internal identifiers in the body."
       - "Every error carries a stable machine-readable `type` URI."
       - "5xx responses are logged at error level with trace_id."
+
+  # ----------------------------------------------------------------------
+  # HTTP edge security - browser-facing cross-cutting defenses, enforced in
+  # keel-core (not per service). See docs/adr/0006-identity-and-access.md.
+  # ----------------------------------------------------------------------
+  http:
+    cors:
+      policy: deny-by-default         # no Origin is allowed unless explicitly listed
+      allow_origins: []               # exact origins only; never a wildcard with credentials
+      note: "Cross-origin browser access is closed until a service opts specific origins in."
+    security_headers:                 # emitted on every response by keel-core
+      emitted:
+        - content-security-policy
+        - x-content-type-options      # nosniff
+        - referrer-policy
+        - x-frame-options             # deny framing
+      hsts: tls-only                  # Strict-Transport-Security sent only over HTTPS
+    trusted_hosts: required           # Host/:authority allow-list; unknown hosts rejected
+    rate_limit:
+      default: enabled
+      scope: per-client               # keyed by client identity; XFF-aware behind a trusted proxy
+    body_limit: enabled               # cap request body size to bound memory
+    rules:
+      - "CORS is deny-by-default; credentials are never combined with a wildcard origin."
+      - "Security headers and the host allow-list are enforced in keel-core, not per service."
+      - "HSTS is emitted only over HTTPS, including behind a TLS-terminating proxy."
 
   # ----------------------------------------------------------------------
   # Authentication & access control.

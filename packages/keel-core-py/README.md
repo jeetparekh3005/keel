@@ -13,32 +13,30 @@ keel_core/
     inbound/rpc/       # gRPC server factory (OTel-instrumented)
     outbound/          # StructuredLogger, SystemClock
     outbound/rpc/      # gRPC ServiceClient channel factory (trace-propagating)
-    outbound/messaging/ # MessageBus port + InMemory adapter (prod: NATS/Kafka/RabbitMQ)
-    outbound/auth/     # OIDCAuthenticator (JWT/JWKS validation)
+    outbound/messaging/ # MessageBus port + InMemory and NATS JetStream adapters
+    outbound/auth/     # OIDCAuthenticator + ApiKeyAuthenticator
     outbound/secrets/  # EnvSecretProvider (prod: OpenBao)
-    outbound/telemetry/ # OpenTelemetry tracing setup (configure_tracing)
-    outbound/persistence/  # async SQLAlchemy: Database, UnitOfWork, SqlAlchemyRepository
+    outbound/telemetry/ # OpenTelemetry tracing + metrics + saturation
+    outbound/persistence/  # async SQLAlchemy: Database, UnitOfWork (repos are service-defined)
   config.py     # BaseServiceConfig (typed, 12-factor, fail-fast)
   context.py    # request/trace/span contextvars injected into logs
   testkit/      # fakes: FrozenClock, StubAuthenticator, capturing_logger
 ```
 
-## What's here now (slice 2 of #6)
+## What's here now
 
 - **Structured logging** (on structlog, [ADR-0014](../../docs/adr/0014-logging-implementation.md)) - contract-schema JSON, real exception tracebacks, recursive secret redaction + value-pattern/message scrubbing, reserved-field protection, field-size caps, optional rate limiting, non-blocking background writer, correlation ids from `context`, and `configure_logging()` to route stdlib/library logs through the same schema.
 - **Error taxonomy** - `DomainError` hierarchy with category -> HTTP status mapping.
 - **Typed config** - `BaseServiceConfig` (Pydantic Settings), `KEEL_`-prefixed, immutable, fails fast.
 - **Clock** - injectable time for testability.
-- **Auth** - `Authenticator` / `Principal` port + `OIDCAuthenticator` adapter: verifies Bearer JWTs against the issuer's signing key (JWKS in prod), checks issuer/audience/expiry, maps claims (scopes, roles) to a `Principal`.
+- **Auth** - `Authenticator` / `Principal` port with `OIDCAuthenticator` (Bearer JWTs verified against the issuer JWKS; issuer/audience/expiry enforced; claims mapped to a `Principal`) and `ApiKeyAuthenticator` (SHA-256-hashed keys, accepted via `X-API-Key`).
 - **Secrets** - `SecretProvider` port + `EnvSecretProvider` (dev); production uses OpenBao (ADR-0007). Secrets are reached only through the port.
 - **Distributed tracing** - `configure_tracing()` installs an OpenTelemetry provider; FastAPI/Starlette then emit spans and continue inbound W3C trace context natively. The structured logger reads the active span, so every log line carries the correct `trace_id`/`span_id` with no wiring. OTLP export is configured at deployment.
-- **gRPC** - `create_channel` (ServiceClient) and `create_server` (GrpcApi) factories carry the official OpenTelemetry interceptors, so east-west calls propagate the trace. mTLS-ready via OpenBao credentials.
-- **Messaging** - `MessageBus` port + `InMemoryMessageBus` (dev/test) that injects/extracts trace context so handlers correlate to the publisher's trace. NATS/Kafka/RabbitMQ adapters slot in behind the port at deployment.
-- **FastAPI app factory** ([ADR-0013](../../docs/adr/0013-python-web-framework.md)) - `create_app` wires request-id propagation, problem+json error handling (RFC 9457), health endpoints, and a deny-by-default auth dependency. Requires an `Authenticator`, so an app cannot be built without auth.
-- **Persistence** - `Repository` port + async SQLAlchemy 2.0 adapter (`Database`, `UnitOfWork`, generic `SqlAlchemyRepository`) with a readiness `ping()`. Domain depends on the port, never the ORM.
-- **Test kit** - fakes shipped so services test against the ports.
-
-Coming next: OIDC auth adapter and secrets (OpenBao); real-Postgres integration arrives with the reference service's docker-compose.
+- **gRPC** - `create_channel` (ServiceClient) and `create_server` (GrpcApi) factories carry the OpenTelemetry interceptors; the server enforces deny-by-default auth + scope authorization and publishes the `Principal` on a contextvar. mTLS credential builders (`mtls_channel_credentials`/`mtls_server_credentials`) via OpenBao PKI.
+- **Messaging** - `MessageBus` port with `InMemoryMessageBus` (dev/test) and a durable `NatsMessageBus` (JetStream, explicit-ack, nak/DLQ), both injecting/extracting trace context. A reusable `assert_pubsub_roundtrip` contract both satisfy.
+- **FastAPI app factory** ([ADR-0013](../../docs/adr/0013-python-web-framework.md)) - `create_app` wires request-id, problem+json (RFC 9457, incl. `invalid-params`), health, metrics, optional rate limiting, default-deny CORS, environment-gated docs, and a deny-by-default auth dependency. Requires an `Authenticator`.
+- **Persistence** - async SQLAlchemy 2.0 plumbing: `Database`, `UnitOfWork`, the `Entity` base, and a bounded readiness `ping()`. Repositories are **service-defined** per aggregate (mapping ORM<->domain); keel-core ships no generic repository.
+- **Test kit** - fakes + reusable contracts (messaging, health/problem conformance) so services test against the ports.
 
 ## Usage
 

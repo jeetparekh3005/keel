@@ -14,19 +14,28 @@ spec:
     - Ingress
     - Egress
   ingress:
-    # Inbound only to the HTTP port (from anywhere the CNI permits).
-    - ports:
+    # Inbound to the HTTP port, from cluster workloads only (e.g. the ingress
+    # controller / gateway). Tighten the selector to specific namespaces per env.
+    - from:
+        - namespaceSelector: {}
+      ports:
         - port: http
           protocol: TCP
   egress:
-    # DNS resolution.
-    - ports:
+    # DNS resolution (kube-dns lives in the cluster).
+    - to:
+        - namespaceSelector: {}
+      ports:
         - port: 53
           protocol: UDP
         - port: 53
           protocol: TCP
-    # Dependency ports (DB, OTLP, NATS, OIDC, TLS). Restrict `to` per environment.
-    - ports:
+    # Dependency ports (DB, OTLP, NATS, OIDC, TLS), cluster-internal only -
+    # this blocks egress to the public internet. Add explicit `ipBlock` CIDRs
+    # for any out-of-cluster dependency (e.g. an external IdP).
+    - to:
+        - namespaceSelector: {}
+      ports:
         {{- range .Values.networkPolicy.egressPorts }}
         - port: {{ . }}
           protocol: TCP

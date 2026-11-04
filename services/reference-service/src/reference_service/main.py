@@ -82,7 +82,16 @@ app = create_application()
 
 def serve() -> None:  # pragma: no cover - process entrypoint
     """Run the service with uvicorn (container entrypoint)."""
-    uvicorn.run(app, host="0.0.0.0", port=8000)  # noqa: S104  # bind all in container
+    config = ReferenceConfig()
+    uvicorn.run(
+        app,
+        host="0.0.0.0",  # noqa: S104  # bind all in container
+        port=8000,
+        # Trust the edge proxy's forwarded headers so scheme/host reflect the
+        # client-facing request (lets HSTS fire behind a TLS terminator).
+        proxy_headers=True,
+        forwarded_allow_ips=config.forwarded_allow_ips,
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -13,7 +13,9 @@ contract's compatibility is tracked.
 
 ## Decision drivers
 
-- Automated, conventional-commit-driven releases (no manual version bumping).
+- Conventional-commit-driven releases (release-please computes the bump and changelog).
+- **Pre-1.0, the repo version tracks milestones**, not individual features: a whole milestone
+  (many `feat`s) is one minor bump, so the version stays legible against the roadmap (v0.1, v0.2).
 - A clear integration -> release path that matches the branching model (dev -> main).
 - Keep the contract's compatibility story separate from the repo's release version.
 
@@ -27,15 +29,31 @@ contract's compatibility is tracked.
 
 ## Decision outcome
 
-- **Repo SemVer via release-please.** Conventional commits drive the bump (`feat` -> minor,
-  `fix` -> patch, `!`/`BREAKING CHANGE` -> major). Pre-1.0 uses `bump-minor-pre-major`, so breaking
-  changes bump the minor until we reach 1.0.
+- **Repo SemVer via release-please, with a deliberate pre-1.0 milestone lever.** Config sets
+  `bump-minor-pre-major` *and* `bump-patch-for-minor-pre-major`, so pre-1.0 a `feat` bumps a
+  **patch** and only `!`/`BREAKING CHANGE` bumps the minor. This is intentional: individual
+  features accumulate as patches within a milestone, and each **milestone is released as a minor
+  via an explicit `Release-As: 0.N.0` footer** on the `dev` -> `main` integration commit (the one
+  manual lever, applied by `/release`). That keeps the repo version aligned with the roadmap
+  milestone rather than minting a new minor per feature. Post-1.0 this lever is dropped and
+  standard `feat` -> minor automation applies.
 - **Release path = dev -> main.** Work integrates on `dev`; merging `dev` -> `main` brings the
   conventional commits to `main`, where release-please maintains a release PR. Merging that PR
   tags `vX.Y.Z` and updates `CHANGELOG.md` (see `/release`).
+- **The release PR is authored by a GitHub App, not `GITHUB_TOKEN`.** A PR opened with
+  `GITHUB_TOKEN` does not trigger other workflows, so it would run no required checks and
+  could only be merged by bypassing branch protection. The workflow mints an App token
+  (`actions/create-github-app-token`) when the `RELEASE_APP_ID` repo variable is set,
+  falling back to `GITHUB_TOKEN` otherwise. Setup: create a GitHub App with
+  `contents: write` + `pull-requests: write`, install it on the repo, then add the repo
+  variable `RELEASE_APP_ID` and the secret `RELEASE_APP_PRIVATE_KEY`. Once the App-authored
+  PR is running CI, remove the standing admin bypass on `main` (`enforce_admins = true`) so
+  releases merge through the same required checks as every other change.
 - **The platform `contractVersion` (platform.yaml) is independent** of the repo version. It
   governs cross-language contract compatibility: additive change -> minor, breaking change ->
   major with a documented migration. A service records the `contractVersion` it targets.
+  It moved `0.1.0 -> 0.2.0` when the v0.2 milestone added the `http` edge-security
+  concept (CORS, security headers, host allow-list) to the contract: additive, so a minor.
 - **Publishing is separate from releasing.** Today `keel-core` is consumed in-workspace (and via
   git); publishing to a private index/PyPI and image publishing (cosign/SBOM) are **planned**
   (tracked under v0.2). When `keel-core` is published, revisit per-package versioning.

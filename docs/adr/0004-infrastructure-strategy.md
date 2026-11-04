@@ -21,7 +21,7 @@ Generated services need a consistent, secure path from container to running work
 |---|---|---|---|---|
 | **Kubernetes** | High (any cloud/on-prem) | High | With KEDA/add-ons | Orgs already on k8s; many services |
 | Serverless containers | Medium (cloud-specific) | Low | Yes (native) | Few services, minimal ops |
-| PaaS (Fly/Render/etc.) | Low–Medium | Lowest | Varies | Prototypes, small teams |
+| PaaS (Fly/Render/etc.) | Low-Medium | Lowest | Varies | Prototypes, small teams |
 
 ## Decision outcome
 

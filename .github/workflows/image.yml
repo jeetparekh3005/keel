@@ -67,7 +67,10 @@ jobs:
 
   publish:
     name: Image publish + sign
-    if: ${{ github.event_name == 'workflow_call' || github.event_name == 'workflow_dispatch' }}
+    # Runs on workflow_call (from release-please) and workflow_dispatch (manual
+    # backfill). A reusable workflow inherits the caller's event_name (e.g.
+    # `push`), so gate on "not a PR" rather than on `workflow_call`.
+    if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -100,6 +103,16 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
+      - name: Trivy scan the pushed image before signing (gate HIGH/CRITICAL)
+        # Never sign/attest an image we have not scanned. Runs against the exact
+        # pushed digest, so the signature covers a vetted artifact.
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
       - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
       - name: Sign the image (keyless)
         run: cosign sign --yes "${IMAGE}@${DIGEST}"

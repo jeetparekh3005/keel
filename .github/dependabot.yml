@@ -24,3 +24,15 @@ updates:
     labels:
       - "type:chore"
       - "area:python"
+
+  # Frontend dependencies (pnpm workspace). Security CVEs are also gated by pnpm audit in CI.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
+    labels:
+      - "type:chore"
+      - "area:ts"
