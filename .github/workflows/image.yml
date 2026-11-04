@@ -102,7 +102,9 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
+          # No cache-from here: the GHA cache is writable from pull_request runs, so
+          # reading it on the signed-release build would let a PR poison layers that
+          # end up cosign-signed + SLSA-attested. A release builds clean.
       - name: Trivy scan the pushed image before signing (gate HIGH/CRITICAL)
         # Never sign/attest an image we have not scanned. Runs against the exact
         # pushed digest, so the signature covers a vetted artifact.
