@@ -17,7 +17,13 @@ PROBLEM_CONTENT_TYPE = "application/problem+json"
 
 
 def _problem(
-    *, status: int, title: str, category: str, detail: str | None, instance: str
+    *,
+    status: int,
+    title: str,
+    category: str,
+    detail: str | None,
+    instance: str,
+    extra: dict[str, object] | None = None,
 ) -> JSONResponse:
     body: dict[str, object] = {
         "type": f"urn:keel:error:{category}",
@@ -27,6 +33,8 @@ def _problem(
     }
     if detail is not None:
         body["detail"] = detail
+    if extra:
+        body.update(extra)  # RFC 9457 extension members (e.g. invalid-params)
     return JSONResponse(status_code=status, content=body, media_type=PROBLEM_CONTENT_TYPE)
 
 
@@ -46,12 +54,21 @@ def register_exception_handlers(app: FastAPI, logger: Logger) -> None:
         )
 
     async def _validation(request: Request, exc: Exception) -> Response:
+        # RFC 9457 extension: name each field that failed so clients can fix them.
+        invalid_params = [
+            {
+                "name": ".".join(str(part) for part in error.get("loc", ())),
+                "reason": error.get("msg", ""),
+            }
+            for error in cast("RequestValidationError", exc).errors()
+        ]
         return _problem(
             status=400,
             title=ValidationFailed.title,
             category=ValidationFailed.category.value,
             detail="Request validation failed",
             instance=request.url.path,
+            extra={"invalid-params": invalid_params},
         )
 
     async def _unhandled(request: Request, exc: Exception) -> Response:

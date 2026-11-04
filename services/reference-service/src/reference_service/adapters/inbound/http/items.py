@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,7 +13,8 @@ from keel_core.adapters.outbound.persistence import Database, UnitOfWork
 from reference_service.adapters.outbound.persistence import SqlItemRepository
 from reference_service.application.item_service import ItemService
 
-router = APIRouter(prefix="/items", tags=["items"])
+# URL-versioned: breaking changes ship under a new prefix (/v2) without disturbing /v1.
+router = APIRouter(prefix="/v1/items", tags=["items"])
 
 
 class ItemIn(BaseModel):
@@ -29,6 +30,21 @@ class ItemOut(BaseModel):
     name: str
 
 
+class Page(BaseModel):
+    """Pagination metadata for a list response."""
+
+    limit: int
+    offset: int
+    count: int
+
+
+class ItemListOut(BaseModel):
+    """Envelope for a page of items (never a bare array, so metadata has a home)."""
+
+    items: list[ItemOut]
+    page: Page
+
+
 async def _session(request: Request) -> AsyncIterator[AsyncSession]:
     database: Database = request.app.state.database
     async with UnitOfWork(database.session_factory) as session:
@@ -40,9 +56,12 @@ def _service(session: AsyncSession) -> ItemService:
 
 
 @router.post("", status_code=201, dependencies=[Depends(require_scopes("items:write"))])
-async def create_item(body: ItemIn, session: AsyncSession = Depends(_session)) -> ItemOut:
-    """Create an item (requires scope ``items:write``)."""
+async def create_item(
+    body: ItemIn, response: Response, session: AsyncSession = Depends(_session)
+) -> ItemOut:
+    """Create an item (requires scope ``items:write``); sets the ``Location`` header."""
     item = await _service(session).create(body.name)
+    response.headers["Location"] = f"{router.prefix}/{item.id}"
     return ItemOut(id=item.id, name=item.name)
 
 
@@ -58,7 +77,8 @@ async def list_items(
     session: AsyncSession = Depends(_session),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
-) -> list[ItemOut]:
+) -> ItemListOut:
     """List items with pagination (requires scope ``items:read``)."""
     items = await _service(session).list(limit=limit, offset=offset)
-    return [ItemOut(id=item.id, name=item.name) for item in items]
+    rows = [ItemOut(id=item.id, name=item.name) for item in items]
+    return ItemListOut(items=rows, page=Page(limit=limit, offset=offset, count=len(rows)))
