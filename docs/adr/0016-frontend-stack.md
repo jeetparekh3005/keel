@@ -44,7 +44,11 @@ frontend framework and a JavaScript/TypeScript monorepo tool.
 Chosen: **Next.js (App Router, TypeScript) managed by Turborepo over pnpm
 workspaces.** The app lives at `apps/web`; the pnpm/Turborepo workspace is rooted
 at the repo root alongside `pyproject.toml`, and a dedicated Frontend CI lane runs
-`pnpm lint`, `pnpm typecheck`, and `pnpm build`. Node is pinned via `.nvmrc`.
+`pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm build`, plus a `pnpm audit`
+CVE gate. Unit tests use vitest + Testing Library (jsdom), co-located as
+`*.test.tsx`. The tsconfig enables the stricter `noUncheckedIndexedAccess`,
+`noImplicitOverride`, and `exactOptionalPropertyTypes` before real UI lands. Node
+is pinned via `.nvmrc`.
 
 The frontend is a driving adapter in spirit: it consumes the backend contract and
 holds no domain logic, mirroring the hexagonal stance of the Python vertical

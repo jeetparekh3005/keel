@@ -47,7 +47,8 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
 - **Postgres integration test** (CI service container) + an 85% coverage floor.
 - gRPC is an opt-in extra (`keel-core[grpc]`), not a core dependency of every service.
 - Frontend workspace (v0.2): a Next.js (App Router, TypeScript) app at `apps/web`, managed
-  by pnpm + Turborepo, with its own CI lane (lint/typecheck/build). See ADR-0016.
+  by pnpm + Turborepo, with its own CI lane (lint/typecheck/test/build, plus a CVE
+  audit gate). Unit tests run on vitest + Testing Library. See ADR-0016.
 
 ## Planned - described in the contract/ADRs but NOT yet implemented
 

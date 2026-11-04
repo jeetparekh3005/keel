@@ -14,9 +14,12 @@ pnpm --filter @keel/web dev     # http://localhost:3000
 
 ```sh
 pnpm lint        # next lint (eslint-config-next)
-pnpm typecheck   # tsc --noEmit
+pnpm typecheck   # tsc --noEmit (strict, incl. noUncheckedIndexedAccess)
+pnpm test        # vitest run (jsdom + Testing Library)
 pnpm build       # next build
 ```
+
+Unit tests are co-located next to the code as `*.test.tsx`.
 
 This app is the starting surface for the platform's web UI; feature UIs build on
 top of it and call the backend through the API gateway.
