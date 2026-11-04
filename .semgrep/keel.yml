@@ -1,0 +1,33 @@
+rules:
+  - id: keel-no-jwt-verify-disabled
+    languages: [python]
+    severity: ERROR
+    message: >
+      JWT signature verification must never be disabled. Remove
+      "verify_signature": False from the jwt.decode options; the OIDC
+      authenticator verifies signatures against the issuer JWKS.
+    pattern: 'jwt.decode(..., options={..., "verify_signature": False, ...})'
+
+  - id: keel-no-tls-verification-disabled
+    languages: [python]
+    severity: ERROR
+    message: >
+      TLS verification must not be disabled (verify=False). Use a proper CA
+      bundle or mTLS credentials; disabling verification allows MITM.
+    patterns:
+      - pattern-either:
+          - pattern: requests.$M(..., verify=False, ...)
+          - pattern: httpx.$M(..., verify=False, ...)
+          - pattern: httpx.Client(..., verify=False, ...)
+          - pattern: httpx.AsyncClient(..., verify=False, ...)
+
+  - id: keel-no-yaml-unsafe-load
+    languages: [python]
+    severity: ERROR
+    message: >
+      Use yaml.safe_load, not yaml.load/unsafe_load/full_load, to avoid
+      arbitrary object construction from untrusted input.
+    pattern-either:
+      - pattern: yaml.load($X)
+      - pattern: yaml.unsafe_load(...)
+      - pattern: yaml.full_load(...)
