@@ -50,7 +50,7 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
 
 | Area | Claimed in | Status |
 |------|-----------|--------|
-| `api_key` / `mTLS` credential types | platform.yaml auth; ADR-0006 | **Not implemented** — only JWT bearer works |
+| `api_key` / `mTLS` credential types | platform.yaml auth; ADR-0006 | **Implemented** — `ApiKeyAuthenticator` (hashed keys, X-API-Key over HTTP) and gRPC mTLS credential builders (`mtls_channel_credentials`/`mtls_server_credentials`). Certs are provisioned per-deployment (OpenBao PKI, ADR-0007) |
 | Kubernetes **admission** policy (verify signatures at deploy) | ADR-0010 §5 | **Not implemented** — needs the k8s layer (v0.2) |
 | **Keycloak / NATS integration tests** | ADR-0010 | **Not implemented** — Postgres integration is wired; Keycloak/NATS still stub/in-memory |
 | **Kubernetes/Helm** + runtime `securityContext`, NetworkPolicy | ADR-0004/0008 | **Not present** — only docker-compose |
