@@ -18,11 +18,11 @@ The contract must be *enforced*, not merely documented. The type system alone co
 
 **Five enforcement layers, applied earliest-first. The design goal is to convert "rules" into "the only available path."**
 
-1. **Types (compiler/mypy strict)** — ports as `Protocol`; the composition root is typed against ports, so wiring a non-conforming adapter fails type-checking. No `Any` leakage; exhaustive enum/union handling (`assert_never`).
-2. **Lint / architecture tests** — `import-linter` enforces hexagonal dependency direction (domain must not import adapters); Ruff/semgrep forbid raw SQL and (via `ERA`) commented-out code.
-3. **Library-by-construction** — the `keel-core` app factory *requires* an `Authenticator`, exposes only the schema-conformant logger, and permits errors only as taxonomy types. "Forgot auth" cannot be built.
-4. **Contract-test suite** — shipped in the `keel-core` test kit; each service runs it against its own adapters to prove port + schema conformance.
-5. **CI gates** — coverage floor, security scans (bandit, pip-audit, gitleaks, semgrep, trivy), SBOM, image signing.
+1. **Types (compiler/mypy strict)** - ports as `Protocol`; the composition root is typed against ports, so wiring a non-conforming adapter fails type-checking. No `Any` leakage; exhaustive enum/union handling (`assert_never`).
+2. **Lint / architecture tests** - `import-linter` enforces hexagonal dependency direction (domain must not import adapters); Ruff/semgrep forbid raw SQL and (via `ERA`) commented-out code.
+3. **Library-by-construction** - the `keel-core` app factory *requires* an `Authenticator`, exposes only the schema-conformant logger, and permits errors only as taxonomy types. "Forgot auth" cannot be built.
+4. **Contract-test suite** - shipped in the `keel-core` test kit; each service runs it against its own adapters to prove port + schema conformance.
+5. **CI gates** - coverage floor, security scans (bandit, pip-audit, gitleaks, semgrep, trivy), SBOM, image signing.
 
 Runtime validation (Pydantic at boundaries, config fail-fast) backstops inputs the above cannot see.
 
@@ -43,9 +43,9 @@ Runtime validation (Pydantic at boundaries, config fail-fast) backstops inputs t
 
 - Good: most concerns are guaranteed before runtime; many are impossible to violate by construction.
 - Good: a drifting service fails its own CI.
-- Bad: not everything is enforceable — naming quality, whether an abstraction is appropriate, and domain modeling remain review/ADR concerns. Stated honestly rather than pretended away.
+- Bad: not everything is enforceable - naming quality, whether an abstraction is appropriate, and domain modeling remain review/ADR concerns. Stated honestly rather than pretended away.
 
-> **Implementation status (v0.1):** wired in CI today — static layers (mypy, ruff incl.
+> **Implementation status (v0.1):** wired in CI today - static layers (mypy, ruff incl.
 > bandit `S`, import-linter), pytest + 85% coverage floor, **pip-audit** (dependency CVEs),
 > **gitleaks** (secret scan), **SBOM** (CycloneDX), the **port-coverage conformance check**,
 > and the route-auth conformance check. Still planned: **trivy** image scan and **cosign**
@@ -62,26 +62,26 @@ High-signal packs tied to the contract: `T20` (ban `print` -> use the logger), `
 
 ### Distributed to their ADRs
 
-- Hexagonal boundaries (import-linter) — [ADR-0002](0002-hexagonal-architecture.md)
-- Comment/docstring rules (Ruff `D`/`ERA`, codespell) — [ADR-0003](0003-code-comment-strategy.md)
-- Manifest/IaC hardening (kube-linter, conftest, trivy config) — [ADR-0004](0004-infrastructure-strategy.md)
-- Deny-by-default auth (semgrep) — [ADR-0006](0006-identity-and-access.md)
-- Secrets via ports, gitleaks — [ADR-0007](0007-secrets-and-pki.md)
-- Image hardening (hadolint, trivy, cosign) — [ADR-0008](0008-container-hardening.md)
-- proto/OpenAPI/AsyncAPI contracts (buf, spectral) — [ADR-0012](0012-inter-service-communication.md)
+- Hexagonal boundaries (import-linter) - [ADR-0002](0002-hexagonal-architecture.md)
+- Comment/docstring rules (Ruff `D`/`ERA`, codespell) - [ADR-0003](0003-code-comment-strategy.md)
+- Manifest/IaC hardening (kube-linter, conftest, trivy config) - [ADR-0004](0004-infrastructure-strategy.md)
+- Deny-by-default auth (semgrep) - [ADR-0006](0006-identity-and-access.md)
+- Secrets via ports, gitleaks - [ADR-0007](0007-secrets-and-pki.md)
+- Image hardening (hadolint, trivy, cosign) - [ADR-0008](0008-container-hardening.md)
+- proto/OpenAPI/AsyncAPI contracts (buf, spectral) - [ADR-0012](0012-inter-service-communication.md)
 
 ### Cross-cutting tooling
 
 `pip-audit`/`osv` (dependency CVEs), `deptry` (unused/missing deps), `vulture` (dead code), `pip-licenses`/`reuse` (license policy), `sqlfluff` (migrations), `actionlint` (workflows), `shellcheck`, `yamllint`, `taplo`, coverage floor.
 
-### Meta — enforce the contract itself
+### Meta - enforce the contract itself
 
 - A **JSON Schema for `platform.yaml`**, validated in CI (the contract cannot be malformed).
 - A **port-coverage check**: every driven port in `platform.yaml` must have a registered adapter in the composition root.
 
 ### Orchestration
 
-**pre-commit** runs the fast subset locally; the reusable CI workflow runs the full set — identical gates on every service. These configs ship in `keel-core` (see [ADR-0009](0009-shared-library-vs-generated-code.md)), so a scaffolded service inherits them.
+**pre-commit** runs the fast subset locally; the reusable CI workflow runs the full set - identical gates on every service. These configs ship in `keel-core` (see [ADR-0009](0009-shared-library-vs-generated-code.md)), so a scaffolded service inherits them.
 
 ## More information
 

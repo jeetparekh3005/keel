@@ -1,4 +1,4 @@
-# keel — working agreement
+# keel - working agreement
 
 Polyglot golden-path bootstrapper. v0.1 vertical = **Python**: a shared library
 (`packages/keel-core-py`) + a thin reference service (`services/reference-service`),
@@ -22,7 +22,7 @@ the contract in `platform.yaml`.
   so self-merge is fine once checks are green.
 - Push uses the gh credential helper: `git -c credential.helper= -c credential.helper='!gh auth git-credential' push`.
 
-## Gates (the full local suite — see `/gates`)
+## Gates (the full local suite - see `/gates`)
 ```
 uv sync --frozen --all-packages
 uv run ruff check . && uv run ruff format --check .

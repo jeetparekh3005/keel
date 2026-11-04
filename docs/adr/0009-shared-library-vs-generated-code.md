@@ -18,7 +18,7 @@ keel must keep many services consistent and let platform fixes (e.g. a CVE in th
 
 **Three tiers, with the explicit goal of maximizing Tier 1 and minimizing Tier 2.**
 
-### Tier 1 — `keel-core-<lang>` (shared, versioned library; a dependency, never copied)
+### Tier 1 - `keel-core-<lang>` (shared, versioned library; a dependency, never copied)
 
 The actual platform. Holds everything identical across services:
 - Port **interfaces** (the contract as code).
@@ -27,11 +27,11 @@ The actual platform. Holds everything identical across services:
 
 One `keel-core-<lang>` per language; all implement the same [`platform.yaml`](../../platform.yaml) contract.
 
-### Tier 2 — generated per service (scaffolded once, owned by the team)
+### Tier 2 - generated per service (scaffolded once, owned by the team)
 
 Kept thin: domain models, use cases, service-specific routers/adapters, migrations, the composition root wiring, config values.
 
-### Tier 3 — infrastructure / CI (shared by reference, not copied)
+### Tier 3 - infrastructure / CI (shared by reference, not copied)
 
 Reusable CI workflows (`uses: org/keel/...@v1`) and a base Helm chart the service chart depends on.
 
@@ -43,7 +43,7 @@ Reusable CI workflows (`uses: org/keel/...@v1`) and a base Helm chart the servic
 | Structure/boilerplate a team customizes | **Tier 2 template** | `keel update` diff |
 | Cross-cutting, non-code | **Tier 3 workflow/chart** | tag/chart version |
 
-A CVE in the auth adapter is a `keel-core` version bump — not N per-service edits.
+A CVE in the auth adapter is a `keel-core` version bump - not N per-service edits.
 
 ### Consequences
 

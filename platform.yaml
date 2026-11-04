@@ -1,4 +1,4 @@
-# platform.yaml — the keel platform contract.
+# platform.yaml - the keel platform contract.
 #
 # This is the keystone of keel. Every generated service, in ANY language,
 # MUST satisfy this contract. The contract defines the *ports* (stable,
@@ -18,7 +18,7 @@ metadata:
 
 spec:
   # ----------------------------------------------------------------------
-  # Structured logging — one log schema across all languages.
+  # Structured logging - one log schema across all languages.
   # ----------------------------------------------------------------------
   logging:
     format: json                      # machine-parseable, one line per event
@@ -44,7 +44,7 @@ spec:
     sink: stdout                      # 12-factor: logs are an event stream
 
   # ----------------------------------------------------------------------
-  # Error model — RFC 9457 problem+json, one taxonomy across services.
+  # Error model - RFC 9457 problem+json, one taxonomy across services.
   # ----------------------------------------------------------------------
   errors:
     standard: rfc9457                 # application/problem+json
@@ -84,7 +84,7 @@ spec:
       - "Local dev uses a real OIDC provider (Keycloak); no auth bypass flags in code."
 
   # ----------------------------------------------------------------------
-  # Configuration — typed, 12-factor, explicit precedence.
+  # Configuration - typed, 12-factor, explicit precedence.
   # ----------------------------------------------------------------------
   config:
     port: ConfigLoader
@@ -98,7 +98,7 @@ spec:
     fail_fast: true                   # invalid/missing config aborts startup
 
   # ----------------------------------------------------------------------
-  # Secrets — never in source, config, or logs.
+  # Secrets - never in source, config, or logs.
   # ----------------------------------------------------------------------
   secrets:
     port: SecretProvider
@@ -109,7 +109,7 @@ spec:
       - "No secret is ever written to a log sink (see logging.redaction)."
 
   # ----------------------------------------------------------------------
-  # Telemetry — OpenTelemetry, vendor-neutral.
+  # Telemetry - OpenTelemetry, vendor-neutral.
   # ----------------------------------------------------------------------
   telemetry:
     standard: opentelemetry
@@ -122,7 +122,7 @@ spec:
       - "trace_id/span_id are injected into structured logs (see logging)."
 
   # ----------------------------------------------------------------------
-  # Inter-service communication — see docs/adr/0012-inter-service-communication.md
+  # Inter-service communication - see docs/adr/0012-inter-service-communication.md
   # ----------------------------------------------------------------------
   interservice:
     edge: rest_openapi                # north-south; external/browser clients via APISIX
@@ -145,7 +145,7 @@ spec:
       - "Transport is an adapter; the domain never depends on gRPC or a broker."
 
   # ----------------------------------------------------------------------
-  # Persistence — repository ports, migrations mandatory.
+  # Persistence - repository ports, migrations mandatory.
   # ----------------------------------------------------------------------
   persistence:
     port: Repository                  # one per aggregate; no ORM in domain
@@ -160,7 +160,7 @@ spec:
       - "All queries are parameterized; raw SQL is lint-forbidden by default."
 
   # ----------------------------------------------------------------------
-  # Health & lifecycle — uniform probe endpoints.
+  # Health & lifecycle - uniform probe endpoints.
   # ----------------------------------------------------------------------
   health:
     liveness: /healthz                # process is up
@@ -168,7 +168,7 @@ spec:
     graceful_shutdown: required       # drain in-flight requests on SIGTERM
 
   # ----------------------------------------------------------------------
-  # Container image & runtime hardening — see docs/adr/0008-container-hardening.md
+  # Container image & runtime hardening - see docs/adr/0008-container-hardening.md
   # ----------------------------------------------------------------------
   image:
     base: chainguard                  # shell-less, non-root (swap: distroless, ubi-micro)
@@ -192,7 +192,7 @@ spec:
     note: "An image is extractable by anyone who holds it; access control + signing is the real guarantee."
 
   # ----------------------------------------------------------------------
-  # Ports catalogue — the interfaces every vertical implements.
+  # Ports catalogue - the interfaces every vertical implements.
   # ----------------------------------------------------------------------
   ports:
     driving:                          # inbound: who calls the application

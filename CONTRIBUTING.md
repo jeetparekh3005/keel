@@ -18,9 +18,9 @@ feat/*  chore/*  fix/*  docs/*        <- short-lived work branches
         v  tag vX.Y.Z + CHANGELOG (release-please)
 ```
 
-- **`main`** — released code only. Every commit corresponds to a tagged, released version. Protected: requires a PR and green required checks; no force-pushes or deletions. The `dev -> main` release PR is a **merge commit** (so release-please sees each conventional commit), so `main` does not enforce linear history; `dev` does. There are **0 required approvals today** (bus factor is 1; revisit when a second maintainer joins — see issue #72). Release PRs are authored by `GITHUB_TOKEN` and therefore run no CI, so they are admin-merged; admin bypass is intentionally left on for that reason.
-- **`dev`** — the integration branch. Always green, but not yet released. This is the **default branch** you target with day-to-day PRs.
-- **Work branches** — short-lived, branched from `dev`, named `type/short-slug`.
+- **`main`** - released code only. Every commit corresponds to a tagged, released version. Protected: requires a PR and green required checks; no force-pushes or deletions. The `dev -> main` release PR is a **merge commit** (so release-please sees each conventional commit), so `main` does not enforce linear history; `dev` does. There are **0 required approvals today** (bus factor is 1; revisit when a second maintainer joins - see issue #72). Release PRs are authored by `GITHUB_TOKEN` and therefore run no CI, so they are admin-merged; admin bypass is intentionally left on for that reason.
+- **`dev`** - the integration branch. Always green, but not yet released. This is the **default branch** you target with day-to-day PRs.
+- **Work branches** - short-lived, branched from `dev`, named `type/short-slug`.
 
 ### Branch naming
 
@@ -88,4 +88,4 @@ uv run codespell packages
 uv run pytest
 ```
 
-New Python packages go under `packages/`; services under `services/`. Keep generated/service code thin — cross-cutting behavior belongs in `keel-core-py` (see [ADR-0009](docs/adr/0009-shared-library-vs-generated-code.md)).
+New Python packages go under `packages/`; services under `services/`. Keep generated/service code thin - cross-cutting behavior belongs in `keel-core-py` (see [ADR-0009](docs/adr/0009-shared-library-vs-generated-code.md)).

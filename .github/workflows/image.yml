@@ -2,7 +2,7 @@ name: Image
 
 # PR: build + CVE-scan the reference-service image. Release: publish + sign.
 # The publish job runs via workflow_call (from release-please, inside a run the
-# human merge triggered — NOT a GITHUB_TOKEN event, which would be suppressed)
+# human merge triggered - NOT a GITHUB_TOKEN event, which would be suppressed)
 # or via workflow_dispatch for a manual backfill. See ADR-0008.
 
 on:
