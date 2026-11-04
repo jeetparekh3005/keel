@@ -43,6 +43,8 @@ contract's compatibility is tracked.
 - **The platform `contractVersion` (platform.yaml) is independent** of the repo version. It
   governs cross-language contract compatibility: additive change -> minor, breaking change ->
   major with a documented migration. A service records the `contractVersion` it targets.
+  It moved `0.1.0 -> 0.2.0` when the v0.2 milestone added the `http` edge-security
+  concept (CORS, security headers, host allow-list) to the contract: additive, so a minor.
 - **Publishing is separate from releasing.** Today `keel-core` is consumed in-workspace (and via
   git); publishing to a private index/PyPI and image publishing (cosign/SBOM) are **planned**
   (tracked under v0.2). When `keel-core` is published, revisit per-package versioning.

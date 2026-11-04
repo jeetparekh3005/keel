@@ -20,6 +20,7 @@
       "required": [
         "logging",
         "errors",
+        "http",
         "auth",
         "config",
         "secrets",
@@ -33,6 +34,7 @@
       "properties": {
         "logging": { "type": "object" },
         "errors": { "type": "object" },
+        "http": { "type": "object" },
         "auth": { "type": "object" },
         "config": { "type": "object" },
         "secrets": { "type": "object" },
