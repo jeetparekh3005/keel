@@ -23,7 +23,8 @@ jobs:
       - name: Export locked third-party requirements
         run: uv export --format requirements-txt --all-packages --no-emit-workspace > requirements.txt
       - name: Audit for known vulnerabilities
-        run: uvx pip-audit --requirement requirements.txt
+        # Pin pip-audit so the gate is reproducible; bump via a deliberate PR.
+        run: uvx pip-audit==2.9.0 --requirement requirements.txt
 
   secret-scan:
     name: Secret scan (gitleaks)
