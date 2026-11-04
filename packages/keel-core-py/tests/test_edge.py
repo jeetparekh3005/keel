@@ -19,7 +19,16 @@ def test_security_headers_present():
     assert response.headers["x-content-type-options"] == "nosniff"
     assert response.headers["x-frame-options"] == "DENY"
     assert response.headers["referrer-policy"] == "no-referrer"
-    assert "strict-transport-security" in response.headers
+    csp = response.headers["content-security-policy"]
+    assert csp == "default-src 'none'; frame-ancestors 'none'"
+    assert "permissions-policy" in response.headers
+
+
+def test_hsts_only_over_https():
+    # Plaintext: no HSTS (it would be misleading); HTTPS: HSTS present.
+    assert "strict-transport-security" not in TestClient(_app()).get("/healthz").headers
+    https = TestClient(_app(), base_url="https://testserver")
+    assert "strict-transport-security" in https.get("/healthz").headers
 
 
 def test_oversized_body_is_rejected_before_handling():
