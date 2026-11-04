@@ -32,10 +32,12 @@ def test_pool_stats_shape() -> None:
     assert all(isinstance(v, int) and v >= 0 for v in stats.values())
 
 
-def test_db_pool_gauge_is_registered() -> None:
+def test_db_pool_gauge_is_registered_with_semconv_states() -> None:
     provider, reader = _local_meter()
     observe_db_pool(Database("sqlite+aiosqlite://"), meter=provider.get_meter("test"))
-    assert "db.client.connections.usage" in _collect(reader)
+    metric = _collect(reader)["db.client.connections.usage"]
+    states = {p.attributes["state"] for p in metric.data.data_points}  # type: ignore[attr-defined]
+    assert states == {"used", "idle"}  # OTel DB semconv enum
 
 
 def test_log_drops_counter_reports_the_drop_count() -> None:
