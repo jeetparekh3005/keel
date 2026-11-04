@@ -26,7 +26,7 @@ keel_core/
 ## What's here now (slice 2 of #6)
 
 - **Structured logging** (on structlog, [ADR-0014](../../docs/adr/0014-logging-implementation.md)) — contract-schema JSON, real exception tracebacks, recursive secret redaction + value-pattern/message scrubbing, reserved-field protection, field-size caps, optional rate limiting, non-blocking background writer, correlation ids from `context`, and `configure_logging()` to route stdlib/library logs through the same schema.
-- **Error taxonomy** — `DomainError` hierarchy with category → HTTP status mapping.
+- **Error taxonomy** — `DomainError` hierarchy with category -> HTTP status mapping.
 - **Typed config** — `BaseServiceConfig` (Pydantic Settings), `KEEL_`-prefixed, immutable, fails fast.
 - **Clock** — injectable time for testability.
 - **Auth** — `Authenticator` / `Principal` port + `OIDCAuthenticator` adapter: verifies Bearer JWTs against the issuer's signing key (JWKS in prod), checks issuer/audience/expiry, maps claims (scopes, roles) to a `Principal`.

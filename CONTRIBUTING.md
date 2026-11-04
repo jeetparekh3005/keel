@@ -7,15 +7,15 @@ Thanks for contributing! This document describes the branching model, pull-reque
 keel uses a **GitFlow-lite** model:
 
 ```
-feat/*  chore/*  fix/*  docs/*        ← short-lived work branches
-        │
-        ▼  PR (squash merge, Conventional Commit title)
-      dev                             ← integration; always green, not released
-        │
-        ▼  release PR (merge commit)
-      main                            ← released only; every commit is a tagged version
-        │
-        ▼  tag vX.Y.Z + CHANGELOG (release-please)
+feat/*  chore/*  fix/*  docs/*        <- short-lived work branches
+        |
+        v  PR (squash merge, Conventional Commit title)
+      dev                             <- integration; always green, not released
+        |
+        v  release PR (merge commit)
+      main                            <- released only; every commit is a tagged version
+        |
+        v  tag vX.Y.Z + CHANGELOG (release-please)
 ```
 
 - **`main`** — released code only. Every commit corresponds to a tagged, released version. Protected: requires a PR, green required checks, and linear history; no force-pushes or deletions. There are **0 required approvals today** (bus factor is 1; revisit when a second maintainer joins — see issue #72). Release PRs are authored by `GITHUB_TOKEN` and therefore run no CI, so they are admin-merged; admin bypass is intentionally left on for that reason.
@@ -40,7 +40,7 @@ Example: `feat/python-auth-adapter`, `chore/renovate-config`.
 3. Open a PR **into `dev`**. The PR **title must be a Conventional Commit** (it becomes the squash-commit message).
 4. Required checks must pass. Branch protection enforces the checks (not approvals), so a self-merge is fine once they are green.
 5. **Squash-merge** into `dev`.
-6. Releases: a **release PR** from `dev` → `main` is maintained automatically by [release-please](https://github.com/googleapis/release-please). Merging it (as a **merge commit**) tags the version and updates `CHANGELOG.md`.
+6. Releases: a **release PR** from `dev` -> `main` is maintained automatically by [release-please](https://github.com/googleapis/release-please). Merging it (as a **merge commit**) tags the version and updates `CHANGELOG.md`.
 
 ## Commit conventions
 

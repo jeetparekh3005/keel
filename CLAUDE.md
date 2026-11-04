@@ -18,7 +18,7 @@ the contract in `platform.yaml`.
 - PR **title must be a Conventional Commit**. Types: feat, fix, docs, chore, refactor, perf,
   test, build, ci, style, revert. Scopes: python, ts, rust, go, java, ci, docs, platform,
   auth, db, security.
-- Squash-merge into `dev`; `dev` → `main` is the release path (release-please). 0 approvals,
+- Squash-merge into `dev`; `dev` -> `main` is the release path (release-please). 0 approvals,
   so self-merge is fine once checks are green.
 - Push uses the gh credential helper: `git -c credential.helper= -c credential.helper='!gh auth git-credential' push`.
 
@@ -40,13 +40,13 @@ Integration tests need `KEEL_TEST_DATABASE_URL` (Postgres); they skip otherwise 
   `tests/test_port_coverage.py`).
 - **Auth is deny-by-default, enforced**: every non-exempt route must carry an auth dependency
   (`require_scopes`/`require_roles`); the startup conformance check fails otherwise.
-- **ADRs**: MADR format in `docs/adr/`. Tool/vendor choice → comparison table; principle → prose.
-- **Comments**: say *why*, not *what*; public-API docstrings required; long rationale → an ADR.
+- **ADRs**: MADR format in `docs/adr/`. Tool/vendor choice -> comparison table; principle -> prose.
+- **Comments**: say *why*, not *what*; public-API docstrings required; long rationale -> an ADR.
 
 ## Project management & releases
 - Planned work is tracked as GitHub issues on milestones **v0.2–v0.5** and the "keel roadmap"
-  board. PRs reference the issue they close (`Closes #N`). New planned work → open an issue first.
-- Releases: repo **SemVer via release-please**. Work lands on `dev`; merging `dev` → `main` lets
+  board. PRs reference the issue they close (`Closes #N`). New planned work -> open an issue first.
+- Releases: repo **SemVer via release-please**. Work lands on `dev`; merging `dev` -> `main` lets
   release-please open a release PR that tags the version + updates `CHANGELOG.md` (see `/release`).
 - The platform **`contractVersion`** (`platform.yaml`) is versioned independently of the repo (ADR-0015).
 
@@ -58,4 +58,4 @@ Integration tests need `KEEL_TEST_DATABASE_URL` (Postgres); they skip otherwise 
 Start a session with **`/audit`** (consistency sweep: drift, open PRs/issues, release due, docs/ADR gaps).
 - `/audit` session sweep · `/next` drive the top issue to done (one at a time) · `/backlog` refresh backlog
 - `/slice` start a feature slice · `/gates` full suite · `/ship` gate+commit+push+PR · `/review` 3 reviewers
-- `/adr` new ADR · `/epic` epic→tasks→subtasks · `/release` cut a release
+- `/adr` new ADR · `/epic` epic->tasks->subtasks · `/release` cut a release

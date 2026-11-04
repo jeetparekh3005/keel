@@ -1,6 +1,6 @@
 # Roadmap
 
-Milestones are tracked on GitHub (Issues → Milestones) and the **keel roadmap** project board.
+Milestones are tracked on GitHub (Issues -> Milestones) and the **keel roadmap** project board.
 This file is a human-readable mirror; the issues are the source of truth.
 
 | Milestone | Theme | Status |

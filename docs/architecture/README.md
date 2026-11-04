@@ -16,7 +16,7 @@ This is the arc42 skeleton for keel itself. Sections are **tiered**: the mandato
 | 6  | Runtime view | optional | stub |
 | 7  | Deployment view | optional | stub |
 | 8  | Cross-cutting concepts (the platform contract) | **core** | stub |
-| 9  | Architecture decisions → [ADRs](../adr/) | **core** | linked |
+| 9  | Architecture decisions -> [ADRs](../adr/) | **core** | linked |
 | 10 | Quality requirements | optional | stub |
 | 11 | Risks & technical debt | **core** | stub |
 | 12 | Glossary | optional | stub |
