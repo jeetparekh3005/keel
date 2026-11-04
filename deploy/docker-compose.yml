@@ -1,6 +1,6 @@
 # Local development stack for the reference service: real runnable adapters
 # (Postgres, Keycloak OIDC, OpenTelemetry collector, NATS JetStream).
-# Not for production — Kubernetes/Helm is the deployment target (ADR-0004).
+# Not for production - Kubernetes/Helm is the deployment target (ADR-0004).
 
 services:
   postgres:
