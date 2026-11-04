@@ -46,13 +46,15 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   registered adapter (fails CI otherwise).
 - **Postgres integration test** (CI service container) + an 85% coverage floor.
 - gRPC is an opt-in extra (`keel-core[grpc]`), not a core dependency of every service.
+- Frontend workspace (v0.2): a Next.js (App Router, TypeScript) app at `apps/web`, managed
+  by pnpm + Turborepo, with its own CI lane (lint/typecheck/build). See ADR-0016.
 
 ## Planned - described in the contract/ADRs but NOT yet implemented
 
 | Area | Claimed in | Status |
 |------|-----------|--------|
 | `api_key` / `mTLS` credential types | platform.yaml auth; ADR-0006 | **Implemented** - `ApiKeyAuthenticator` (hashed keys, X-API-Key over HTTP) and gRPC mTLS credential builders (`mtls_channel_credentials`/`mtls_server_credentials`). Certs are provisioned per-deployment (OpenBao PKI, ADR-0007) |
-| Kubernetes **admission** policy (verify signatures at deploy) | ADR-0010 §5 | **Not implemented** - needs the k8s layer (v0.2) |
+| Kubernetes **admission** policy (verify signatures at deploy) | ADR-0010 §5 | **Not implemented** - cosign verification at admission (Kyverno/policy-controller) is a future milestone; images are signed + attested today |
 | **Keycloak / NATS integration tests** | ADR-0010 | **Implemented** - CI integration job runs Postgres, a NATS JetStream container (MessageBus roundtrip), and Keycloak with an imported realm (OIDC authenticate against a real JWKS via client_credentials) |
 | **Kubernetes/Helm** + runtime `securityContext`, NetworkPolicy | ADR-0004/0008 | **Implemented** - Helm chart at `deploy/charts/reference-service` (non-root, read-only rootfs, drop-all caps, seccomp RuntimeDefault, no SA token, default-deny NetworkPolicy, liveness/readiness probes); lint + kubeconform in CI |
 | Base-image **digest pinning** | platform.yaml image; ADR-0008 | **By design, deferred to Renovate** - Chainguard bases are rolling/continuously-rebuilt, so every build is Trivy-scanned instead; static digest pins would freeze stale CVEs. Renovate-managed digests tracked for v0.2 |
