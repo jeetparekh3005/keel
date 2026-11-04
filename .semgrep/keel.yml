@@ -6,7 +6,7 @@ rules:
       JWT signature verification must never be disabled. Remove
       "verify_signature": False from the jwt.decode options; the OIDC
       authenticator verifies signatures against the issuer JWKS.
-    pattern: jwt.decode(..., options={..., "verify_signature": False, ...})
+    pattern: 'jwt.decode(..., options={..., "verify_signature": False, ...})'
 
   - id: keel-no-tls-verification-disabled
     languages: [python]
