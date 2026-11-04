@@ -15,8 +15,8 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
 - Persistence: async SQLAlchemy, `Database` + `UnitOfWork` plumbing, Alembic migrations.
   `Repository` ports are service-defined (one per aggregate, mapping ORM<->domain); keel-core
   does not ship a generic repository.
-- Distributed **tracing** (OpenTelemetry) with log correlation; gRPC + in-memory MessageBus
-  factories with trace propagation.
+- Distributed **tracing** (OpenTelemetry) with log correlation; gRPC, in-memory MessageBus,
+  and a **NATS JetStream** MessageBus adapter (`keel-core[nats]`), all propagating trace context.
 - RFC 9457 problem+json (incl. `invalid-params`); health/readiness endpoints.
 - Edge hardening: security headers (CSP, Permissions-Policy, HSTS over HTTPS), body-size
   limit, an **opt-in** per-instance `RateLimitMiddleware`, and **default-deny CORS**
@@ -56,7 +56,7 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
 | **Keycloak / NATS integration tests** | ADR-0010 | **Not implemented** — Postgres integration is wired; Keycloak/NATS still stub/in-memory |
 | **Kubernetes/Helm** + runtime `securityContext`, NetworkPolicy | ADR-0004/0008 | **Not present** — only docker-compose |
 | Base-image **digest pinning** | platform.yaml image; ADR-0008 | **By design, deferred to Renovate** — Chainguard bases are rolling/continuously-rebuilt, so every build is Trivy-scanned instead; static digest pins would freeze stale CVEs. Renovate-managed digests tracked for v0.2 |
-| **gRPC IDL/buf**, **NATS/Kafka/RabbitMQ** broker adapters, mTLS-by-default | platform.yaml interservice; ADR-0012 | **Not implemented** — dev-only factories + in-memory bus. gRPC *application* auth (deny-by-default Bearer interceptor) **is** implemented; mTLS transport is not (#25). |
+| **gRPC IDL/buf**, **Kafka/RabbitMQ** broker adapters | platform.yaml interservice; ADR-0012 | **Partial.** NATS JetStream adapter (`keel-core[nats]`) implemented with trace propagation, held to a shared MessageBus contract; Kafka/RabbitMQ and buf/protobuf IDL still planned. gRPC application auth (deny-by-default) and mTLS credentials are implemented. |
 
 This table shrinks as the gaps close. Track B (the v0.1 review remediation) closed authz,
 edge hardening, metrics, graceful shutdown, perf wiring, security CI gates, port-coverage,
