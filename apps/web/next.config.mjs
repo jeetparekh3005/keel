@@ -1,25 +1,11 @@
 /** @type {import('next').NextConfig} */
 
-// Security headers applied to every response, mirroring the backend edge defaults
-// (keel-core SecurityHeadersMiddleware). The CSP is deny-by-default; style-src allows
-// inline because the app uses inline style attributes. HSTS is emitted only in a
-// production build so local http dev is unaffected.
+// Static security headers applied to every response, mirroring the backend edge
+// defaults (keel-core SecurityHeadersMiddleware). The Content-Security-Policy is
+// NOT set here: it needs a per-request nonce for Next's inline hydration scripts,
+// so it lives in middleware.ts. HSTS is emitted only in a production build so local
+// http dev is unaffected.
 const securityHeaders = [
-  {
-    key: "Content-Security-Policy",
-    value: [
-      "default-src 'self'",
-      "script-src 'self'",
-      "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data:",
-      "font-src 'self'",
-      "connect-src 'self'",
-      "object-src 'none'",
-      "base-uri 'self'",
-      "form-action 'self'",
-      "frame-ancestors 'none'",
-    ].join("; "),
-  },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "DENY" },
   { key: "Referrer-Policy", value: "no-referrer" },
