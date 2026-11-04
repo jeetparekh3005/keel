@@ -48,9 +48,9 @@ Runtime validation (Pydantic at boundaries, config fail-fast) backstops inputs t
 > **Implementation status (v0.1):** wired in CI today - static layers (mypy, ruff incl.
 > bandit `S`, import-linter), pytest + 85% coverage floor, **pip-audit** (dependency CVEs),
 > **gitleaks** (secret scan), **SBOM** (CycloneDX), the **port-coverage conformance check**,
-> and the route-auth conformance check. Still planned: **trivy** image scan and **cosign**
-> signing/admission (image-build-time -> v0.2 publish pipeline) and the **semgrep** ruleset.
-> See [docs/STATUS.md](../STATUS.md).
+> and the route-auth conformance check, plus **semgrep** SAST, **trivy** image scan, and
+> **cosign** signing + SLSA/SBOM attestation in the image pipeline. Still planned: cluster-side
+> signature **admission** verification. See [docs/STATUS.md](../STATUS.md).
 
 ## Deterministic enforcement catalogue
 
