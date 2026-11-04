@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.3](https://github.com/jeetparekh3005/keel/compare/v0.1.2...v0.1.3) (2026-11-04)
+
+
+### Features
+
+* **ci:** image publish pipeline — build, Trivy scan, GHCR push, keyless cosign + attest ([#97](https://github.com/jeetparekh3005/keel/issues/97)) ([2c34fc6](https://github.com/jeetparekh3005/keel/commit/2c34fc62644faf236ca24f11a1ca4ed6af909d89)), closes [#24](https://github.com/jeetparekh3005/keel/issues/24) [#35](https://github.com/jeetparekh3005/keel/issues/35)
+
+
+### Miscellaneous Chores
+
+* release v0.1.3 (dev to main) ([#98](https://github.com/jeetparekh3005/keel/issues/98)) ([acb937b](https://github.com/jeetparekh3005/keel/commit/acb937b546eebc000d967178802db6dce89d5f9d))
+
 ## [0.1.2](https://github.com/jeetparekh3005/keel/compare/v0.1.1...v0.1.2) (2026-11-04)
 
 
