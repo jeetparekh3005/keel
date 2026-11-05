@@ -7,6 +7,7 @@
 
 pub mod config;
 pub mod domain;
+pub mod http;
 pub mod logging;
 
 /// The platform `contractVersion` this vertical targets (`platform.yaml`

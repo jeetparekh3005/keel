@@ -13,6 +13,8 @@ thiserror = "2"
 figment = { version = "0.10", features = ["env", "toml"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
+axum = "0.8"
 
 [dev-dependencies]
 figment = { version = "0.10", features = ["env", "toml", "test"] }
+tokio = { version = "1", features = ["macros", "rt"] }
