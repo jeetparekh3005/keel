@@ -5,6 +5,9 @@
 //! foundation scaffold; subsequent slices (epic #36) add config, the error model,
 //! logging, telemetry, the HTTP edge, auth, persistence, and the conformance kit.
 
+pub mod config;
+pub mod domain;
+
 /// The platform `contractVersion` this vertical targets (`platform.yaml`
 /// `metadata.contractVersion`). A generated project records the version it targets.
 pub const CONTRACT_VERSION: &str = "0.2.0";
