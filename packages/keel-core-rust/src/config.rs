@@ -3,7 +3,9 @@
 //! Layers an optional TOML file then `KEEL_`-prefixed environment variables (env
 //! wins) and deserializes into the caller's typed struct. Invalid or missing
 //! required config fails fast with a [`DomainError`]. Built-in defaults come from
-//! the struct's serde field defaults; a secret-provider layer lands in a later slice.
+//! the struct's serde field defaults. Secret access is a separate concern, exposed
+//! through the [`crate::ports::SecretProvider`] port (e.g. [`crate::adapters::EnvSecretProvider`]);
+//! config loading itself reads only the non-secret typed values.
 
 use figment::providers::{Env, Format, Toml};
 use figment::Figment;

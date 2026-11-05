@@ -1,9 +1,10 @@
 //! Structured JSON logging (platform.yaml logging: json, leveled, one line per event).
 //!
 //! Installs a global `tracing` subscriber that emits one JSON object per event with
-//! the level and message. Per-event `service`/`version` and `trace_id`/`span_id`
-//! correlation are attached by the OpenTelemetry layer (a later slice adds the OTLP
-//! resource + span context); this slice establishes the JSON log stream and leveling.
+//! the level and message. This is the minimal JSON log stream + leveling; the richer
+//! path in [`crate::telemetry`] layers on the OpenTelemetry resource
+//! (`service`/`version`) and `trace_id`/`span_id` correlation plus optional OTLP export.
+//! A service calls one or the other, not both.
 
 use tracing_subscriber::fmt;
 use tracing_subscriber::prelude::*;
