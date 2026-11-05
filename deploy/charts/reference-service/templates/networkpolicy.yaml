@@ -14,15 +14,17 @@ spec:
     - Ingress
     - Egress
   ingress:
-    # Inbound to the HTTP port, from cluster workloads only (e.g. the ingress
-    # controller / gateway). Tighten the selector to specific namespaces per env.
+    # Only the configured sources may reach the HTTP port. The default scopes to
+    # the ingress-controller namespace (by its metadata-name label); a real
+    # default-deny requires naming the source, so do NOT widen this to all
+    # namespaces. Override networkPolicy.ingressFrom per cluster.
     - from:
-        - namespaceSelector: {}
+        {{- toYaml .Values.networkPolicy.ingressFrom | nindent 8 }}
       ports:
         - port: http
           protocol: TCP
   egress:
-    # DNS resolution (kube-dns lives in the cluster).
+    # DNS resolution (kube-dns).
     - to:
         - namespaceSelector: {}
       ports:
@@ -30,14 +32,29 @@ spec:
           protocol: UDP
         - port: 53
           protocol: TCP
-    # Dependency ports (DB, OTLP, NATS, OIDC, TLS), cluster-internal only -
-    # this blocks egress to the public internet. Add explicit `ipBlock` CIDRs
-    # for any out-of-cluster dependency (e.g. an external IdP).
+    # In-cluster dependency ports (DB, OTLP, NATS, in-cluster OIDC). Scope the
+    # selector to the namespaces hosting those dependencies in your cluster.
     - to:
-        - namespaceSelector: {}
+        - namespaceSelector:
+            {{- toYaml .Values.networkPolicy.egressNamespaceSelector | nindent 12 }}
       ports:
         {{- range .Values.networkPolicy.egressPorts }}
         - port: {{ . }}
           protocol: TCP
         {{- end }}
+    {{- with .Values.networkPolicy.egressIPBlocks }}
+    # Out-of-cluster dependencies (e.g. an external IdP / JWKS over TLS). Without a
+    # CIDR here, egress to the public internet is denied - an external IdP will be
+    # unreachable and the service will fail readiness.
+    - to:
+        {{- range . }}
+        - ipBlock:
+            cidr: {{ . }}
+        {{- end }}
+      ports:
+        {{- range $.Values.networkPolicy.egressIPBlockPorts }}
+        - port: {{ . }}
+          protocol: TCP
+        {{- end }}
+    {{- end }}
 {{- end }}
