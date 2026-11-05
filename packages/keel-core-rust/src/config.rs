@@ -30,6 +30,9 @@ pub fn load<T: DeserializeOwned>(config_file: Option<&str>) -> Result<T, DomainE
 }
 
 #[cfg(test)]
+// figment::Jail::expect_with closures must return figment::Result<()>, whose Err
+// (figment::Error, ~208 bytes) trips result_large_err; it is figment's test API, not ours.
+#[allow(clippy::result_large_err)]
 mod tests {
     use super::load;
     use serde::Deserialize;
