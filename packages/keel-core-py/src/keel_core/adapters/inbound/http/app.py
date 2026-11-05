@@ -9,6 +9,7 @@ problem+json errors, metrics, and health endpoints.
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
@@ -41,18 +42,25 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     assert_routes_require_auth(app)
     yield
+    # Each step is isolated so one failure does not skip the rest, and the log
+    # writer is stopped LAST so logs emitted during DB/tracer/meter shutdown are
+    # still written.
     database = getattr(app.state, "database", None)
     if database is not None:
-        await database.dispose()
-    log_writer = getattr(app.state, "log_writer", None)
-    if log_writer is not None:
-        log_writer.stop()
+        with contextlib.suppress(Exception):
+            await database.dispose()
     tracer_provider = getattr(app.state, "tracer_provider", None)
     if tracer_provider is not None:
-        tracer_provider.shutdown()
+        with contextlib.suppress(Exception):
+            tracer_provider.shutdown()
     meter_provider = getattr(app.state, "meter_provider", None)
     if meter_provider is not None:
-        meter_provider.shutdown()
+        with contextlib.suppress(Exception):
+            meter_provider.shutdown()
+    log_writer = getattr(app.state, "log_writer", None)
+    if log_writer is not None:
+        with contextlib.suppress(Exception):
+            log_writer.stop()
 
 
 def create_app(

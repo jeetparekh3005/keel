@@ -26,12 +26,16 @@ class UnitOfWork:
         exc: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        """Commit if the block succeeded, otherwise roll back; always close."""
+        """Commit pending writes on a clean exit, else roll back; always close.
+
+        A read-only block (no new/dirty/deleted objects) is rolled back rather than
+        committed, so GET/LIST requests do not pay a COMMIT round trip per call.
+        """
         session = self._session
         if session is None:
             return
         try:
-            if exc_type is None:
+            if exc_type is None and (session.new or session.dirty or session.deleted):
                 await session.commit()
             else:
                 await session.rollback()

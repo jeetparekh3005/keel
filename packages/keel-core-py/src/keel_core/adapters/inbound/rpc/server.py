@@ -12,6 +12,7 @@ unauthenticated (deny-by-default by construction).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from typing import TYPE_CHECKING, Any
 
@@ -99,7 +100,11 @@ def _wrap_handler(
                 async for response in inner(request, context):
                     yield response
             finally:
-                principal_var.reset(token)
+                # An async generator can close in a different context than the set,
+                # making reset(token) raise ValueError. Each RPC runs in its own
+                # task, so suppressing the cross-context reset cannot leak across RPCs.
+                with contextlib.suppress(ValueError):
+                    principal_var.reset(token)
 
         return grpc.unary_stream_rpc_method_handler(unary_stream, **common)
 
@@ -125,7 +130,9 @@ def _wrap_handler(
             async for response in inner(request_iterator, context):
                 yield response
         finally:
-            principal_var.reset(token)
+            # See unary_stream: guard the cross-context reset on generator close.
+            with contextlib.suppress(ValueError):
+                principal_var.reset(token)
 
     return grpc.stream_stream_rpc_method_handler(stream_stream, **common)
 
