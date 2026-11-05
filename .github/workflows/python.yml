@@ -49,6 +49,8 @@ jobs:
       - name: Dependencies (deptry)
         run: |
           for pkg in packages/*/ services/*/; do
+            # Skip non-Python members (e.g. the Rust vertical shares packages/ and services/).
+            [ -f "$pkg/pyproject.toml" ] || continue
             uv run --directory "$pkg" deptry src
           done
       - name: Tests (pytest + coverage floor)
