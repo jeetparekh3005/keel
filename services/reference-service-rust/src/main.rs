@@ -4,5 +4,8 @@
 //! (epic #36). It links keel-core-rust and prints the targeted contract version.
 
 fn main() {
-    println!("reference-service-rust scaffold {}", keel_core_rust::CONTRACT_VERSION);
+    println!(
+        "reference-service-rust scaffold {}",
+        keel_core_rust::CONTRACT_VERSION
+    );
 }
