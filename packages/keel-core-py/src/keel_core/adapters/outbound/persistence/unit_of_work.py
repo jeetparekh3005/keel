@@ -26,7 +26,14 @@ class UnitOfWork:
         exc: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        """Commit if the block succeeded, otherwise roll back; always close."""
+        """Commit on a clean exit, else roll back; always close.
+
+        We commit unconditionally on success rather than inferring "read-only" from
+        session.new/dirty/deleted: those collections are empty after a flush() or for
+        Core-DML (execute(insert/update/delete)), so a dirty-check would silently roll
+        back those legitimate writes. A COMMIT on a read-only transaction writes no WAL
+        and is effectively free, so correctness wins over skipping it.
+        """
         session = self._session
         if session is None:
             return

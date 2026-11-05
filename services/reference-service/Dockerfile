@@ -1,7 +1,9 @@
 # syntax=docker/dockerfile:1
 # Hardened image per ADR-0008. Build context is the repo root (uv workspace).
-# Base images use rolling Chainguard tags here; real deployments pin by digest
-# (managed by Renovate). Output is a shell-less, non-root, bytecode-only image.
+# Base images use rolling Chainguard tags by deliberate choice: they are rebuilt
+# continuously, so every build is Trivy-scanned (a static digest pin would freeze
+# stale CVEs). The published image is cosign-signed and attested by its built
+# digest. Output is a shell-less, non-root, bytecode-only image.
 
 FROM cgr.dev/chainguard/python:latest-dev AS build
 WORKDIR /app

@@ -158,6 +158,34 @@ def test_queue_writer_is_non_blocking_and_delivers():
     assert buffer.getvalue() == "a\nb\n"
 
 
+def test_queue_writer_survives_a_sink_write_error():
+    # A sink error (e.g. a closed stdout pipe) must not kill the writer thread:
+    # the next write still lands and shutdown still completes.
+    class _FlakySink:
+        def __init__(self) -> None:
+            self.written: list[str] = []
+            self._fail_once = True
+
+        def write(self, text: str) -> int:
+            if self._fail_once:
+                self._fail_once = False
+                raise BrokenPipeError("sink closed")
+            self.written.append(text)
+            return len(text)
+
+        def flush(self) -> None:
+            pass
+
+    sink = _FlakySink()
+    writer = QueueLogWriter(sink)
+    writer.write("boom\n")  # raises in the thread -> counted, thread survives
+    writer.write("after\n")  # must still be delivered
+    writer.stop()  # must return (not hang)
+    assert not writer._thread.is_alive()  # noqa: SLF001
+    assert "after\n" in sink.written
+    assert writer.write_errors >= 1
+
+
 def test_stdlib_library_logs_are_bridged():
     buffer = io.StringIO()
     root = logging.getLogger()

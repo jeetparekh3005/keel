@@ -9,6 +9,7 @@ problem+json errors, metrics, and health endpoints.
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
@@ -20,7 +21,6 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from keel_core.adapters.inbound.http.conformance import assert_routes_require_auth
 from keel_core.adapters.inbound.http.edge import BodyLimitMiddleware, SecurityHeadersMiddleware
 from keel_core.adapters.inbound.http.health import ReadinessCheck, build_health_router
-from keel_core.adapters.inbound.http.metrics import MetricsMiddleware
 from keel_core.adapters.inbound.http.problem import register_exception_handlers
 from keel_core.adapters.inbound.http.ratelimit import RateLimitMiddleware
 from keel_core.adapters.inbound.http.request_id import RequestIdMiddleware
@@ -42,18 +42,25 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     assert_routes_require_auth(app)
     yield
+    # Each step is isolated so one failure does not skip the rest, and the log
+    # writer is stopped LAST so logs emitted during DB/tracer/meter shutdown are
+    # still written.
     database = getattr(app.state, "database", None)
     if database is not None:
-        await database.dispose()
-    log_writer = getattr(app.state, "log_writer", None)
-    if log_writer is not None:
-        log_writer.stop()
+        with contextlib.suppress(Exception):
+            await database.dispose()
     tracer_provider = getattr(app.state, "tracer_provider", None)
     if tracer_provider is not None:
-        tracer_provider.shutdown()
+        with contextlib.suppress(Exception):
+            tracer_provider.shutdown()
     meter_provider = getattr(app.state, "meter_provider", None)
     if meter_provider is not None:
-        meter_provider.shutdown()
+        with contextlib.suppress(Exception):
+            meter_provider.shutdown()
+    log_writer = getattr(app.state, "log_writer", None)
+    if log_writer is not None:
+        with contextlib.suppress(Exception):
+            log_writer.stop()
 
 
 def create_app(
@@ -110,14 +117,16 @@ def create_app(
             redoc_url=None,
             openapi_url=None,
         )
-    # FastAPI/Starlette emit OTel spans natively once a provider is configured
-    # (see keel_core.adapters.outbound.telemetry); the logger reads the active span.
+    # FastAPI/Starlette emit OTel spans AND http.server.* metrics natively once a
+    # provider is configured (see keel_core.adapters.outbound.telemetry); the native
+    # ASGI instrumentation wraps the whole app, so it already records our
+    # RateLimit/BodyLimit rejections (429/413) and the logger reads the active span.
+    # We add no duplicate duration histogram of our own.
     #
     # add_middleware makes the LAST-added the OUTERMOST. Add inner-to-outer so the
-    # final stack is (outer -> inner): CORS, RequestId, Metrics, SecurityHeaders,
-    # RateLimit, BodyLimit, app. Rejections from RateLimit (429) and BodyLimit (413)
-    # are therefore counted by metrics, correlated by request-id, and carry the
-    # security headers - they are not invisible to observability.
+    # final stack is (outer -> inner): CORS, RequestId, SecurityHeaders, RateLimit,
+    # BodyLimit, app. Rejections carry the request-id and security headers - they are
+    # not invisible to observability.
     app.add_middleware(BodyLimitMiddleware, max_bytes=max_request_bytes)
     if rate_limit is not None:
         max_requests, window_seconds = rate_limit
@@ -125,7 +134,6 @@ def create_app(
             RateLimitMiddleware, max_requests=max_requests, window_seconds=window_seconds
         )
     app.add_middleware(SecurityHeadersMiddleware)
-    app.add_middleware(MetricsMiddleware)
     app.add_middleware(RequestIdMiddleware)
     if trusted_hosts:
         # Reject mismatched Host headers (DNS-rebinding defense) before anything else.

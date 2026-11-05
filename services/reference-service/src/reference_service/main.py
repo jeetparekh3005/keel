@@ -65,6 +65,9 @@ def create_application() -> FastAPI:
         jwks_uri=config.oidc_jwks_uri,
         issuer=config.oidc_issuer,
         audience=config.oidc_audience,
+        # Require https for the JWKS endpoint outside dev-like environments, so a
+        # network attacker cannot serve forged signing keys in production.
+        allow_insecure=config.environment.lower() in {"dev", "local", "test"},
     )
     app = build_app(config, authenticator=authenticator, logger=logger)
     app.state.log_writer = log_writer

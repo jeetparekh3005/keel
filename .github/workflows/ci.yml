@@ -20,6 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Scan tracked files for emoji, em/en-dashes, and unicode arrows
         run: |
           # The repo is ASCII-punctuation only (golden rule: no emoji, no em-dashes).
@@ -74,6 +76,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Assert required files exist
         run: |
           set -euo pipefail

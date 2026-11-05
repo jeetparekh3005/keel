@@ -12,6 +12,7 @@ the collector's job (12-factor), not the service's.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import queue
 import re
@@ -253,6 +254,7 @@ class QueueLogWriter:
         self._target = target
         self._queue: queue.Queue[str | None] = queue.Queue(maxsize=max_queue)
         self.dropped = 0
+        self.write_errors = 0
         self._thread = threading.Thread(target=self._run, name="keel-log-writer", daemon=True)
         self._thread.start()
 
@@ -272,12 +274,23 @@ class QueueLogWriter:
             item = self._queue.get()
             if item is None:
                 return
-            self._target.write(item)
-            self._target.flush()
+            try:
+                self._target.write(item)
+                self._target.flush()
+            except Exception:
+                # A sink failure (e.g. a closed stdout pipe, EPIPE, disk full) must
+                # not kill the writer thread: if it died, the queue would fill and
+                # every subsequent log would drop, and stop() could block forever on
+                # a full queue. Count the error and keep draining.
+                self.write_errors += 1
 
     def stop(self, *, timeout: float = 2.0) -> None:
-        """Drain the queue and stop the writer thread. Call at service shutdown."""
-        self._queue.put(None)
+        """Drain the queue and stop the writer thread. Call at service shutdown.
+
+        Uses a bounded put so a wedged/full queue cannot make shutdown hang.
+        """
+        with contextlib.suppress(queue.Full):
+            self._queue.put(None, timeout=timeout)
         self._thread.join(timeout=timeout)
 
 

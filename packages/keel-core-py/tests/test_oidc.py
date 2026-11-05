@@ -6,7 +6,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from keel_core.adapters.outbound.auth import OIDCAuthenticator
-from keel_core.domain.errors import Unauthenticated
+from keel_core.domain.errors import Unauthenticated, Unavailable
 
 _ISSUER = "https://issuer.example"
 _AUDIENCE = "keel-api"
@@ -83,3 +83,38 @@ def test_bad_signature_is_rejected():
 def test_garbage_token_is_rejected():
     with pytest.raises(Unauthenticated):
         _authenticator().authenticate("not-a-jwt")
+
+
+def test_unknown_kid_is_unauthenticated_not_500():
+    # PyJWKClientError (e.g. a kid absent from the JWKS) is not an InvalidTokenError;
+    # it must map to Unauthenticated (401), not escape as an unhandled 500.
+    def resolver(_: str) -> str:
+        raise jwt.PyJWKClientError("no matching kid")
+
+    auth = OIDCAuthenticator(issuer=_ISSUER, audience=_AUDIENCE, key_resolver=resolver)
+    with pytest.raises(Unauthenticated):
+        auth.authenticate(_token())
+
+
+def test_jwks_endpoint_unreachable_is_unavailable():
+    # A JWKS fetch failure is a dependency outage: 503 (retryable), not 401 or 500.
+    def resolver(_: str) -> str:
+        raise jwt.PyJWKClientConnectionError("jwks endpoint down")
+
+    auth = OIDCAuthenticator(issuer=_ISSUER, audience=_AUDIENCE, key_resolver=resolver)
+    with pytest.raises(Unavailable):
+        auth.authenticate(_token())
+
+
+def test_clock_skew_within_leeway_is_accepted():
+    # A token that expired 30s ago is accepted under the default 60s leeway.
+    recently_expired = _token(exp=datetime.now(UTC) - timedelta(seconds=30))
+    principal = _authenticator().authenticate(recently_expired)
+    assert principal.subject == "user-1"
+
+
+def test_from_jwks_rejects_plaintext_http():
+    with pytest.raises(ValueError, match="https"):
+        OIDCAuthenticator.from_jwks(
+            jwks_uri="http://issuer.example/jwks", issuer=_ISSUER, audience=_AUDIENCE
+        )

@@ -30,6 +30,32 @@ def test_unprotected_route_is_detected():
         assert_routes_require_auth(app)
 
 
+def test_unprotected_websocket_route_is_detected():
+    from fastapi import WebSocket
+
+    app = _app()
+
+    @app.websocket("/ws")
+    async def ws(websocket: WebSocket):  # pragma: no cover - never connected
+        await websocket.accept()
+
+    assert "WS /ws" in unprotected_routes(app)
+
+
+def test_raw_non_exempt_route_is_flagged_unverified():
+    from starlette.routing import Route
+
+    app = _app()
+
+    async def raw(request):  # pragma: no cover - never called
+        return None
+
+    # A raw Starlette route has no auth dependency to inspect, so it must not be
+    # silently allowed: it is reported until explicitly exempted.
+    app.router.routes.append(Route("/raw", raw))
+    assert any("UNVERIFIED /raw" in m for m in unprotected_routes(app))
+
+
 def test_protected_route_passes():
     app = _app()
 

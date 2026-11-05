@@ -28,16 +28,27 @@ def _local_meter() -> tuple[MeterProvider, InMemoryMetricReader]:
 def test_pool_stats_shape() -> None:
     db = Database("sqlite+aiosqlite://")
     stats = db.pool_stats()
-    assert set(stats) == {"checked_out", "available", "overflow"}
+    assert set(stats) == {"used", "idle", "max"}
     assert all(isinstance(v, int) and v >= 0 for v in stats.values())
 
 
 def test_db_pool_gauge_is_registered_with_semconv_states() -> None:
     provider, reader = _local_meter()
     observe_db_pool(Database("sqlite+aiosqlite://"), meter=provider.get_meter("test"))
-    metric = _collect(reader)["db.client.connections.usage"]
-    states = {p.attributes["state"] for p in metric.data.data_points}  # type: ignore[attr-defined]
+    metrics = _collect(reader)
+    count = metrics["db.client.connection.count"]  # semconv metric name
+    states = {
+        p.attributes["db.client.connection.state"]  # type: ignore[attr-defined]
+        for p in count.data.data_points  # type: ignore[attr-defined]
+    }
     assert states == {"used", "idle"}  # OTel DB semconv enum
+    # Every point carries the pool name so multi-pool services do not collapse.
+    assert all(
+        "db.client.connection.pool.name" in p.attributes  # type: ignore[attr-defined]
+        for p in count.data.data_points  # type: ignore[attr-defined]
+    )
+    # The saturation denominator is emitted as its own gauge.
+    assert "db.client.connection.max" in metrics
 
 
 def test_log_drops_counter_reports_the_drop_count() -> None:

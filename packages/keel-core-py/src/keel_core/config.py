@@ -27,5 +27,7 @@ class BaseServiceConfig(BaseSettings):
 
     service_name: str
     version: str = "0.0.0"
-    environment: str = "dev"
+    # Secure by default: an unset KEEL_ENVIRONMENT must fail closed (https-only JWKS,
+    # docs hidden). Dev/local/test opt into the relaxed behavior explicitly.
+    environment: str = "production"
     log_level: str = "info"
