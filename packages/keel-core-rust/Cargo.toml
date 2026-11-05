@@ -14,7 +14,11 @@ figment = { version = "0.10", features = ["env", "toml"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
 axum = "0.8"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "limit", "set-header", "request-id"] }
 
 [dev-dependencies]
 figment = { version = "0.10", features = ["env", "toml", "test"] }
 tokio = { version = "1", features = ["macros", "rt"] }
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
