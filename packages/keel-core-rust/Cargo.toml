@@ -14,8 +14,9 @@ figment = { version = "0.10", features = ["env", "toml"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
 axum = "0.8"
-tower = "0.5"
+tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.6", features = ["cors", "limit", "set-header", "request-id"] }
+http-body-util = "0.1"
 jsonwebtoken = "9"
 sqlx = { version = "0.8", default-features = false, features = [
     "runtime-tokio",
