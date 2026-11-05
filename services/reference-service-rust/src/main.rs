@@ -14,7 +14,13 @@ use reference_service_rust::{build_app, ReferenceConfig};
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = ReferenceConfig::from_env()?;
-    keel_core::logging::init(&config.log_level);
+    let tracer = keel_core::telemetry::init(
+        &config.service_name,
+        &config.version,
+        &config.environment,
+        &config.log_level,
+        config.otlp_endpoint.as_deref(),
+    );
 
     let database = Database::connect(&config.database_url).await?;
     // Dev convenience; production applies versioned migrations instead.
@@ -34,5 +40,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8000").await?;
     tracing::info!("reference-service listening on 0.0.0.0:8000");
     axum::serve(listener, app).await?;
+
+    if let Some(provider) = tracer {
+        keel_core::telemetry::shutdown(provider);
+    }
     Ok(())
 }
