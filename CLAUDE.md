@@ -29,7 +29,7 @@ uv run ruff check . && uv run ruff format --check .
 uv run mypy -p keel_core -p reference_service
 uv run lint-imports
 uv run codespell packages
-for p in packages/*/ services/*/; do uv run --directory "$p" deptry src; done
+for p in packages/*/ services/*/; do [ -f "$p/pyproject.toml" ] || continue; uv run --directory "$p" deptry src; done
 uv run pytest --cov=keel_core --cov=reference_service   # 85% floor
 ```
 Integration tests need `KEEL_TEST_DATABASE_URL` (Postgres); they skip otherwise and run in CI.

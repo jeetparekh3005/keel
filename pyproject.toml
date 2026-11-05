@@ -10,6 +10,8 @@ package = false
 
 [tool.uv.workspace]
 members = ["packages/*", "services/*"]
+# The Rust vertical lives under packages/ and services/ too; it is not a uv member.
+exclude = ["packages/keel-core-rust", "services/reference-service-rust"]
 
 [dependency-groups]
 dev = [
