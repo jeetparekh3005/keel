@@ -5,6 +5,7 @@
 //! foundation scaffold; subsequent slices (epic #36) add config, the error model,
 //! logging, telemetry, the HTTP edge, auth, persistence, and the conformance kit.
 
+pub mod auth;
 pub mod config;
 pub mod domain;
 pub mod http;
