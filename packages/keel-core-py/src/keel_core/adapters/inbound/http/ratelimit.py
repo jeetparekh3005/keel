@@ -54,8 +54,11 @@ class RateLimitMiddleware:
         if self._trust_forwarded:
             xff = Headers(scope=scope).get("x-forwarded-for")
             if xff:
-                # Leftmost hop is the original client as the trusted proxy saw it.
-                return xff.split(",")[0].strip()
+                # Rightmost hop = the peer the trusted proxy actually observed. The
+                # leftmost entries are client-supplied and spoofable, so keying on
+                # them lets a client mint a fresh bucket (bypass) or drain a victim's
+                # bucket per request. Assumes a single trusted proxy appends the peer.
+                return xff.split(",")[-1].strip()
         client = scope.get("client")
         return client[0] if client else "unknown"
 
