@@ -87,6 +87,9 @@ extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path", "f
 
 [tool.ruff.lint.per-file-ignores]
 "**/tests/**" = ["S", "D", "ANN", "EM", "TRY"]
+# CI helper scripts (not library code): print is their output, and they are
+# standalone files, not package modules.
+"deploy/charts/**/ci/*.py" = ["T201", "INP001", "D103"]
 # testkit is test-support code shipped for services; asserts are its whole point.
 "**/testkit/**" = ["S101"]
 # Domain error taxonomies use intentional names (NotFound, Forbidden, …) over an
