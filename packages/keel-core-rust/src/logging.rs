@@ -12,8 +12,8 @@ use tracing_subscriber::EnvFilter;
 /// Install a global JSON logging subscriber at `level` (e.g. `"info"`, `"debug"`).
 ///
 /// Safe to call once at startup; a second call is a no-op (the global subscriber is
-/// install-once), so it will not panic in tests or re-entrant setup. An unparseable
-/// level falls back to `info`.
+/// install-once), so it will not panic in tests or re-entrant setup. An invalid
+/// level string falls back to `info`.
 pub fn init(level: &str) {
     let filter = EnvFilter::try_new(level).unwrap_or_else(|_| EnvFilter::new("info"));
     let _ = tracing_subscriber::registry()
