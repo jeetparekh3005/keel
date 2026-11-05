@@ -10,7 +10,6 @@ use axum::routing::get;
 use axum::Router;
 
 /// Build the base application router: liveness and readiness probes.
-#[must_use]
 pub fn create_app() -> Router {
     Router::new()
         .route("/healthz", get(healthz))
