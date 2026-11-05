@@ -13,6 +13,26 @@ from typing import Protocol
 _PROBLEM_CONTENT_TYPE = "application/problem+json"
 _PROBLEM_FIELDS = ("type", "title", "status")
 
+# platform.yaml http.security_headers.emitted (always-on, keel-core edge).
+_SECURITY_HEADERS = (
+    "content-security-policy",
+    "x-content-type-options",
+    "x-frame-options",
+    "referrer-policy",
+    "permissions-policy",
+)
+
+# platform.yaml logging.required_fields.
+REQUIRED_LOG_FIELDS = (
+    "timestamp",
+    "level",
+    "message",
+    "service",
+    "version",
+    "trace_id",
+    "span_id",
+)
+
 
 class ContractResponse(Protocol):
     """Minimal response shape (httpx.Response and Starlette TestClient both satisfy it)."""
@@ -61,3 +81,31 @@ def assert_problem_response(response: ContractResponse, *, status: int) -> None:
     assert isinstance(body, dict)
     for field in _PROBLEM_FIELDS:
         assert field in body, f"problem+json missing '{field}'"
+
+
+def assert_security_headers(response: ContractResponse) -> None:
+    """Every response carries the always-on edge security headers (platform.yaml http)."""
+    for header in _SECURITY_HEADERS:
+        assert header in response.headers, f"missing security header '{header}'"
+    assert response.headers["x-content-type-options"] == "nosniff"
+
+
+def assert_no_cors_by_default(response: ContractResponse) -> None:
+    """CORS is deny-by-default: no Access-Control-Allow-Origin unless origins are configured."""
+    assert "access-control-allow-origin" not in response.headers, (
+        "CORS must be deny-by-default (no Access-Control-Allow-Origin without configured origins)"
+    )
+
+
+async def assert_denies_anonymous(client: ContractClient, path: str) -> None:
+    """A protected route denies an unauthenticated caller (deny-by-default, 401)."""
+    response = await client.get(path)
+    assert response.status_code == 401, (
+        f"{path} must deny anonymous access with 401 (got {response.status_code})"
+    )
+
+
+def assert_log_record(record: Mapping[str, object]) -> None:
+    """A log record carries every field the logging contract requires."""
+    for field in REQUIRED_LOG_FIELDS:
+        assert field in record, f"log record missing required field '{field}'"
