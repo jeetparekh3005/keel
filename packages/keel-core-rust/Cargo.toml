@@ -18,6 +18,7 @@ tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.6", features = ["cors", "limit", "set-header", "request-id"] }
 http-body-util = "0.1"
 jsonwebtoken = "9"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 sqlx = { version = "0.8", default-features = false, features = [
     "runtime-tokio",
     "any",
