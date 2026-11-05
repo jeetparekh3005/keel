@@ -36,6 +36,14 @@ def _app() -> object:
     )
 
 
+def test_client_key_uses_rightmost_forwarded_hop() -> None:
+    # The leftmost XFF entries are client-spoofable; key on the rightmost hop
+    # (what the trusted proxy observed) so the limiter cannot be bypassed.
+    mw = RateLimitMiddleware(_noop_app, max_requests=1, window_seconds=60.0)
+    key = mw._client_key(_scope("1.1.1.1, 2.2.2.2, 3.3.3.3"))  # noqa: SLF001
+    assert key == "3.3.3.3"
+
+
 async def test_rate_limit_allows_then_blocks() -> None:
     transport = ASGITransport(app=_app())
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
