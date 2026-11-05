@@ -64,6 +64,7 @@ def build_app(
         trusted_hosts=config.trusted_hosts,
     )
     app.state.database = db
+
     # Composition root owns the driving->driven binding: the HTTP router resolves the
     # use case through this factory and never imports the concrete repository itself.
     def _item_service(session: AsyncSession) -> ItemService:
