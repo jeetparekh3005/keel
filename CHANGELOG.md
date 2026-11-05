@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.2.2](https://github.com/jeetparekh3005/keel/compare/v0.2.1...v0.2.2) (2026-11-05)
+
+
+### Features
+
+* **platform:** expand the behavioral contract-conformance suite ([#197](https://github.com/jeetparekh3005/keel/issues/197)) ([39a2e64](https://github.com/jeetparekh3005/keel/commit/39a2e64f871af825c79e49cb52dddc123edc60b8)), closes [#158](https://github.com/jeetparekh3005/keel/issues/158) [#174](https://github.com/jeetparekh3005/keel/issues/174)
+
+
+### Bug Fixes
+
+* **auth:** map OIDC key-resolution failures to 401/503, not 500 ([#175](https://github.com/jeetparekh3005/keel/issues/175)) ([1158dcf](https://github.com/jeetparekh3005/keel/commit/1158dcf043e904d1de01ccc7e03ead1b82f0ec22)), closes [#160](https://github.com/jeetparekh3005/keel/issues/160) [#174](https://github.com/jeetparekh3005/keel/issues/174)
+* **ci:** close two signed-image supply-chain holes ([#178](https://github.com/jeetparekh3005/keel/issues/178)) ([afe9d08](https://github.com/jeetparekh3005/keel/commit/afe9d0823ef961720ed62804daf49c678d0135a5)), closes [#162](https://github.com/jeetparekh3005/keel/issues/162) [#163](https://github.com/jeetparekh3005/keel/issues/163) [#174](https://github.com/jeetparekh3005/keel/issues/174)
+* **ci:** drop the branch scope from the release PR title ([#200](https://github.com/jeetparekh3005/keel/issues/200)) ([218e598](https://github.com/jeetparekh3005/keel/commit/218e598e950d7733937979c033d8d1b33b5a032b))
+* **ci:** gate signing on unfixed CVEs; correct image SBOM format to SPDX ([#191](https://github.com/jeetparekh3005/keel/issues/191)) ([aa01816](https://github.com/jeetparekh3005/keel/commit/aa01816346068b85b9af7725264ff59544f0919f)), closes [#186](https://github.com/jeetparekh3005/keel/issues/186) [#187](https://github.com/jeetparekh3005/keel/issues/187) [#174](https://github.com/jeetparekh3005/keel/issues/174)
+* **platform:** real default-deny NetworkPolicy, availability, CI policy gate ([#195](https://github.com/jeetparekh3005/keel/issues/195)) ([e366bbe](https://github.com/jeetparekh3005/keel/commit/e366bbe02e0d0115c4241e93687d73772390a300))
+* **platform:** reconcile the http contract with reality ([#180](https://github.com/jeetparekh3005/keel/issues/180)) ([063399f](https://github.com/jeetparekh3005/keel/commit/063399f308687a80692da5f9a8bd82911a1d8c3a)), closes [#166](https://github.com/jeetparekh3005/keel/issues/166) [#174](https://github.com/jeetparekh3005/keel/issues/174)
+* **python:** commit UnitOfWork unconditionally on clean exit (data-loss regression) ([#198](https://github.com/jeetparekh3005/keel/issues/198)) ([a673e52](https://github.com/jeetparekh3005/keel/commit/a673e5267209874ea6618daff22ffd341ef06a4d))
+* **python:** correct DB pool saturation gauge (idle, denominator, semconv) ([#192](https://github.com/jeetparekh3005/keel/issues/192)) ([7352e4c](https://github.com/jeetparekh3005/keel/commit/7352e4cf376d8b7ad1094d4d90f533ee3e17d02d)), closes [#167](https://github.com/jeetparekh3005/keel/issues/167) [#174](https://github.com/jeetparekh3005/keel/issues/174)
+* **python:** drop the duplicate HTTP duration histogram ([#176](https://github.com/jeetparekh3005/keel/issues/176)) ([93ebbb5](https://github.com/jeetparekh3005/keel/commit/93ebbb5ac0ea0b6d18a7d00f8c474c5dca3c6637)), closes [#174](https://github.com/jeetparekh3005/keel/issues/174)
+* **python:** guard the ports package with import-linter ([#177](https://github.com/jeetparekh3005/keel/issues/177)) ([91817a1](https://github.com/jeetparekh3005/keel/commit/91817a15cad0034c679077c88c26020c2d2c6233)), closes [#165](https://github.com/jeetparekh3005/keel/issues/165) [#174](https://github.com/jeetparekh3005/keel/issues/174)
+* **python:** keep the log writer alive on sink errors; never hang shutdown ([#189](https://github.com/jeetparekh3005/keel/issues/189)) ([32d44db](https://github.com/jeetparekh3005/keel/commit/32d44db2e9eb1ec811da5679f83e4adc7f15433f)), closes [#184](https://github.com/jeetparekh3005/keel/issues/184) [#174](https://github.com/jeetparekh3005/keel/issues/174)
+* **python:** never drop a poison NATS message silently ([#179](https://github.com/jeetparekh3005/keel/issues/179)) ([e41e1a8](https://github.com/jeetparekh3005/keel/commit/e41e1a819b2d9de6b43777a772c0eefddb7cd73b))
+* **python:** reliability robustness (streaming contextvar, lifespan, read-only UoW) ([#193](https://github.com/jeetparekh3005/keel/issues/193)) ([ae9b2bf](https://github.com/jeetparekh3005/keel/commit/ae9b2bf7402a6c01ef56e998f58fda1e77b6bf11)), closes [#171](https://github.com/jeetparekh3005/keel/issues/171) [#174](https://github.com/jeetparekh3005/keel/issues/174)
+* **security:** default environment to production (fail closed) ([#190](https://github.com/jeetparekh3005/keel/issues/190)) ([a1b9b32](https://github.com/jeetparekh3005/keel/commit/a1b9b3277f204af75539aceda86d8876aaa72690)), closes [#185](https://github.com/jeetparekh3005/keel/issues/185) [#174](https://github.com/jeetparekh3005/keel/issues/174)
+* **security:** defense-in-depth defaults (XFF key, request-id, WS conformance) ([#194](https://github.com/jeetparekh3005/keel/issues/194)) ([51d7643](https://github.com/jeetparekh3005/keel/commit/51d7643d73e1eb2fd45b2ee92f97d078a553176c)), closes [#173](https://github.com/jeetparekh3005/keel/issues/173) [#174](https://github.com/jeetparekh3005/keel/issues/174)
+* **ts:** add security headers and a deny-by-default CSP to the web app ([#181](https://github.com/jeetparekh3005/keel/issues/181)) ([36b1b41](https://github.com/jeetparekh3005/keel/commit/36b1b419fb5f1e926d5183651d1b7746f3dabc19)), closes [#168](https://github.com/jeetparekh3005/keel/issues/168) [#174](https://github.com/jeetparekh3005/keel/issues/174)
+* **ts:** nonce-based CSP so the strict policy does not block Next hydration ([#188](https://github.com/jeetparekh3005/keel/issues/188)) ([623dfa5](https://github.com/jeetparekh3005/keel/commit/623dfa509f28056927721d4f7c4f49853b5df730)), closes [#183](https://github.com/jeetparekh3005/keel/issues/183) [#174](https://github.com/jeetparekh3005/keel/issues/174)
+
 ## [0.2.1](https://github.com/jeetparekh3005/keel/compare/v0.2.0...v0.2.1) (2026-11-04)
 
 
