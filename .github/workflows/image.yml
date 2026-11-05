@@ -1,9 +1,9 @@
 name: Image
 
-# PR: build + CVE-scan the reference-service image. Release: publish + sign.
-# The publish job runs via workflow_call (from release-please, inside a run the
-# human merge triggered - NOT a GITHUB_TOKEN event, which would be suppressed)
-# or via workflow_dispatch for a manual backfill. See ADR-0008.
+# PR: build + CVE-scan each service image. Release: publish + sign each. The publish
+# job runs via workflow_call (from release-please, inside a run the human merge
+# triggered - NOT a GITHUB_TOKEN event, which would be suppressed) or via
+# workflow_dispatch for a manual backfill. See ADR-0008.
 
 on:
   pull_request:
@@ -13,6 +13,8 @@ on:
       - "packages/**"
       - "pyproject.toml"
       - "uv.lock"
+      - "Cargo.toml"
+      - "Cargo.lock"
       - "**/Dockerfile"
       - ".github/workflows/image.yml"
   workflow_call:
@@ -31,10 +33,6 @@ on:
 permissions:
   contents: read
 
-env:
-  IMAGE: ghcr.io/${{ github.repository }}/reference-service
-  DOCKERFILE: services/reference-service/Dockerfile
-
 concurrency:
   group: image-${{ github.ref }}-${{ github.event_name }}
   # Cancel superseded PR builds, but NEVER cancel a publish run: cancelling between
@@ -46,6 +44,14 @@ jobs:
     name: Image build + scan (Trivy)
     if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: reference-service
+            dockerfile: services/reference-service/Dockerfile
+          - name: reference-service-rust
+            dockerfile: services/reference-service-rust/Dockerfile
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -55,15 +61,15 @@ jobs:
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
-          file: ${{ env.DOCKERFILE }}
+          file: ${{ matrix.dockerfile }}
           load: true
-          tags: keel-reference-service:scan
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: keel-${{ matrix.name }}:scan
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
       - name: Trivy scan (gate on HIGH/CRITICAL)
         uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
         with:
-          image-ref: keel-reference-service:scan
+          image-ref: keel-${{ matrix.name }}:scan
           severity: HIGH,CRITICAL
           exit-code: "1"
           ignore-unfixed: true
@@ -81,6 +87,16 @@ jobs:
       packages: write # push to GHCR
       id-token: write # keyless cosign / attestations (OIDC)
       attestations: write # provenance attestation
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: reference-service
+            dockerfile: services/reference-service/Dockerfile
+          - name: reference-service-rust
+            dockerfile: services/reference-service-rust/Dockerfile
+    env:
+      IMAGE: ghcr.io/${{ github.repository }}/${{ matrix.name }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -103,7 +119,7 @@ jobs:
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
-          file: ${{ env.DOCKERFILE }}
+          file: ${{ matrix.dockerfile }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

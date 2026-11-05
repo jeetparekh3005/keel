@@ -23,6 +23,10 @@ pub struct PoolStats {
 }
 
 /// A database connection pool over sqlx's `Any` backend.
+///
+/// Cloning is cheap: the inner `AnyPool` is an `Arc`-backed handle to the same pool,
+/// so clones share connections (used e.g. to capture the pool in a readiness check).
+#[derive(Clone)]
 pub struct Database {
     pool: AnyPool,
 }

@@ -17,7 +17,6 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CHART: deploy/charts/reference-service
   KUBECONFORM_VERSION: v0.8.0
 
 jobs:
@@ -29,23 +28,23 @@ jobs:
         with:
           persist-credentials: false
       - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
-      - name: helm lint
-        # ci/test-values supplies the now-required OIDC config so rendering succeeds.
-        run: helm lint "${CHART}" -f "${CHART}/ci/test-values.yaml"
       - name: Install kubeconform
         run: |
           curl -fsSLo kubeconform.tar.gz \
             "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
           tar xf kubeconform.tar.gz kubeconform
-      - name: Validate rendered manifests
-        run: |
-          helm template rs "${CHART}" -f "${CHART}/ci/test-values.yaml" \
-            | ./kubeconform -strict -summary -schema-location default
-      - name: Enforce Pod Security Standards posture
-        # kubeconform checks schema shape only; this fails the build if the
+      - name: Lint, validate, and policy-check every chart
+        # ci/test-values supplies the now-required OIDC config so rendering succeeds.
+        # kubeconform checks schema shape only; policy_check fails the build if a
         # rendered Deployment loses runAsNonRoot / readOnlyRootFilesystem / dropped
         # caps / seccomp / resource limits, so the security posture cannot regress.
         run: |
           python3 -m pip install --quiet pyyaml
-          helm template rs "${CHART}" -f "${CHART}/ci/test-values.yaml" \
-            | python3 "${CHART}/ci/policy_check.py"
+          for chart in deploy/charts/*/; do
+            echo "=== $chart ==="
+            helm lint "$chart" -f "$chart/ci/test-values.yaml"
+            helm template rs "$chart" -f "$chart/ci/test-values.yaml" \
+              | ./kubeconform -strict -summary -schema-location default
+            helm template rs "$chart" -f "$chart/ci/test-values.yaml" \
+              | python3 "$chart/ci/policy_check.py"
+          done

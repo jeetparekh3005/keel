@@ -7,9 +7,13 @@
 //! keel-core-py edge. Auth-guarded service routes are layered on by the service
 //! (slice #209 adds the authenticator and the deny-by-default conformance check).
 
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
+
 use axum::http::{header, HeaderName, HeaderValue, StatusCode};
 use axum::routing::get;
-use axum::Router;
+use axum::{Extension, Router};
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
@@ -17,6 +21,11 @@ use tower_http::set_header::SetResponseHeaderLayer;
 
 /// Default request body cap (1 MiB), bounding the large-payload DoS vector.
 pub const DEFAULT_MAX_BODY_BYTES: usize = 1_048_576;
+
+/// A readiness check: resolves to `true` when the service's dependencies (database,
+/// broker, ...) are reachable. The composition root injects one via
+/// [`create_app_with_readiness`]; the bare scaffold has none and reports ready.
+pub type ReadinessCheck = Arc<dyn Fn() -> Pin<Box<dyn Future<Output = bool> + Send>> + Send + Sync>;
 
 /// Edge configuration for the app factory.
 pub struct AppConfig {
@@ -43,11 +52,31 @@ pub fn create_app() -> Router {
 /// Build the application: the health probes plus the service's `routes`, all wrapped
 /// in the edge middleware. Wrapping the merged router (not layering after) is what
 /// makes the body limit and headers cover the service routes too.
+///
+/// Readiness reports ready unconditionally; use [`create_app_with_readiness`] to inject
+/// a real dependency check.
 pub fn create_app_with(config: &AppConfig, routes: Router) -> Router {
+    create_app_with_readiness(config, routes, None)
+}
+
+/// Like [`create_app_with`], but with an injected [`ReadinessCheck`] so `/readyz` reports
+/// `503` when a dependency is unreachable, instead of always `200`. The composition root
+/// passes a closure that pings the datasource; the readiness probe can then gate traffic.
+pub fn create_app_with_readiness(
+    config: &AppConfig,
+    routes: Router,
+    readiness: Option<ReadinessCheck>,
+) -> Router {
     let mut app = Router::new()
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
         .merge(routes);
+
+    // Make the readiness check available to the `/readyz` handler. Layered on the merged
+    // app so the base health routes see it too.
+    if let Some(check) = readiness {
+        app = app.layer(Extension(check));
+    }
 
     // Always-on security headers (set only if absent), matching keel-core-py's edge.
     // HSTS is emitted unconditionally: browsers ignore it over plaintext, so it is
@@ -110,19 +139,54 @@ async fn healthz() -> StatusCode {
     StatusCode::OK
 }
 
-/// Readiness: dependencies are reachable. A real dependency check is injected by the
-/// service in a later slice; the core scaffold reports ready.
-async fn readyz() -> StatusCode {
-    StatusCode::OK
+/// Readiness: dependencies are reachable. Runs the injected [`ReadinessCheck`] when the
+/// composition root supplied one (503 if it reports not-ready); the bare scaffold, with
+/// no dependencies wired, reports ready.
+async fn readyz(check: Option<Extension<ReadinessCheck>>) -> StatusCode {
+    match check {
+        Some(Extension(check)) if !check().await => StatusCode::SERVICE_UNAVAILABLE,
+        _ => StatusCode::OK,
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{create_app, create_app_with, AppConfig};
+    use super::{
+        create_app, create_app_with, create_app_with_readiness, AppConfig, ReadinessCheck,
+    };
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
     use axum::Router;
+    use std::sync::Arc;
     use tower::ServiceExt;
+
+    async fn readyz_status(readiness: Option<ReadinessCheck>) -> StatusCode {
+        create_app_with_readiness(&AppConfig::default(), Router::new(), readiness)
+            .oneshot(Request::get("/readyz").body(Body::empty()).unwrap())
+            .await
+            .unwrap()
+            .status()
+    }
+
+    #[tokio::test]
+    async fn readiness_reports_ready_without_a_check() {
+        assert_eq!(readyz_status(None).await, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn readiness_reports_ready_when_the_check_passes() {
+        let check: ReadinessCheck = Arc::new(|| Box::pin(async { true }));
+        assert_eq!(readyz_status(Some(check)).await, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn readiness_reports_503_when_a_dependency_is_down() {
+        let check: ReadinessCheck = Arc::new(|| Box::pin(async { false }));
+        assert_eq!(
+            readyz_status(Some(check)).await,
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+    }
 
     #[tokio::test]
     async fn liveness_is_ok() {

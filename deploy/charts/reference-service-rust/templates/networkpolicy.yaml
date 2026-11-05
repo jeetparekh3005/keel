@@ -1,0 +1,60 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "reference-service.fullname" . }}
+  labels:
+    {{- include "reference-service.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "reference-service.selectorLabels" . | nindent 6 }}
+  # Default-deny both directions; only the rules below are allowed.
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Only the configured sources may reach the HTTP port. The default scopes to
+    # the ingress-controller namespace (by its metadata-name label); a real
+    # default-deny requires naming the source, so do NOT widen this to all
+    # namespaces. Override networkPolicy.ingressFrom per cluster.
+    - from:
+        {{- toYaml .Values.networkPolicy.ingressFrom | nindent 8 }}
+      ports:
+        - port: http
+          protocol: TCP
+  egress:
+    # DNS resolution (kube-dns).
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # In-cluster dependency ports (DB, OTLP, NATS, in-cluster OIDC). Scope the
+    # selector to the namespaces hosting those dependencies in your cluster.
+    - to:
+        - namespaceSelector:
+            {{- toYaml .Values.networkPolicy.egressNamespaceSelector | nindent 12 }}
+      ports:
+        {{- range .Values.networkPolicy.egressPorts }}
+        - port: {{ . }}
+          protocol: TCP
+        {{- end }}
+    {{- with .Values.networkPolicy.egressIPBlocks }}
+    # Out-of-cluster dependencies (e.g. an external IdP / JWKS over TLS). Without a
+    # CIDR here, egress to the public internet is denied - an external IdP will be
+    # unreachable and the service will fail readiness.
+    - to:
+        {{- range . }}
+        - ipBlock:
+            cidr: {{ . }}
+        {{- end }}
+      ports:
+        {{- range $.Values.networkPolicy.egressIPBlockPorts }}
+        - port: {{ . }}
+          protocol: TCP
+        {{- end }}
+    {{- end }}
+{{- end }}
