@@ -21,6 +21,9 @@ pub struct ReferenceConfig {
     pub oidc_issuer: String,
     pub oidc_audience: String,
     pub oidc_jwks_uri: String,
+    /// OTLP collector endpoint; traces export only when set.
+    #[serde(default)]
+    pub otlp_endpoint: Option<String>,
 }
 
 fn default_service_name() -> String {
