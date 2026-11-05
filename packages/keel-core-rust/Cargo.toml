@@ -17,6 +17,12 @@ axum = "0.8"
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "limit", "set-header", "request-id"] }
 jsonwebtoken = "9"
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio",
+    "any",
+    "sqlite",
+    "postgres",
+] }
 
 [dev-dependencies]
 figment = { version = "0.10", features = ["env", "toml", "test"] }
