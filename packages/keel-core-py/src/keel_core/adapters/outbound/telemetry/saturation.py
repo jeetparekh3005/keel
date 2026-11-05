@@ -23,23 +23,42 @@ def observe_db_pool(
     *,
     meter: Meter | None = None,
     meter_name: str = "keel.db",
+    pool_name: str = "default",
 ) -> None:
-    """Register an observable gauge of DB connection-pool usage by state."""
+    """Register observable gauges of DB connection-pool usage (OTel DB semconv).
 
-    def _callback(_: CallbackOptions) -> Iterable[Observation]:
-        # OTel DB semconv state enum is {used, idle}; checkedout() already includes
-        # any overflow connections that are in use.
+    Emits ``db.client.connection.count`` by state ({used, idle}) and
+    ``db.client.connection.max`` (the denominator), both tagged with
+    ``db.client.connection.pool.name`` so a service with multiple pools does not
+    collapse them into one series.
+    """
+    attrs = {"db.client.connection.pool.name": pool_name}
+
+    def _count_callback(_: CallbackOptions) -> Iterable[Observation]:
+        # semconv state enum {used, idle}; used = checked out (incl. in-use
+        # overflow), idle = actually-warm checked-in connections.
         stats = database.pool_stats()
         return [
-            Observation(stats["checked_out"], {"state": "used"}),
-            Observation(stats["available"], {"state": "idle"}),
+            Observation(stats["used"], {**attrs, "db.client.connection.state": "used"}),
+            Observation(stats["idle"], {**attrs, "db.client.connection.state": "idle"}),
         ]
 
-    (meter or get_meter(meter_name)).create_observable_gauge(
-        "db.client.connections.usage",
-        callbacks=[_callback],
+    def _max_callback(_: CallbackOptions) -> Iterable[Observation]:
+        # The saturation denominator: base size + max overflow.
+        return [Observation(database.pool_stats()["max"], dict(attrs))]
+
+    resolved = meter or get_meter(meter_name)
+    resolved.create_observable_gauge(
+        "db.client.connection.count",
+        callbacks=[_count_callback],
         unit="{connection}",
-        description="Database connection-pool usage by state.",
+        description="Database connections by state.",
+    )
+    resolved.create_observable_gauge(
+        "db.client.connection.max",
+        callbacks=[_max_callback],
+        unit="{connection}",
+        description="Maximum open connections the pool allows (saturation denominator).",
     )
 
 

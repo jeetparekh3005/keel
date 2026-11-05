@@ -57,9 +57,12 @@ class Database:
     def pool_stats(self) -> dict[str, int]:
         """Return connection-pool counts for saturation metrics.
 
-        Keys: ``checked_out`` (in use), ``available`` (idle, within base size),
-        ``overflow`` (beyond base size). Pools without these counters (e.g. sqlite
-        StaticPool) report zeros.
+        Keys: ``used`` (connections checked out, including any in-use overflow),
+        ``idle`` (warm connections checked in and available), and ``max`` (base
+        size + max overflow = the saturation denominator). ``idle`` is read from
+        the pool's actual checked-in count, not ``size - used``, so it reflects
+        connections that are really open. Pools without these counters (e.g.
+        sqlite StaticPool) report zeros.
         """
         pool = self._engine.sync_engine.pool
 
@@ -69,12 +72,15 @@ class Database:
             except (AttributeError, TypeError):
                 return 0
 
-        checked_out = _count("checkedout")
-        size = _count("size")
+        # max_overflow is a configured attribute, not a counter; -1 means unbounded,
+        # in which case there is no finite denominator (report size only).
+        max_overflow = getattr(pool, "_max_overflow", 0)
+        if not isinstance(max_overflow, int) or max_overflow < 0:
+            max_overflow = 0
         return {
-            "checked_out": checked_out,
-            "available": max(size - checked_out, 0),
-            "overflow": max(_count("overflow"), 0),
+            "used": _count("checkedout"),
+            "idle": _count("checkedin"),
+            "max": _count("size") + max_overflow,
         }
 
     async def create_all(self) -> None:
