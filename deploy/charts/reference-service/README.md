@@ -19,11 +19,17 @@ helm install ref deploy/charts/reference-service \
 - Non-root (UID 65532), read-only root filesystem (writable `/tmp` only),
   `allowPrivilegeEscalation: false`, all capabilities dropped, seccomp
   `RuntimeDefault`, no mounted ServiceAccount token.
-- Default-deny `NetworkPolicy` (ingress only to the HTTP port; egress only to
-  DNS plus the configured dependency ports). Tighten `networkPolicy.egressPorts`
-  and add `to` selectors per environment.
-- Liveness (`/healthz`) and readiness (`/readyz`) probes; CPU/memory requests
-  and limits.
+- Default-deny `NetworkPolicy`: ingress to the HTTP port only from the configured
+  sources (`networkPolicy.ingressFrom`, default scoped to the ingress-controller
+  namespace), egress to DNS plus the in-cluster dependency ports; set
+  `networkPolicy.egressIPBlocks` to reach an external IdP over TLS. Scope
+  `ingressFrom`/`egressNamespaceSelector` to your cluster.
+- `PodDisruptionBudget` (minAvailable 1) and node topology spread so a drain
+  cannot take the service to zero.
+- Startup, liveness (`/healthz`), and readiness (`/readyz`) probes; CPU/memory
+  requests and limits.
+- `values.schema.json` validates values; CI asserts the securityContext posture
+  (`ci/policy_check.py`) so it cannot silently regress.
 
 The image is the signed, attested artifact published to GHCR by the release
 pipeline. `helm lint` and `kubeconform` validate the chart in CI.

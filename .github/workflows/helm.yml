@@ -39,3 +39,11 @@ jobs:
         run: |
           helm template rs "${CHART}" -f "${CHART}/ci/test-values.yaml" \
             | ./kubeconform -strict -summary -schema-location default
+      - name: Enforce Pod Security Standards posture
+        # kubeconform checks schema shape only; this fails the build if the
+        # rendered Deployment loses runAsNonRoot / readOnlyRootFilesystem / dropped
+        # caps / seccomp / resource limits, so the security posture cannot regress.
+        run: |
+          python3 -m pip install --quiet pyyaml
+          helm template rs "${CHART}" -f "${CHART}/ci/test-values.yaml" \
+            | python3 "${CHART}/ci/policy_check.py"
