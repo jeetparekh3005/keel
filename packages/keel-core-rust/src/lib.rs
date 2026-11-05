@@ -10,6 +10,7 @@ pub mod auth;
 pub mod config;
 pub mod domain;
 pub mod http;
+pub mod jwks;
 pub mod logging;
 pub mod persistence;
 pub mod ports;
