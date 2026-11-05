@@ -53,10 +53,12 @@ class SecurityHeadersMiddleware:
 
 
 class BodyLimitMiddleware:
-    """Rejects requests whose declared ``Content-Length`` exceeds ``max_bytes`` (413).
+    """Rejects requests whose body exceeds ``max_bytes`` (413).
 
-    Guards the common large-payload DoS vector before auth/handlers run. Streaming
-    (chunked, no Content-Length) enforcement is delegated to the gateway/server.
+    Guards the common large-payload DoS vector before auth/handlers run. Enforces
+    both a ``Content-Length`` header fast-path and a streaming byte cap: for chunked
+    or mismatched-length bodies it counts bytes as they arrive and aborts once the
+    limit is crossed.
     """
 
     def __init__(self, app: ASGIApp, *, max_bytes: int = _DEFAULT_MAX_BYTES) -> None:

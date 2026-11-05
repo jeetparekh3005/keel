@@ -1,6 +1,6 @@
 # 0005. API gateway
 
-- **Status:** accepted (implementation targeted for v0.2)
+- **Status:** accepted; gateway not yet deployed (deployment-time infra). The in-app `RateLimitMiddleware` defense-in-depth landed in v0.2; the APISIX edge itself is a later milestone.
 - **Date:** 2026-11-03
 - **Deciders:** Jeet Parekh
 
