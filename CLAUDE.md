@@ -17,7 +17,7 @@ the contract in `platform.yaml`.
 - Branch from `dev`, named `type/short-slug` (`feat/…`, `fix/…`, `chore/…`, `docs/…`).
 - PR **title must be a Conventional Commit**. Types: feat, fix, docs, chore, refactor, perf,
   test, build, ci, style, revert. Scopes: python, ts, rust, go, java, ci, docs, platform,
-  auth, db, security.
+  auth, db, security, deps, deps-dev.
 - Squash-merge into `dev`; `dev` -> `main` is the release path (release-please). 0 approvals,
   so self-merge is fine once checks are green.
 - Push uses the gh credential helper: `git -c credential.helper= -c credential.helper='!gh auth git-credential' push`.
