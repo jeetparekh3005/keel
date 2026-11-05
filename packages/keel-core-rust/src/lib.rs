@@ -10,6 +10,7 @@ pub mod config;
 pub mod domain;
 pub mod http;
 pub mod logging;
+pub mod persistence;
 
 /// The platform `contractVersion` this vertical targets (`platform.yaml`
 /// `metadata.contractVersion`). A generated project records the version it targets.
