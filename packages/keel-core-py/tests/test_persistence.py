@@ -63,40 +63,27 @@ async def test_rollback_on_error_discards_changes(db):
         assert await session.get(_Thing, 2) is None
 
 
-def _spy(session):
-    counts = {"commit": 0, "rollback": 0}
-    commit, rollback = session.commit, session.rollback
-
-    async def _commit() -> None:
-        counts["commit"] += 1
-        await commit()
-
-    async def _rollback() -> None:
-        counts["rollback"] += 1
-        await rollback()
-
-    session.commit = _commit
-    session.rollback = _rollback
-    return counts
-
-
-async def test_read_only_block_does_not_commit(db):
+async def test_flushed_write_persists(db):
+    # Regression: new/dirty/deleted are empty after a flush(), so a dirty-check
+    # commit would silently roll this back. A clean exit must persist it.
     async with UnitOfWork(db.session_factory) as session:
-        session.add(_Thing(id=3, name="seed"))
+        session.add(_Thing(id=3, name="flushed"))
+        await session.flush()  # state no longer in session.new after this
 
-    uow = UnitOfWork(db.session_factory)
-    session = await uow.__aenter__()
-    counts = _spy(session)
-    await session.get(_Thing, 3)  # pure read: no new/dirty/deleted
-    await uow.__aexit__(None, None, None)
-    assert counts["commit"] == 0  # read-only: no COMMIT round trip
-    assert counts["rollback"] == 1
+    async with UnitOfWork(db.session_factory) as session:
+        fetched = await session.get(_Thing, 3)
+        assert fetched is not None, "a flushed write must persist on clean exit"
+        assert fetched.name == "flushed"
 
 
-async def test_write_block_commits(db):
-    uow = UnitOfWork(db.session_factory)
-    session = await uow.__aenter__()
-    counts = _spy(session)
-    session.add(_Thing(id=4, name="written"))
-    await uow.__aexit__(None, None, None)
-    assert counts["commit"] == 1
+async def test_core_dml_write_persists(db):
+    # Regression: execute(insert()) leaves new/dirty/deleted empty too.
+    from sqlalchemy import insert
+
+    async with UnitOfWork(db.session_factory) as session:
+        await session.execute(insert(_Thing).values(id=4, name="core-dml"))
+
+    async with UnitOfWork(db.session_factory) as session:
+        fetched = await session.get(_Thing, 4)
+        assert fetched is not None, "a Core-DML write must persist on clean exit"
+        assert fetched.name == "core-dml"
