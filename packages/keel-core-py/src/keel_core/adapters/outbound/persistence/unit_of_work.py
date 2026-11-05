@@ -26,16 +26,19 @@ class UnitOfWork:
         exc: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        """Commit pending writes on a clean exit, else roll back; always close.
+        """Commit on a clean exit, else roll back; always close.
 
-        A read-only block (no new/dirty/deleted objects) is rolled back rather than
-        committed, so GET/LIST requests do not pay a COMMIT round trip per call.
+        We commit unconditionally on success rather than inferring "read-only" from
+        session.new/dirty/deleted: those collections are empty after a flush() or for
+        Core-DML (execute(insert/update/delete)), so a dirty-check would silently roll
+        back those legitimate writes. A COMMIT on a read-only transaction writes no WAL
+        and is effectively free, so correctness wins over skipping it.
         """
         session = self._session
         if session is None:
             return
         try:
-            if exc_type is None and (session.new or session.dirty or session.deleted):
+            if exc_type is None:
                 await session.commit()
             else:
                 await session.rollback()
