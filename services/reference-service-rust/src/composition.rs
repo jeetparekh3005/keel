@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use axum::{Extension, Router};
-use keel_core::http::{create_app_with, AppConfig};
+use keel_core::http::{create_app_with_readiness, AppConfig, ReadinessCheck};
 use keel_core::persistence::Database;
 use keel_core::webauth::{authenticator_layer, SharedAuthenticator};
 
@@ -13,6 +13,10 @@ use crate::service::ItemService;
 
 /// Build the reference-service app: edge hardening (keel-core) wrapping the health
 /// probes plus the items routes, with the item service and authenticator injected.
+///
+/// Readiness is a real check: `/readyz` pings the database, so a pod with an unreachable
+/// datasource reports `503` and is pulled from the readiness probe rather than taking
+/// traffic it cannot serve.
 pub fn build_app(
     database: &Database,
     authenticator: SharedAuthenticator,
@@ -23,7 +27,14 @@ pub fn build_app(
     let routes = crate::http::router()
         .layer(Extension(service))
         .layer(authenticator_layer(authenticator));
-    create_app_with(app_config, routes)
+
+    let db_for_readiness = database.clone();
+    let readiness: ReadinessCheck = Arc::new(move || {
+        let db = db_for_readiness.clone();
+        Box::pin(async move { db.ping().await })
+    });
+
+    create_app_with_readiness(app_config, routes, Some(readiness))
 }
 
 #[cfg(test)]

@@ -51,6 +51,25 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
 - Frontend workspace (v0.2): a Next.js (App Router, TypeScript) app at `apps/web`, managed
   by pnpm + Turborepo, with its own CI lane (lint/typecheck/test/build, plus a CVE
   audit gate). Unit tests run on vitest + Testing Library. See ADR-0016.
+- **Rust vertical (v0.3)**: a second language vertical mirroring the Python one, same
+  hexagonal boundaries. Shared library `packages/keel-core-rust` (crate `keel_core`) +
+  thin `services/reference-service-rust` in a Cargo workspace (axum + tokio + tower,
+  ADR-0017). Implements: RFC 9457 problem+json and typed error taxonomy; typed config
+  (figment, `KEEL_`-prefixed, fail-fast); JSON structured logging; edge hardening
+  (always-on security headers, body-size limit, request-id, opt-in default-deny CORS);
+  OIDC/JWT authentication (RS256, `aud`/`iss`/`exp`/`sub` enforced, JWKS cache over
+  reqwest/rustls) with deny-by-default `require_scopes` authorization via an axum
+  extractor; sqlx persistence (`Database` + `UnitOfWork`, Postgres in prod / SQLite in
+  tests) where a dropped transaction rolls back; `Clock`/`SecretProvider` ports; OpenTelemetry
+  tracing with resource attributes and log correlation (optional OTLP export); and a
+  reusable behavioral **conformance suite** (`testkit::conformance`) that the reference
+  service runs against its composed app. Shipped like the Python vertical: a hardened
+  Chainguard-based image (built + Trivy-scanned per PR, signed + SLSA-attested on release)
+  and a Helm chart `deploy/charts/reference-service-rust` with the same PSS-restricted
+  posture. CI lane (`rust.yml`): `cargo fmt`/`clippy -D warnings`/`test`, with a Postgres
+  service for the gated CRUD integration test. Not yet at Python parity: HTTP request
+  **metrics** instrumentation, a live **Keycloak** JWKS integration test, and the
+  messaging/gRPC/`api_key`/`mTLS` surfaces (tracked follow-ups).
 
 ## Planned - described in the contract/ADRs but NOT yet implemented
 
@@ -66,4 +85,6 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
 This table shrinks as the gaps close. v0.1 delivered the Python vertical and its review
 hardening; v0.2 added the deployment surface (frontend, Helm, image pipeline, brokers,
 api_key/mTLS, CORS, IdP/broker integration) and its pre-v0.3 review remediation. What remains
-is the per-language verticals (v0.3+) and the items still marked planned above.
+is the remaining per-language verticals (v0.4+) and the items still marked planned above.
+v0.3 delivered the **Rust vertical** (library + reference service + image + Helm + CI),
+reaching functional parity with the Python vertical except for the follow-ups noted above.
