@@ -1,0 +1,14 @@
+[package]
+name = "reference-service-rust"
+description = "keel reference service (Rust vertical): a thin service over keel-core-rust."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "reference-service"
+path = "src/main.rs"
+
+[dependencies]
+keel-core-rust = { path = "../../packages/keel-core-rust" }

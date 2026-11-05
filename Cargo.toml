@@ -1,0 +1,14 @@
+# Rust vertical workspace (ADR-0017). Coexists with the uv (Python) and pnpm (Node)
+# workspaces at the repo root; each toolchain uses its own manifests.
+[workspace]
+resolver = "2"
+members = [
+    "packages/keel-core-rust",
+    "services/reference-service-rust",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+rust-version = "1.82"
