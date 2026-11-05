@@ -5,6 +5,7 @@
       "release-type": "simple",
       "changelog-path": "CHANGELOG.md",
       "initial-version": "0.1.0",
+      "pull-request-title-pattern": "chore: release ${version}",
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": true,
       "extra-files": [
