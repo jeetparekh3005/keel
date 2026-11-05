@@ -14,6 +14,7 @@ pub mod logging;
 pub mod persistence;
 pub mod ports;
 pub mod testkit;
+pub mod webauth;
 
 /// The platform `contractVersion` this vertical targets (`platform.yaml`
 /// `metadata.contractVersion`). A generated project records the version it targets.
