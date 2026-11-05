@@ -9,9 +9,13 @@ from fastapi import FastAPI
 from keel_core.adapters.inbound.http import create_app
 from keel_core.adapters.outbound.persistence import Database
 from reference_service.adapters.inbound.http import router as items_router
+from reference_service.adapters.outbound.persistence import SqlItemRepository
+from reference_service.application.item_service import ItemService
 from reference_service.config import ReferenceConfig
 
 if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
     from keel_core.ports.auth import Authenticator
     from keel_core.ports.logging import Logger
 
@@ -60,6 +64,13 @@ def build_app(
         trusted_hosts=config.trusted_hosts,
     )
     app.state.database = db
+
+    # Composition root owns the driving->driven binding: the HTTP router resolves the
+    # use case through this factory and never imports the concrete repository itself.
+    def _item_service(session: AsyncSession) -> ItemService:
+        return ItemService(SqlItemRepository(session))
+
+    app.state.item_service_factory = _item_service
     # Each item route declares its own require_scopes(...) dependency (authn + authz).
     app.include_router(items_router)
     return app

@@ -43,3 +43,16 @@ forbidden_modules =
     fastapi
     grpc
     httpx
+
+# The reference service's driving (inbound) adapter must not import its own driven
+# (outbound) adapter: the composition root owns that binding. The single-layer
+# `adapters` contract cannot see this split, so guard it explicitly. (keel-core's
+# create_app keeps a StructuredLogger default as a documented library fallback, so
+# this guards the exemplar service, which must model clean composition-root wiring.)
+[importlinter:contract:ref-inbound-not-outbound]
+name = reference_service inbound adapters do not import outbound adapters
+type = forbidden
+source_modules =
+    reference_service.adapters.inbound
+forbidden_modules =
+    reference_service.adapters.outbound
