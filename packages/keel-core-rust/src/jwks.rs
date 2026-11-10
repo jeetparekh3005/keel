@@ -2,12 +2,16 @@
 //!
 //! Fetches the issuer's JSON Web Key Set, caches the keys by `kid`, and exposes a
 //! sync [`KeyResolver`] (a cache read, no blocking I/O on the request path). Refresh
-//! the cache at startup and periodically; a `kid` that is not cached resolves to
-//! `NotFound` (401), a lock problem to `Unavailable` (503). The `jwks_uri` must be
-//! https unless `allow_insecure` is set (local dev only).
+//! the cache at startup, then periodically via [`JwksCache::spawn_background_refresh`]
+//! so the service tolerates IdP signing-key rotation without a restart; a `kid` that
+//! is not cached resolves to `NotFound` (401), a lock problem to `Unavailable` (503).
+//! The HTTP fetch is bounded by connect and request timeouts so a stalled endpoint
+//! cannot hang a refresh forever. The `jwks_uri` must be https unless `allow_insecure`
+//! is set (local dev only).
 
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
+use std::time::Duration;
 
 use jsonwebtoken::jwk::JwkSet;
 use jsonwebtoken::DecodingKey;
@@ -16,6 +20,11 @@ use crate::auth::{KeyLookupError, KeyResolver};
 use crate::domain::errors::{DomainError, ErrorCategory};
 
 type KeyMap = Arc<RwLock<HashMap<String, DecodingKey>>>;
+
+/// Request timeout for a single JWKS fetch (total, including body read).
+const FETCH_TIMEOUT: Duration = Duration::from_secs(10);
+/// Connect timeout for the JWKS fetch (bounds a black-holed endpoint at the TCP layer).
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// A cache of JWKS signing keys, refreshable from the issuer's JWKS endpoint.
 pub struct JwksCache {
@@ -37,10 +46,47 @@ impl JwksCache {
                 "jwks_uri must use https (set allow_insecure for local dev only)",
             ));
         }
+        let client = reqwest::Client::builder()
+            .timeout(FETCH_TIMEOUT)
+            .connect_timeout(CONNECT_TIMEOUT)
+            .build()
+            .map_err(|error| {
+                DomainError::new(
+                    ErrorCategory::Internal,
+                    format!("jwks http client build: {error}"),
+                )
+            })?;
         Ok(Self {
             jwks_uri: jwks_uri.to_string(),
-            client: reqwest::Client::new(),
+            client,
             keys: Arc::new(RwLock::new(HashMap::new())),
+        })
+    }
+
+    /// Spawn a background task that refreshes the cache every `interval`, so the service
+    /// tolerates IdP signing-key rotation without a restart. A transient refresh failure
+    /// is logged (not fatal); the previously cached keys keep serving until the next
+    /// success. Returns the task handle so the caller can abort it on shutdown.
+    ///
+    /// Call once, after the initial [`JwksCache::refresh`], from an async (tokio) context.
+    /// The returned [`KeyResolver`] from [`JwksCache::resolver`] shares the same key map,
+    /// so refreshes performed by this task are visible to resolvers already handed out.
+    #[must_use]
+    pub fn spawn_background_refresh(
+        self: Arc<Self>,
+        interval: Duration,
+    ) -> tokio::task::JoinHandle<()> {
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(interval);
+            // The first tick fires immediately; skip it since the caller already did the
+            // initial refresh. Subsequent ticks are the periodic refreshes.
+            ticker.tick().await;
+            loop {
+                ticker.tick().await;
+                if let Err(error) = self.refresh().await {
+                    tracing::warn!(error = %error, "jwks background refresh failed; serving cached keys");
+                }
+            }
         })
     }
 
@@ -120,5 +166,25 @@ mod tests {
             Err(KeyLookupError::NotFound)
         ));
         assert!(matches!(resolver(None), Err(KeyLookupError::NotFound)));
+    }
+
+    #[test]
+    fn a_refresh_is_visible_to_a_resolver_handed_out_earlier() {
+        // This is the property that makes background refresh tolerate key rotation:
+        // a resolver captures the shared key map, so keys written by a later refresh
+        // (here simulated by a direct insert) resolve without re-creating the resolver.
+        use std::sync::Arc;
+        let cache = Arc::new(JwksCache::new("https://idp.example/jwks", false).unwrap());
+        let resolver = cache.resolver();
+        assert!(matches!(
+            resolver(Some("rotated-kid")),
+            Err(KeyLookupError::NotFound)
+        ));
+        cache
+            .keys
+            .write()
+            .unwrap()
+            .insert("rotated-kid".to_string(), DecodingKey::from_secret(b"new"));
+        assert!(resolver(Some("rotated-kid")).is_ok());
     }
 }

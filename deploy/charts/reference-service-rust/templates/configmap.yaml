@@ -12,5 +12,5 @@ data:
   KEEL_OIDC_AUDIENCE: {{ .Values.config.oidcAudience | quote }}
   KEEL_OIDC_JWKS_URI: {{ required "config.oidcJwksUri is required" .Values.config.oidcJwksUri | quote }}
   KEEL_OTLP_ENDPOINT: {{ .Values.config.otlpEndpoint | quote }}
-  KEEL_OTLP_INSECURE: {{ .Values.config.otlpInsecure | quote }}
+  # Exact CORS origins (deny-by-default when "[]"); the Rust binary parses this as an array.
   KEEL_CORS_ALLOW_ORIGINS: {{ .Values.config.corsAllowOrigins | quote }}

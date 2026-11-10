@@ -79,6 +79,32 @@ mod tests {
         conformance::assert_denies_anonymous(&app, "/v1/items/anything").await;
     }
 
+    // The deny-by-default route-auth + scope conformance check for this service. axum has
+    // no route introspection (unlike FastAPI's startup check), so every route is
+    // enumerated here: anonymous callers get 401 and an authenticated caller holding only
+    // an unrelated scope gets 403. A new route added without the `Authed` extractor or the
+    // right scope guard fails this test instead of shipping silently. Runs on SQLite (the
+    // default CI path), so it gates every PR.
+    #[tokio::test]
+    async fn every_route_requires_auth_and_the_correct_scope() {
+        let db = Database::connect("sqlite::memory:").await.unwrap();
+        // "tok" authenticates but holds only an unrelated scope, so every route's
+        // require_scopes check must reject it with 403.
+        let app = build_app(&db, stub(&["unrelated:scope"]), &AppConfig::default());
+
+        let item_body = Some(r#"{"name":"x"}"#);
+        // (method, path, optional json body for body-consuming routes)
+        let protected: &[(&str, &str, Option<&str>)] = &[
+            ("POST", "/v1/items", item_body),
+            ("GET", "/v1/items", None),
+            ("GET", "/v1/items/some-id", None),
+        ];
+        for (method, path, body) in protected {
+            conformance::assert_method_denies_anonymous(&app, method, path, *body).await;
+            conformance::assert_requires_scope(&app, method, path, "tok", *body).await;
+        }
+    }
+
     async fn body_json(response: axum::response::Response) -> serde_json::Value {
         let bytes = BodyExt::collect(response.into_body())
             .await
@@ -88,13 +114,14 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "integration: requires KEEL_TEST_DATABASE_URL (Postgres); run with `cargo test -- --include-ignored`"]
     async fn items_crud_round_trip_on_postgres() {
-        // Integration test: only runs when a Postgres URL is provided (like the
-        // Python vertical's gated test); otherwise it is a no-op.
-        let Ok(url) = std::env::var("KEEL_TEST_DATABASE_URL") else {
-            eprintln!("skipping items CRUD: KEEL_TEST_DATABASE_URL not set");
-            return;
-        };
+        // Integration test. Marked #[ignore] so a plain `cargo test` reports it as
+        // "ignored" rather than silently passing without verifying anything; CI runs the
+        // ignored tests with a Postgres service and the env var set. Running it without
+        // the env var fails loudly (the expect below) instead of reporting a false pass.
+        let url = std::env::var("KEEL_TEST_DATABASE_URL")
+            .expect("KEEL_TEST_DATABASE_URL must be set to run this integration test");
         let db = Database::connect(&url).await.expect("connect postgres");
         let repo = SqlItemRepository::new(&db);
         repo.ensure_schema().await.unwrap();

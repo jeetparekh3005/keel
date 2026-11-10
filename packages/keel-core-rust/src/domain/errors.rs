@@ -72,6 +72,14 @@ impl ErrorCategory {
     pub fn type_uri(self) -> String {
         format!("urn:keel:error:{}", self.slug())
     }
+
+    /// Whether this category is a server-side fault (5xx) whose `detail` may embed
+    /// internal diagnostics (SQL text, driver/dependency errors). Such detail must not
+    /// be returned to the client; it is logged server-side instead.
+    #[must_use]
+    pub const fn is_server_fault(self) -> bool {
+        matches!(self, Self::Internal | Self::Unavailable)
+    }
 }
 
 /// A domain error: a category plus a human-readable detail.
@@ -93,13 +101,22 @@ impl DomainError {
     }
 
     /// Render as an RFC 9457 problem+json body. `instance` is an optional request URI.
+    ///
+    /// For server-fault categories (5xx) the `detail` is dropped: it may contain
+    /// internal diagnostics (raw SQL/driver/dependency errors) that must never reach a
+    /// client. Adapters log the real detail server-side before rendering. Client-fault
+    /// categories (4xx) keep their detail, which is caller-facing by construction.
     #[must_use]
     pub fn to_problem(&self, instance: Option<String>) -> Problem {
         Problem {
             type_uri: self.category.type_uri(),
             title: self.category.title().to_string(),
             status: self.category.status(),
-            detail: Some(self.detail.clone()),
+            detail: if self.category.is_server_fault() {
+                None
+            } else {
+                Some(self.detail.clone())
+            },
             instance,
         }
     }
@@ -153,5 +170,26 @@ mod tests {
         assert_eq!(value["detail"], "item missing");
         // instance is None, so it must be omitted entirely.
         assert!(value.get("instance").is_none());
+    }
+
+    #[test]
+    fn server_faults_do_not_leak_detail_but_client_faults_keep_it() {
+        // Internal/Unavailable details are built from raw dependency errors, so the
+        // problem body must omit detail (logged server-side instead).
+        for category in [ErrorCategory::Internal, ErrorCategory::Unavailable] {
+            let problem = DomainError::new(
+                category,
+                "commit: error returned from database: duplicate key value",
+            )
+            .to_problem(None);
+            assert!(
+                problem.detail.is_none(),
+                "{category:?} must not expose internal detail"
+            );
+        }
+        // Client faults carry their (caller-facing) detail through.
+        let problem =
+            DomainError::new(ErrorCategory::Validation, "name is required").to_problem(None);
+        assert_eq!(problem.detail.as_deref(), Some("name is required"));
     }
 }

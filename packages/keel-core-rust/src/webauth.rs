@@ -31,6 +31,15 @@ impl IntoResponse for DomainError {
     fn into_response(self) -> Response {
         let status = StatusCode::from_u16(self.category.status())
             .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        // Server-fault detail is dropped from the client body (never leak internals);
+        // log it here so operators keep the diagnostic.
+        if self.category.is_server_fault() {
+            tracing::error!(
+                category = self.category.slug(),
+                detail = %self.detail,
+                "request failed with a server-side fault"
+            );
+        }
         let body = serde_json::to_vec(&self.to_problem(None)).unwrap_or_default();
         (status, [(CONTENT_TYPE, "application/problem+json")], body).into_response()
     }
@@ -79,13 +88,14 @@ where
 }
 
 fn bearer_token(parts: &Parts) -> Option<&str> {
-    parts
-        .headers
-        .get(AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .map(str::trim)
-        .filter(|token| !token.is_empty())
+    // RFC 7235 auth-scheme is case-insensitive, so accept any casing of "bearer".
+    let value = parts.headers.get(AUTHORIZATION)?.to_str().ok()?;
+    let (scheme, token) = value.split_once(' ')?;
+    if !scheme.eq_ignore_ascii_case("bearer") {
+        return None;
+    }
+    let token = token.trim();
+    (!token.is_empty()).then_some(token)
 }
 
 #[cfg(test)]
@@ -171,6 +181,21 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn lowercase_bearer_scheme_is_accepted() {
+        // RFC 7235 makes the auth-scheme case-insensitive; a lowercase "bearer" is valid.
+        let response = app()
+            .oneshot(
+                Request::get("/protected")
+                    .header("authorization", "bearer tok")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
     async fn domain_error_renders_problem_json() {
         let response = crate::domain::errors::DomainError::new(ErrorCategory::NotFound, "gone")
             .into_response();
@@ -179,5 +204,26 @@ mod tests {
             response.headers()["content-type"],
             "application/problem+json"
         );
+    }
+
+    #[tokio::test]
+    async fn server_fault_response_body_omits_internal_detail() {
+        use http_body_util::BodyExt;
+        let response = crate::domain::errors::DomainError::new(
+            ErrorCategory::Internal,
+            "commit: duplicate key value violates unique constraint \"items_pkey\"",
+        )
+        .into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let bytes = BodyExt::collect(response.into_body())
+            .await
+            .unwrap()
+            .to_bytes();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert!(
+            body.get("detail").is_none(),
+            "a 500 body must not leak internal detail: {body}"
+        );
+        assert_eq!(body["status"], 500);
     }
 }

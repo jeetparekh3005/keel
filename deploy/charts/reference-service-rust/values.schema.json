@@ -29,7 +29,6 @@
         "oidcAudience": { "type": "string", "minLength": 1 },
         "oidcJwksUri": { "type": "string" },
         "otlpEndpoint": { "type": "string" },
-        "otlpInsecure": { "type": "boolean" },
         "corsAllowOrigins": { "type": "string" }
       }
     },

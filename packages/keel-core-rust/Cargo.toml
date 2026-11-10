@@ -28,6 +28,8 @@ tower-http = { version = "0.6", features = ["cors", "limit", "set-header", "requ
 http-body-util = "0.1"
 jsonwebtoken = "9"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+# rt + time: background JWKS refresh task (tokio::spawn + interval).
+tokio = { version = "1", features = ["rt", "time"] }
 sqlx = { version = "0.8", default-features = false, features = [
     "runtime-tokio",
     "any",

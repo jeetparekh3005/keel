@@ -4,8 +4,8 @@ use keel_core::domain::errors::DomainError;
 use serde::Deserialize;
 
 /// Typed service configuration. Secure by default: `environment` defaults to
-/// `production`, so docs stay hidden and the JWKS endpoint must be https unless an
-/// explicit dev environment opts in.
+/// `production`, so the JWKS endpoint must be https unless an explicit dev environment
+/// opts in (see [`ReferenceConfig::is_dev_like`]).
 #[derive(Debug, Clone, Deserialize)]
 pub struct ReferenceConfig {
     #[serde(default = "default_service_name")]
@@ -24,6 +24,15 @@ pub struct ReferenceConfig {
     /// OTLP collector endpoint; traces export only when set.
     #[serde(default)]
     pub otlp_endpoint: Option<String>,
+    /// How often (seconds) to refresh the JWKS in the background, so IdP signing-key
+    /// rotation is tolerated without a restart.
+    #[serde(default = "default_jwks_refresh_interval_secs")]
+    pub jwks_refresh_interval_secs: u64,
+    /// Exact CORS origins to allow. Empty (the default) is deny-by-default (no CORS).
+    /// From `KEEL_CORS_ALLOW_ORIGINS`, parsed by figment as an array, e.g.
+    /// `["https://app.example"]`.
+    #[serde(default)]
+    pub cors_allow_origins: Vec<String>,
 }
 
 fn default_service_name() -> String {
@@ -41,6 +50,9 @@ fn default_log_level() -> String {
 fn default_database_url() -> String {
     "postgres://localhost/keel".to_string()
 }
+fn default_jwks_refresh_interval_secs() -> u64 {
+    300
+}
 
 impl ReferenceConfig {
     /// Load from `KEEL_`-prefixed environment variables (fail-fast on missing OIDC).
@@ -51,7 +63,7 @@ impl ReferenceConfig {
         keel_core::config::load(None)
     }
 
-    /// True in a dev-like environment (relaxes docs exposure and https-JWKS).
+    /// True in a dev-like environment (allows a non-https JWKS endpoint for local dev).
     #[must_use]
     pub fn is_dev_like(&self) -> bool {
         matches!(

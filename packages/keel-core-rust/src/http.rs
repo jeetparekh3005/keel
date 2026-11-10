@@ -78,16 +78,6 @@ pub fn create_app_with_readiness(
         app = app.layer(Extension(check));
     }
 
-    // Always-on security headers (set only if absent), matching keel-core-py's edge.
-    // HSTS is emitted unconditionally: browsers ignore it over plaintext, so it is
-    // safe on http and active behind a TLS-terminating proxy.
-    for (name, value) in security_headers() {
-        app = app.layer(SetResponseHeaderLayer::if_not_present(
-            name,
-            HeaderValue::from_static(value),
-        ));
-    }
-
     // Bound the request body size (415-style protection; returns 413 when exceeded).
     app = app.layer(RequestBodyLimitLayer::new(config.max_body_bytes));
 
@@ -101,6 +91,18 @@ pub fn create_app_with_readiness(
     // and a wildcard is never combined with credentials.
     if !config.cors_allow_origins.is_empty() {
         app = app.layer(cors_layer(&config.cors_allow_origins));
+    }
+
+    // Always-on security headers, applied OUTERMOST so they also decorate responses that
+    // short-circuit an inner layer (e.g. the body-limit 413), matching keel-core-py's
+    // edge. if_not_present means a route may still override a header. HSTS is emitted
+    // unconditionally: browsers ignore it over plaintext, so it is safe on http and
+    // active behind a TLS-terminating proxy.
+    for (name, value) in security_headers() {
+        app = app.layer(SetResponseHeaderLayer::if_not_present(
+            name,
+            HeaderValue::from_static(value),
+        ));
     }
 
     app
@@ -127,6 +129,12 @@ fn security_headers() -> [(HeaderName, &'static str); 6] {
 }
 
 fn cors_layer(origins: &[String]) -> CorsLayer {
+    // An explicit "*" means allow-all; map it to AllowOrigin::any() rather than passing it
+    // to AllowOrigin::list, which panics on a wildcard entry. Credentials are never
+    // enabled, so a wildcard origin stays spec-compliant.
+    if origins.iter().any(|origin| origin == "*") {
+        return CorsLayer::new().allow_origin(AllowOrigin::any());
+    }
     let parsed: Vec<HeaderValue> = origins
         .iter()
         .filter_map(|origin| origin.parse().ok())
@@ -253,5 +261,31 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        // The security headers are applied outermost, so even a body-limit 413 that
+        // short-circuits the inner stack still carries them.
+        let headers = response.headers();
+        assert_eq!(headers["x-content-type-options"], "nosniff");
+        assert_eq!(headers["x-frame-options"], "DENY");
+        assert!(headers.contains_key("content-security-policy"));
+    }
+
+    #[tokio::test]
+    async fn a_wildcard_cors_origin_does_not_panic_and_allows_any() {
+        // "*" is a natural way to express allow-all; it must not panic the app factory.
+        let config = AppConfig {
+            cors_allow_origins: vec!["*".to_string()],
+            ..AppConfig::default()
+        };
+        let response = create_app_with(&config, Router::new())
+            .oneshot(
+                Request::get("/healthz")
+                    .header("origin", "https://anywhere.example")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()["access-control-allow-origin"], "*");
     }
 }

@@ -136,6 +136,77 @@ pub mod conformance {
         );
     }
 
+    async fn send(
+        router: Router,
+        method: &str,
+        path: &str,
+        bearer: Option<&str>,
+        json_body: Option<&str>,
+    ) -> Response {
+        let mut builder = Request::builder().method(method).uri(path);
+        if let Some(token) = bearer {
+            builder = builder.header("authorization", format!("Bearer {token}"));
+        }
+        let body = match json_body {
+            Some(json) => {
+                builder = builder.header("content-type", "application/json");
+                Body::from(json.to_owned())
+            }
+            None => Body::empty(),
+        };
+        router
+            .oneshot(builder.body(body).expect("request"))
+            .await
+            .expect("response")
+    }
+
+    /// platform.yaml auth: a protected route denies an unauthenticated caller (401) for a
+    /// given method. Unlike [`assert_denies_anonymous`] (GET only), this covers mutating
+    /// routes, so a handler that forgets the `Authed` extractor fails this assertion.
+    /// axum has no route introspection like FastAPI's, so a service enumerates its routes
+    /// through this helper to get the deny-by-default conformance guarantee.
+    pub async fn assert_method_denies_anonymous(
+        router: &Router,
+        method: &str,
+        path: &str,
+        json_body: Option<&str>,
+    ) {
+        let status = send(router.clone(), method, path, None, json_body)
+            .await
+            .status();
+        assert_eq!(
+            status,
+            StatusCode::UNAUTHORIZED,
+            "{method} {path} must deny anonymous access with 401, got {status}"
+        );
+    }
+
+    /// platform.yaml auth (deny-by-default authz): an authenticated caller lacking the
+    /// route's required scope is forbidden (403). `insufficient_bearer` is a token the
+    /// app's authenticator accepts but whose principal lacks the scope.
+    pub async fn assert_requires_scope(
+        router: &Router,
+        method: &str,
+        path: &str,
+        insufficient_bearer: &str,
+        json_body: Option<&str>,
+    ) {
+        let status = send(
+            router.clone(),
+            method,
+            path,
+            Some(insufficient_bearer),
+            json_body,
+        )
+        .await
+        .status();
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "{method} {path} must forbid an insufficient-scope caller with 403, got {status}"
+        );
+    }
+
     /// platform.yaml errors: the response is an RFC 9457 problem+json with the expected
     /// status and the `type`/`title`/`status` fields.
     pub async fn assert_problem_response(response: Response, status: StatusCode) {
