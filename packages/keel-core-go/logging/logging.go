@@ -16,14 +16,20 @@ import (
 	"strings"
 )
 
+// NewHandler returns the redacting JSON slog.Handler used by this vertical: structured
+// JSON at the given level, with secret redaction and the cross-vertical schema. The
+// telemetry package wraps it to add trace correlation.
+func NewHandler(level string, w io.Writer) slog.Handler {
+	return slog.NewJSONHandler(w, &slog.HandlerOptions{
+		Level:       parseLevel(level),
+		ReplaceAttr: redactAttr,
+	})
+}
+
 // New returns a slog.Logger that writes redacted JSON to w at the given level
 // ("debug", "info", "warn", "error"; unknown falls back to info).
 func New(level string, w io.Writer) *slog.Logger {
-	opts := &slog.HandlerOptions{
-		Level:       parseLevel(level),
-		ReplaceAttr: redactAttr,
-	}
-	return slog.New(slog.NewJSONHandler(w, opts))
+	return slog.New(NewHandler(level, w))
 }
 
 // Init installs a redacting JSON logger (to stdout) as the slog default. Call once at
