@@ -80,4 +80,19 @@ mod tests {
         assert_eq!(record["user_id"], 7); // non-secret passes through
         assert_eq!(record["note"], "key [REDACTED] leaked"); // secret value scrubbed
     }
+
+    #[test]
+    fn a_user_field_cannot_clobber_a_canonical_key() {
+        let buf = Buf(Arc::new(Mutex::new(Vec::new())));
+        let subscriber = tracing_subscriber::registry().with(RedactingJsonLayer::new(buf.clone()));
+        tracing::subscriber::with_default(subscriber, || {
+            // A user field named `level` must not overwrite the real level.
+            tracing::info!(level = "sneaky", "hello");
+        });
+        let output = String::from_utf8(buf.0.lock().unwrap().clone()).unwrap();
+        let record: serde_json::Value =
+            serde_json::from_str(output.lines().last().unwrap()).unwrap();
+        assert_eq!(record["level"], "info"); // canonical level preserved
+        assert_eq!(record["x_level"], "sneaky"); // user field namespaced
+    }
 }

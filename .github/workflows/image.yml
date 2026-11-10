@@ -138,18 +138,6 @@ jobs:
           severity: HIGH,CRITICAL
           exit-code: "1"
           vuln-type: os,library
-      - name: Apply the release tags now that the scan has passed
-        # Only reached if Trivy passed. Points the semver/sha tags at the vetted digest;
-        # signing below targets the same digest, so the signature covers the tags.
-        run: |
-          flags=""
-          while IFS= read -r tag; do
-            [ -n "$tag" ] && flags="$flags -t $tag"
-          done <<< "${TAGS}"
-          docker buildx imagetools create $flags "${IMAGE}@${DIGEST}"
-        env:
-          TAGS: ${{ steps.meta.outputs.tags }}
-          DIGEST: ${{ steps.build.outputs.digest }}
       - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
       - name: Sign the image (keyless)
         run: cosign sign --yes "${IMAGE}@${DIGEST}"
@@ -170,4 +158,17 @@ jobs:
       - name: Attest the SBOM (keyless)
         run: cosign attest --yes --predicate image.spdx.json --type spdxjson "${IMAGE}@${DIGEST}"
         env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+      - name: Apply the release tags now that the image is scanned, signed, and attested
+        # LAST step: the digest is Trivy-vetted, cosign-signed, and SLSA/SBOM-attested
+        # before any human tag points at it, so there is never a window where the release
+        # tag resolves to an unsigned or unscanned image.
+        run: |
+          flags=""
+          while IFS= read -r tag; do
+            [ -n "$tag" ] && flags="$flags -t $tag"
+          done <<< "${TAGS}"
+          docker buildx imagetools create $flags "${IMAGE}@${DIGEST}"
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
           DIGEST: ${{ steps.build.outputs.digest }}
