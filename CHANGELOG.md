@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.1](https://github.com/jeetparekh3005/keel/compare/v0.3.0...v0.3.1) (2026-11-10)
+
+
+### Bug Fixes
+
+* **rust:** second-audit hardening (Entra scp, port wiring, CORS, JWKS edges) ([#270](https://github.com/jeetparekh3005/keel/issues/270)) ([2043f1a](https://github.com/jeetparekh3005/keel/commit/2043f1a2cf83ca206fb8459d2606cd0a61a72f25)), closes [#263](https://github.com/jeetparekh3005/keel/issues/263) [#267](https://github.com/jeetparekh3005/keel/issues/267) [#266](https://github.com/jeetparekh3005/keel/issues/266) [#262](https://github.com/jeetparekh3005/keel/issues/262) [#264](https://github.com/jeetparekh3005/keel/issues/264) [#265](https://github.com/jeetparekh3005/keel/issues/265) [#268](https://github.com/jeetparekh3005/keel/issues/268) [#269](https://github.com/jeetparekh3005/keel/issues/269)
+
+
+### Miscellaneous Chores
+
+* integrate dev for the v0.3.1 release ([f83b849](https://github.com/jeetparekh3005/keel/commit/f83b84951abab1c485abd04b448f53198e53c823))
+
 ## [0.3.0](https://github.com/jeetparekh3005/keel/compare/v0.2.2...v0.3.0) (2026-11-10)
 
 
