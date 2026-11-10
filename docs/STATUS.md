@@ -78,6 +78,23 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   span-export path** (log-sink redaction does not cover span-field export), HTTP request
   **metrics** instrumentation, a live **Keycloak** JWKS integration test, and the
   messaging/gRPC/`api_key`/`mTLS` surfaces (tracked follow-ups on v0.4).
+- **Go vertical (v0.4)**: a third language vertical, same hexagonal boundaries, stdlib-first
+  (ADR-0018). Shared library `packages/keel-core-go` (a Cargo-workspace-equivalent `go.work`
+  module) + thin `services/reference-service-go` (net/http + go-chi/chi). Implements the full
+  contract: typed `KEEL_`-prefixed config (fail-fast); RFC 9457 errors with server-fault
+  detail scrubbing; structured JSON logging on `log/slog` with secret redaction and **per-line
+  trace correlation**; OpenTelemetry traces; edge hardening (security headers outermost, body
+  limit, request-id, deny-by-default CORS) and health probes with a real readiness check;
+  **OIDC/JWT auth via go-oidc, whose RemoteKeySet refreshes the JWKS natively** (and accepts
+  the Entra `scp`-as-string form); pgx persistence with a unit-of-work; the `Clock`/`SecretProvider`
+  ports and a reusable **conformance suite** the reference service runs against its composed app
+  (items CRUD verified against real Postgres). Shipped like the others: a hardened Chainguard
+  image (Trivy reads the Go binary's embedded module list directly; signed + SLSA-attested on
+  release) and a Helm chart with the same PSS-restricted posture. CI lane (`go.yml`): gofmt,
+  go vet, staticcheck, go test (with a Postgres service), and **govulncheck as a blocking
+  dependency-CVE gate**. Several Rust follow-ups are built in from the start here (native JWKS
+  refresh, `scp`-string, log-trace correlation, ReDoS-immune scrubbers, honest `t.Skip`
+  integration gating). Not yet: HTTP request metrics and a live Keycloak JWKS test.
 
 ## Planned - described in the contract/ADRs but NOT yet implemented
 
