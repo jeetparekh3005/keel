@@ -92,7 +92,12 @@ def test_no_pending_migration_drift(tmp_path):
     engine = create_engine(cfg.get_main_option("sqlalchemy.url"))
     try:
         with engine.connect() as connection:
-            context = MigrationContext.configure(connection)
+            # compare_server_default is off by default, which would make the
+            # modify_default branch in _STRUCTURAL dead; enable it so a server-default
+            # drift is actually detected alongside type/nullability changes.
+            context = MigrationContext.configure(
+                connection, opts={"compare_server_default": True}
+            )
             diffs = compare_metadata(context, Entity.metadata)
     finally:
         engine.dispose()

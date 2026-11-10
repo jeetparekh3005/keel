@@ -2,7 +2,11 @@
 //! Python vertical (`keel_core.adapters.outbound.logging`). [`RedactingJsonLayer`] emits
 //! one redacted JSON object per event (and redacts span fields), and is installed by
 //! [`crate::logging`] and [`crate::telemetry`], so a secret logged under any key (or
-//! inside a value) never reaches the log sink.
+//! inside a value) is redacted before it reaches the JSON **log sink**.
+//!
+//! Scope: this covers the JSON log output only. It does NOT redact the OTLP span-export
+//! path (see [`crate::telemetry`]); span/event field values are exported as-is, so secrets
+//! must not be placed in span fields when OTLP export is enabled.
 
 use std::io::Write;
 use std::sync::OnceLock;
@@ -21,6 +25,10 @@ use tracing_subscriber::registry::LookupSpan;
 const REDACTED: &str = "[REDACTED]";
 /// Cap on a single rendered string field (matches the Python `_DEFAULT_MAX_FIELD_LEN`).
 const MAX_FIELD_LEN: usize = 8192;
+
+/// Canonical top-level keys this layer emits; a colliding user field is `x_`-namespaced so
+/// it cannot overwrite the real value (mirrors the Python vertical's reserved-field set).
+const RESERVED_KEYS: &[&str] = &["timestamp", "level", "target", "spans"];
 
 /// Key fragments (matched against a normalized, lowercased, separator-stripped key) that
 /// mark a field as secret; its value is redacted wholesale. Mirrors the Python families.
@@ -264,8 +272,15 @@ where
             Value::String(meta.target().to_string()),
         );
         // Event fields (already redacted), flattened to the top level; "message" included.
+        // A user field that collides with a canonical key this layer injects is namespaced
+        // with an `x_` prefix (mirroring the Python vertical's reserved-field protection),
+        // so it cannot clobber the real timestamp/level/target/spans.
         for (key, value) in record_to_object(|c| event.record(c)) {
-            object.insert(key, value);
+            if RESERVED_KEYS.contains(&key.as_str()) {
+                object.insert(format!("x_{key}"), value);
+            } else {
+                object.insert(key, value);
+            }
         }
         // The enclosing span scope, each span's redacted fields included for correlation.
         if let Some(scope) = ctx.event_scope(event) {

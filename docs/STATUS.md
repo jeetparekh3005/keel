@@ -71,9 +71,12 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   (tolerates IdP key rotation), `/readyz` runs a real dependency check, shutdown is
   graceful (SIGTERM drain + telemetry flush), and a route-auth + scope conformance test
   enforces deny-by-default per route. Structured **log redaction** matches the Python
-  vertical (family-based key redaction + value scrubbing for JWT/bearer/AWS-key/PAN, applied
-  recursively to event and span fields). Not yet at Python parity: HTTP request **metrics**
-  instrumentation, a live **Keycloak** JWKS integration test, and the
+  vertical for the JSON log sink (family-based key redaction + value scrubbing for
+  JWT/bearer/AWS-key/PAN, recursive over event and span fields, with reserved-key
+  namespacing). Not yet at Python parity: per-line **log-to-trace correlation**
+  (`trace_id`/`span_id` are not emitted on Rust log lines), **redaction of the OTLP
+  span-export path** (log-sink redaction does not cover span-field export), HTTP request
+  **metrics** instrumentation, a live **Keycloak** JWKS integration test, and the
   messaging/gRPC/`api_key`/`mTLS` surfaces (tracked follow-ups on v0.4).
 
 ## Planned - described in the contract/ADRs but NOT yet implemented
