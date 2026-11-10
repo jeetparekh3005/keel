@@ -32,7 +32,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Audit dependencies (CVE gate)
         run: pnpm audit --audit-level high
-      - run: pnpm lint
-      - run: pnpm typecheck
-      - run: pnpm test
-      - run: pnpm build
+      # Scoped to the web app: the workspace also holds the TypeScript backend vertical
+      # (keel-core-ts + reference-service-nest), which has its own lane (nest.yml).
+      - run: pnpm --filter @keel/web run lint
+      - run: pnpm --filter @keel/web run typecheck
+      - run: pnpm --filter @keel/web run test
+      - run: pnpm --filter @keel/web run build

@@ -56,6 +56,8 @@ jobs:
             dockerfile: services/reference-service-rust/Dockerfile
           - name: reference-service-go
             dockerfile: services/reference-service-go/Dockerfile
+          - name: reference-service-nest
+            dockerfile: services/reference-service-nest/Dockerfile
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -101,6 +103,8 @@ jobs:
             dockerfile: services/reference-service-rust/Dockerfile
           - name: reference-service-go
             dockerfile: services/reference-service-go/Dockerfile
+          - name: reference-service-nest
+            dockerfile: services/reference-service-nest/Dockerfile
     env:
       IMAGE: ghcr.io/${{ github.repository }}/${{ matrix.name }}
     steps:

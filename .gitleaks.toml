@@ -15,6 +15,7 @@ paths = [
   '''packages/keel-core-rust/src/logging\.rs''',
   '''packages/keel-core-go/logging/redact_test\.go''',
   '''packages/keel-core-go/logging/logging_test\.go''',
+  '''packages/keel-core-ts/src/logging/redact\.spec\.ts''',
 ]
 # Belt-and-braces: the specific documented example values, anywhere they appear.
 regexes = [

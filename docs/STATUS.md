@@ -95,6 +95,29 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   dependency-CVE gate**. Several Rust follow-ups are built in from the start here (native JWKS
   refresh, `scp`-string, log-trace correlation, ReDoS-immune scrubbers, honest `t.Skip`
   integration gating). Not yet: HTTP request metrics and a live Keycloak JWKS test.
+- **TypeScript/NestJS vertical (v0.4)**: a fourth language vertical, same hexagonal
+  boundaries, deliberately batteries-included (NestJS + DI) as the contrast to the stdlib-first
+  Go/Rust services (ADR-0019). Shared library `packages/keel-core-ts` (`@keel/core`) + thin
+  `services/reference-service-nest` in the repo-root pnpm workspace. Implements the full
+  contract: typed `KEEL_`-prefixed config via **zod** (fail-fast), which also validates request
+  DTOs (one typed validator, not class-validator); RFC 9457 errors with server-fault detail
+  scrubbing; structured JSON logging on **pino** with family-based secret redaction + value
+  scrubbing (JWT/AWS/bearer/PEM/Luhn, written ReDoS-safe) and **per-line trace correlation**;
+  OpenTelemetry traces (OTel JS); edge hardening as NestJS middleware (security headers
+  outermost, body limit -> 413, request-id, deny-by-default CORS) and health probes with a real
+  readiness check; **OIDC/JWT auth via jose, whose createRemoteJWKSet refreshes the JWKS
+  natively** (and accepts the Entra `scp`-as-string form); a **structurally deny-by-default**
+  global guard (every route needs auth + its scope unless explicitly `@Public`); pg persistence
+  with a unit-of-work; the `Clock`/`SecretProvider` ports and a reusable **conformance suite**
+  the reference service runs against its composed app (items CRUD verified against real
+  Postgres). Shipped like the others: a hardened Chainguard image (Trivy scans the shipped
+  `node_modules`; signed + SLSA-attested on release) and a Helm chart with the same
+  PSS-restricted posture. CI lane (`nest.yml`): prettier, typescript-eslint (type-checked),
+  `tsc`, vitest (with a Postgres service), and **`pnpm audit` as a blocking dependency-CVE
+  gate**. TypeScript is pinned to the latest 5.x the toolchain supports (not the 7.x native-port
+  compiler, which typescript-eslint and NestJS do not yet support). Not yet: HTTP request
+  metrics, a live Keycloak JWKS test, and JSON-formatting NestJS's own bootstrap log lines (the
+  app/error path already logs through the redacting pino logger).
 
 ## Planned - described in the contract/ADRs but NOT yet implemented
 
