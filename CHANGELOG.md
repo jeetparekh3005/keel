@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.3.0](https://github.com/jeetparekh3005/keel/compare/v0.2.2...v0.3.0) (2026-11-10)
+
+
+### Features
+
+* **rust:** axum app factory + health endpoints ([#218](https://github.com/jeetparekh3005/keel/issues/218)) ([3471552](https://github.com/jeetparekh3005/keel/commit/3471552031b29540784dde4edc52817ecfdd56f1))
+* **rust:** axum auth extractor + scope enforcement + problem+json ([#223](https://github.com/jeetparekh3005/keel/issues/223)) ([2eaeb1c](https://github.com/jeetparekh3005/keel/commit/2eaeb1ceb23215c893002dc93187c4a95747d27e))
+* **rust:** config loader + RFC 9457 error model + domain taxonomy ([#216](https://github.com/jeetparekh3005/keel/issues/216)) ([2da694e](https://github.com/jeetparekh3005/keel/commit/2da694e9dfcb7cf6ac82319133583ef75f8888ce))
+* **rust:** container image, Helm chart, and supply-chain CI for the Rust service ([#227](https://github.com/jeetparekh3005/keel/issues/227)) ([b4d0248](https://github.com/jeetparekh3005/keel/commit/b4d0248c88e43ac4487dd4fe8087aea2806adfdf)), closes [#214](https://github.com/jeetparekh3005/keel/issues/214)
+* **rust:** driven-port traits, test-kit fakes, and the conformance suite ([#222](https://github.com/jeetparekh3005/keel/issues/222)) ([004a009](https://github.com/jeetparekh3005/keel/commit/004a0093ddb558d42dec45069493b7e5c2db88ed))
+* **rust:** edge middleware stack (headers, body limit, request-id, CORS) ([#219](https://github.com/jeetparekh3005/keel/issues/219)) ([68d88f2](https://github.com/jeetparekh3005/keel/commit/68d88f230fd8e907848739f92f6a1c680d8c9c84)), closes [#208](https://github.com/jeetparekh3005/keel/issues/208) [#36](https://github.com/jeetparekh3005/keel/issues/36)
+* **rust:** JWKS-over-HTTPS signing-key cache and resolver ([#224](https://github.com/jeetparekh3005/keel/issues/224)) ([965265c](https://github.com/jeetparekh3005/keel/commit/965265c3556e99efa4237d148e91475862ee0fa5)), closes [#209](https://github.com/jeetparekh3005/keel/issues/209) [#36](https://github.com/jeetparekh3005/keel/issues/36)
+* **rust:** OIDC/JWT authenticator with full verification matrix ([#220](https://github.com/jeetparekh3005/keel/issues/220)) ([b5689e3](https://github.com/jeetparekh3005/keel/commit/b5689e35eee3b9b4e8dcc11055966c042a224277)), closes [#209](https://github.com/jeetparekh3005/keel/issues/209) [#36](https://github.com/jeetparekh3005/keel/issues/36)
+* **rust:** OpenTelemetry setup (traces + resource + log correlation) ([#226](https://github.com/jeetparekh3005/keel/issues/226)) ([e538d96](https://github.com/jeetparekh3005/keel/commit/e538d9655bbef878c1de8e13d995e38d781921c6)), closes [#207](https://github.com/jeetparekh3005/keel/issues/207) [#36](https://github.com/jeetparekh3005/keel/issues/36)
+* **rust:** reference-service-rust (items aggregate) + composition root ([#225](https://github.com/jeetparekh3005/keel/issues/225)) ([a07f8f9](https://github.com/jeetparekh3005/keel/commit/a07f8f9de01ce81da6321fc4bd1ba6d50fea75c9)), closes [#212](https://github.com/jeetparekh3005/keel/issues/212) [#36](https://github.com/jeetparekh3005/keel/issues/36)
+* **rust:** scaffold keel-core-rust workspace + CI lane ([#215](https://github.com/jeetparekh3005/keel/issues/215)) ([41e6342](https://github.com/jeetparekh3005/keel/commit/41e63424ace8d0cf3d6cbabb50368114ea14d167))
+* **rust:** sqlx persistence plumbing (Database + UnitOfWork) ([#221](https://github.com/jeetparekh3005/keel/issues/221)) ([29b7bb8](https://github.com/jeetparekh3005/keel/commit/29b7bb898b90313c53f7c97f2cb174233ac2f6f5))
+* **rust:** structured JSON logging adapter ([#217](https://github.com/jeetparekh3005/keel/issues/217)) ([ce44503](https://github.com/jeetparekh3005/keel/commit/ce44503ebd3fdc5ea3246b026cc639e8c8b8ad3c))
+
+
+### Bug Fixes
+
+* **rust:** harden JWKS, error handling, edge, and auth-parity from the audit ([#255](https://github.com/jeetparekh3005/keel/issues/255)) ([313cde1](https://github.com/jeetparekh3005/keel/commit/313cde10029dea5c7861891d3cf7104dae62cd99)), closes [#245](https://github.com/jeetparekh3005/keel/issues/245) [#233](https://github.com/jeetparekh3005/keel/issues/233) [#235](https://github.com/jeetparekh3005/keel/issues/235) [#231](https://github.com/jeetparekh3005/keel/issues/231) [#232](https://github.com/jeetparekh3005/keel/issues/232) [#234](https://github.com/jeetparekh3005/keel/issues/234) [#236](https://github.com/jeetparekh3005/keel/issues/236) [#246](https://github.com/jeetparekh3005/keel/issues/246) [#238](https://github.com/jeetparekh3005/keel/issues/238) [#254](https://github.com/jeetparekh3005/keel/issues/254) [#250](https://github.com/jeetparekh3005/keel/issues/250) [#237](https://github.com/jeetparekh3005/keel/issues/237)
+
+
+### Miscellaneous Chores
+
+* integrate dev for the v0.3.0 release ([8c8ddb4](https://github.com/jeetparekh3005/keel/commit/8c8ddb42993f4e73023a8863725f5cc5d5fedeff))
+
 ## [0.2.2](https://github.com/jeetparekh3005/keel/compare/v0.2.1...v0.2.2) (2026-11-05)
 
 
