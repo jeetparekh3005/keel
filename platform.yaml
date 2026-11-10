@@ -12,9 +12,10 @@
 # the Python vertical implements it broadly: logging, errors, HTTP edge security,
 # auth (OIDC/JWT + api_key + mTLS credentials + fine-grained authorization),
 # telemetry, persistence, health, the NATS broker adapter, and the supply-chain
-# and k8s-hardening gates. Still planned: the Kafka/RabbitMQ brokers and buf/
-# protobuf gRPC IDL, and the non-Python verticals. See docs/STATUS.md for the
-# precise implemented-vs-planned matrix.
+# and k8s-hardening gates. The Rust vertical (v0.3) implements the core contract
+# too (see docs/STATUS.md for its parity notes). Still planned: the Kafka/RabbitMQ
+# brokers and buf/protobuf gRPC IDL, and the Go and Java verticals. See
+# docs/STATUS.md for the precise implemented-vs-planned matrix.
 apiVersion: keel.dev/v1alpha1
 kind: PlatformContract
 metadata:

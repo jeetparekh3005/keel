@@ -60,11 +60,30 @@ struct Claims {
     #[serde(default)]
     scope: Option<String>,
     #[serde(default)]
-    scp: Option<Vec<String>>,
+    scp: Option<ScopeClaim>,
     #[serde(default)]
     roles: Option<Vec<String>>,
     #[serde(default)]
     realm_access: Option<RealmAccess>,
+}
+
+/// The `scp` claim is an array of scopes in most IdPs, but the Microsoft identity
+/// platform (Entra ID / Azure AD) emits it as a single space-delimited string. Accept
+/// both shapes so a valid token is not rejected because of its scope encoding.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum ScopeClaim {
+    List(Vec<String>),
+    Spaced(String),
+}
+
+impl ScopeClaim {
+    fn into_scopes(self) -> Vec<String> {
+        match self {
+            Self::List(scopes) => scopes,
+            Self::Spaced(scopes) => scopes.split_whitespace().map(ToString::to_string).collect(),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -115,7 +134,7 @@ fn principal_from(claims: Claims) -> Principal {
         scopes.extend(scope.split_whitespace().map(ToString::to_string));
     }
     if let Some(scp) = claims.scp {
-        scopes.extend(scp);
+        scopes.extend(scp.into_scopes());
     }
     let mut roles = BTreeSet::new();
     if let Some(list) = claims.roles {
@@ -215,6 +234,33 @@ mod tests {
         assert_eq!(principal.subject, "user-1");
         assert!(principal.scopes.contains("orders:read"));
         assert!(principal.roles.contains("admin"));
+    }
+
+    #[test]
+    fn scp_claim_as_array_populates_scopes() {
+        let claims = serde_json::json!({
+            "sub": "user-1", "iss": ISSUER, "aud": AUDIENCE, "exp": now() + 3600,
+            "scp": ["orders:read", "orders:write"],
+        });
+        let principal = authenticator_with(pub_resolver())
+            .authenticate(&token(&keys().signing_pem, &claims))
+            .expect("array scp token");
+        assert!(principal.scopes.contains("orders:read"));
+        assert!(principal.scopes.contains("orders:write"));
+    }
+
+    #[test]
+    fn scp_claim_as_space_delimited_string_is_accepted() {
+        // Microsoft Entra ID / Azure AD emits scp as a space-delimited string, not an array.
+        let claims = serde_json::json!({
+            "sub": "user-1", "iss": ISSUER, "aud": AUDIENCE, "exp": now() + 3600,
+            "scp": "orders:read orders:write",
+        });
+        let principal = authenticator_with(pub_resolver())
+            .authenticate(&token(&keys().signing_pem, &claims))
+            .expect("Entra-style string scp token must be accepted");
+        assert!(principal.scopes.contains("orders:read"));
+        assert!(principal.scopes.contains("orders:write"));
     }
 
     #[test]

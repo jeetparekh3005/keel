@@ -33,6 +33,10 @@ pub struct ReferenceConfig {
     /// `["https://app.example"]`.
     #[serde(default)]
     pub cors_allow_origins: Vec<String>,
+    /// TCP port to bind. The Helm chart renders this from `service.port`, so the
+    /// container, probes, and Service all agree on the listen port.
+    #[serde(default = "default_port")]
+    pub port: u16,
 }
 
 fn default_service_name() -> String {
@@ -52,6 +56,9 @@ fn default_database_url() -> String {
 }
 fn default_jwks_refresh_interval_secs() -> u64 {
     300
+}
+fn default_port() -> u16 {
+    8000
 }
 
 impl ReferenceConfig {

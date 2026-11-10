@@ -48,8 +48,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..AppConfig::default()
     };
     let app = build_app(&database, authenticator, &app_config);
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8000").await?;
-    tracing::info!("reference-service listening on 0.0.0.0:8000");
+    let bind_addr = format!("0.0.0.0:{}", config.port);
+    let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
+    tracing::info!(addr = %bind_addr, "reference-service listening");
 
     // Drain in-flight requests on SIGTERM (rolling deploy) / Ctrl-C before exiting, so
     // clients are not cut mid-request and telemetry is flushed on a clean shutdown.

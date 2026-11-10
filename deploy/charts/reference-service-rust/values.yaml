@@ -15,7 +15,9 @@ config:
   oidcAudience: keel-api
   oidcJwksUri: ""
   otlpEndpoint: ""
-  corsAllowOrigins: "[]" # JSON array string, e.g. '["https://app.example"]'; "[]" = deny-by-default
+  # List of exact CORS origins; empty = deny-by-default. Set with a YAML list or
+  # --set-json, e.g. corsAllowOrigins: ["https://app.example"].
+  corsAllowOrigins: []
 
 # KEEL_DATABASE_URL is a secret: reference an existing Secret, never values.
 database:
