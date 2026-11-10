@@ -30,7 +30,8 @@
         "oidcJwksUri": { "type": "string" },
         "otlpEndpoint": { "type": "string" },
         "otlpInsecure": { "type": "boolean" },
-        "corsAllowOrigins": { "type": "string" }
+        "corsAllowOrigins": { "type": "string" },
+        "forwardedAllowIps": { "type": "string", "minLength": 1 }
       }
     },
     "database": {
