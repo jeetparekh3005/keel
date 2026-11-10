@@ -12,11 +12,12 @@
     "test": "turbo run test"
   },
   "devDependencies": {
-    "turbo": "2.3.3"
+    "turbo": "2.11.10"
   },
   "pnpm": {
     "overrides": {
-      "postcss@<8.5.18": ">=8.5.18"
+      "postcss@<8.5.18": ">=8.5.18",
+      "minimatch@<11.0.1": ">=11.0.1"
     }
   }
 }
