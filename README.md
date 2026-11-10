@@ -12,7 +12,7 @@ The goal: go from zero to a secure, observable, deployable service in minutes, n
 
 ## Status
 
-**Active development.** keel is built vertical-by-vertical. The **Python golden-path** (v0.1) and the **frontend monorepo + deployment surface** (v0.2) are released; the **Rust vertical** (v0.3) is complete on `dev` with a release pending. See the [roadmap](#roadmap) and [docs/STATUS.md](docs/STATUS.md) for implemented-vs-planned detail.
+**Active development.** keel is built vertical-by-vertical. The **Python golden-path** (v0.1) and the **frontend monorepo + deployment surface** (v0.2) are released; the **Rust vertical** (v0.3) is released. See the [roadmap](#roadmap) and [docs/STATUS.md](docs/STATUS.md) for implemented-vs-planned detail.
 
 ## Why keel
 
