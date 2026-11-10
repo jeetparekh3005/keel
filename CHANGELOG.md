@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.3.2](https://github.com/jeetparekh3005/keel/compare/v0.3.1...v0.3.2) (2026-11-10)
+
+
+### Features
+
+* **rust:** structured-log secret redaction (parity with the Python vertical) ([#278](https://github.com/jeetparekh3005/keel/issues/278)) ([a40cdcf](https://github.com/jeetparekh3005/keel/commit/a40cdcff707d5e827f194f1f819b0a50edf368b8))
+
+
+### Bug Fixes
+
+* **python:** audit follow-ups (XFF trust, bytes redaction, forwarded-ips, drift, contract) ([#274](https://github.com/jeetparekh3005/keel/issues/274)) ([a50ee2b](https://github.com/jeetparekh3005/keel/commit/a50ee2b504474b11c6f61153cb5055642a9c2485)), closes [#239](https://github.com/jeetparekh3005/keel/issues/239) [#241](https://github.com/jeetparekh3005/keel/issues/241) [#243](https://github.com/jeetparekh3005/keel/issues/243) [#244](https://github.com/jeetparekh3005/keel/issues/244) [#240](https://github.com/jeetparekh3005/keel/issues/240)
+* third-audit follow-ups (reserved-key namespacing, sign-before-tag, drift, docs) ([#302](https://github.com/jeetparekh3005/keel/issues/302)) ([0b97377](https://github.com/jeetparekh3005/keel/commit/0b97377fa4894d5d955e3092c83d2896d42481de))
+
+
+### Miscellaneous Chores
+
+* integrate dev for the v0.3.2 release ([362bf3c](https://github.com/jeetparekh3005/keel/commit/362bf3cdbddb3e58040addfd494e92b2e66280c5))
+
 ## [0.3.1](https://github.com/jeetparekh3005/keel/compare/v0.3.0...v0.3.1) (2026-11-10)
 
 
