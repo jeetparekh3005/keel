@@ -1,7 +1,13 @@
 //! OpenTelemetry setup: a shared Resource (service identity), OTLP trace export, and
-//! JSON logging, wired together so a log line emitted inside a span carries that span's
-//! trace context. Export is enabled only when an OTLP endpoint is configured
-//! (platform.yaml telemetry); otherwise logs still emit and spans are no-ops.
+//! JSON logging. A log line emitted inside a span carries that span's name and fields
+//! (under `spans`); per-line `trace_id`/`span_id` correlation is not yet emitted (a
+//! tracked v0.4 parity item vs the Python vertical). Export is enabled only when an OTLP
+//! endpoint is configured (platform.yaml telemetry); otherwise logs still emit and spans
+//! are no-ops.
+//!
+//! Redaction (see [`crate::redact`]) covers the JSON log sink. It does NOT cover the OTLP
+//! span-export path: values recorded as span fields or in-span event fields are exported
+//! to the collector as-is, so secrets must not be put in span fields when export is on.
 
 use opentelemetry::trace::TracerProvider as _;
 use opentelemetry::KeyValue;
@@ -9,7 +15,9 @@ use opentelemetry_otlp::WithExportConfig as _;
 use opentelemetry_sdk::trace::SdkTracerProvider;
 use opentelemetry_sdk::Resource;
 use tracing_subscriber::prelude::*;
-use tracing_subscriber::{fmt, EnvFilter};
+use tracing_subscriber::EnvFilter;
+
+use crate::redact::RedactingJsonLayer;
 
 /// Build the shared telemetry Resource: service name/version, deployment environment,
 /// and a per-instance id (so replicas are distinguishable in traces/metrics).
@@ -25,10 +33,9 @@ pub fn resource(service: &str, version: &str, environment: &str) -> Resource {
         .build()
 }
 
-/// Install the global subscriber: a JSON log layer (leveled) plus, when
-/// `otlp_endpoint` is set, an OpenTelemetry layer that exports spans over OTLP and
-/// stamps the active span's trace/span id onto log records. Returns the tracer
-/// provider (call [`shutdown`] at exit to flush) when export is enabled.
+/// Install the global subscriber: a redacting JSON log layer (leveled) plus, when
+/// `otlp_endpoint` is set, an OpenTelemetry layer that exports spans over OTLP. Returns
+/// the tracer provider (call [`shutdown`] at exit to flush) when export is enabled.
 ///
 /// Safe to call once at startup; a second call is a no-op.
 ///
@@ -42,7 +49,7 @@ pub fn init(
     otlp_endpoint: Option<&str>,
 ) -> Option<SdkTracerProvider> {
     let filter = EnvFilter::try_new(level).unwrap_or_else(|_| EnvFilter::new("info"));
-    let fmt_layer = fmt::layer().json().flatten_event(true);
+    let fmt_layer = RedactingJsonLayer::new(std::io::stdout);
 
     let (otel_layer, provider) = match otlp_endpoint {
         Some(endpoint) => {

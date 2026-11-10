@@ -115,6 +115,17 @@ def test_secret_value_patterns_are_scrubbed():
     assert record["card"] == "[REDACTED]"
 
 
+def test_secret_in_bytes_value_is_scrubbed():
+    # A secret inside a bytes value under a non-secret key must still be scrubbed, not
+    # emitted verbatim via the JSON renderer's repr of the bytes object.
+    logger, buffer = capturing_logger()
+    jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5NXgL0n3I9PlFUP"
+    logger.info("inbound", payload=f"Authorization: Bearer {jwt}".encode())
+    payload = _last_record(buffer)["payload"]
+    assert "eyJ" not in payload
+    assert "[REDACTED]" in payload
+
+
 def test_secrets_in_message_string_are_scrubbed():
     logger, buffer = capturing_logger()
     jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5NXgL0n3I9PlFUP"

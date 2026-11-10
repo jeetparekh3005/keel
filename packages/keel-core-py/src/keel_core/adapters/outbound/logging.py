@@ -120,8 +120,12 @@ def _sanitize(value: object, max_len: int) -> object:
         return out
     if isinstance(value, (list, tuple)):
         return [_sanitize(item, max_len) for item in value]
-    if isinstance(value, str):
-        scrubbed = _scrub_text(value)
+    if isinstance(value, (str, bytes, bytearray)):
+        # bytes values are decoded (lossily) so value-pattern scrubbing (JWT, bearer,
+        # AWS key, PAN) applies to byte payloads too; otherwise a secret in a bytes value
+        # under a non-secret key would be emitted verbatim by the JSON renderer's repr.
+        text = value if isinstance(value, str) else bytes(value).decode("utf-8", errors="replace")
+        scrubbed = _scrub_text(text)
         if len(scrubbed) > max_len:
             return f"{scrubbed[:max_len]}...(truncated {len(scrubbed) - max_len} chars)"
         return scrubbed

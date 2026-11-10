@@ -73,6 +73,7 @@ def create_app(
     max_request_bytes: int = 1_048_576,
     expose_docs: bool = True,
     rate_limit: tuple[int, float] | None = None,
+    rate_limit_trust_forwarded: bool = False,
     cors_allow_origins: Sequence[str] = (),
     cors_allow_credentials: bool = False,
     trusted_hosts: Sequence[str] = (),
@@ -88,6 +89,10 @@ def create_app(
         max_request_bytes: reject requests whose Content-Length exceeds this (413).
         rate_limit: optional ``(max_requests, window_seconds)`` enabling the per-instance
             rate-limit middleware (defense-in-depth; the gateway is the primary control).
+        rate_limit_trust_forwarded: whether the rate limiter keys on the ``X-Forwarded-For``
+            peer. **Defaults to False (fail-closed)**: a directly-exposed instance must not
+            trust a client-supplied header, or a client could spoof it to bypass the limit.
+            Set ``True`` only when a trusted proxy/gateway appends the real peer.
         expose_docs: serve the OpenAPI schema and Swagger/ReDoc UIs. Keep ``True``
             for local/dev; pass ``False`` in production so the API map is not
             disclosed anonymously (the schema and both doc UIs are disabled).
@@ -131,7 +136,10 @@ def create_app(
     if rate_limit is not None:
         max_requests, window_seconds = rate_limit
         app.add_middleware(
-            RateLimitMiddleware, max_requests=max_requests, window_seconds=window_seconds
+            RateLimitMiddleware,
+            max_requests=max_requests,
+            window_seconds=window_seconds,
+            trust_forwarded=rate_limit_trust_forwarded,
         )
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(RequestIdMiddleware)

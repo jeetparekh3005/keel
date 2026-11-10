@@ -14,3 +14,7 @@ data:
   KEEL_OTLP_ENDPOINT: {{ .Values.config.otlpEndpoint | quote }}
   KEEL_OTLP_INSECURE: {{ .Values.config.otlpInsecure | quote }}
   KEEL_CORS_ALLOW_ORIGINS: {{ .Values.config.corsAllowOrigins | quote }}
+  # Peers whose X-Forwarded-* are trusted. Default "*" trusts the in-cluster proxy;
+  # set to your ingress/mesh source range to tighten it. This is an explicit deployment
+  # decision (the service itself fails closed to localhost-only).
+  KEEL_FORWARDED_ALLOW_IPS: {{ .Values.config.forwardedAllowIps | quote }}

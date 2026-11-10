@@ -7,7 +7,11 @@
 
 FROM cgr.dev/chainguard/python:latest-dev AS build
 WORKDIR /app
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/bin/uv
+# uv is a BUILD TOOL that executes during the build (resolves + installs + byte-compiles
+# every dependency), so unlike the rolling, continuously-scanned Chainguard base it is
+# digest-pinned: a repointed :latest tag could otherwise alter what lands in the signed
+# image. Bump via Dependabot (docker ecosystem). uv 0.12.0.
+COPY --from=ghcr.io/astral-sh/uv:0.12.0@sha256:606e70c71c852d03f611b1e56a195d08648507018a7057fab82c4974c4eae105 /uv /usr/bin/uv
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_PYTHON_DOWNLOADS=never

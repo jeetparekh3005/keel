@@ -44,6 +44,32 @@ def test_client_key_uses_rightmost_forwarded_hop() -> None:
     assert key == "3.3.3.3"
 
 
+def test_trust_forwarded_false_ignores_spoofable_xff() -> None:
+    # Fail-closed mode (direct exposure): X-Forwarded-For is untrusted, so a client
+    # cannot mint a fresh bucket by varying it. The key is the real peer.
+    mw = RateLimitMiddleware(_noop_app, max_requests=1, window_seconds=60.0, trust_forwarded=False)
+    key_a = mw._client_key(_scope("1.1.1.1"))  # noqa: SLF001
+    key_b = mw._client_key(_scope("9.9.9.9"))  # noqa: SLF001
+    assert key_a == key_b == "10.0.0.1"
+
+
+async def test_create_app_rate_limiter_does_not_trust_forwarded_by_default() -> None:
+    # create_app wires the limiter fail-closed: two requests with different spoofed XFF
+    # from the same peer share one bucket, so the second is limited.
+    app = create_app(
+        service="t",
+        version="0",
+        authenticator=StubAuthenticator({}),
+        rate_limit=(1, 60.0),
+    )
+    transport = ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        first = await client.get("/healthz", headers={"x-forwarded-for": "1.1.1.1"})
+        second = await client.get("/healthz", headers={"x-forwarded-for": "9.9.9.9"})
+    assert first.status_code == 200
+    assert second.status_code == 429
+
+
 async def test_rate_limit_allows_then_blocks() -> None:
     transport = ASGITransport(app=_app())
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:

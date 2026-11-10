@@ -5,9 +5,9 @@ description = "Reference service: a thin FastAPI service built on keel-core (pro
 requires-python = ">=3.12"
 dependencies = [
     "keel-core",
-    "fastapi>=0.115",
+    "fastapi>=0.162.1",
     "sqlalchemy[asyncio]>=2.1.6",
-    "pydantic>=2.9",
+    "pydantic>=2.14.3",
     "uvicorn[standard]>=0.54.0",
     "opentelemetry-exporter-otlp-proto-grpc>=1.27",
     "asyncpg>=0.29",  # Postgres driver loaded by SQLAlchemy via URL (not imported)

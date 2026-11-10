@@ -129,7 +129,7 @@ spec:
       - config_file                   # committed, non-secret
       - environment_variables
       - secret_provider               # highest precedence, never committed
-    env_naming: "KEEL_<SERVICE>_<KEY>"
+    env_naming: "KEEL_<KEY>"          # flat prefix; one service per process (ADR-0011)
     fail_fast: true                   # invalid/missing config aborts startup
 
   # ----------------------------------------------------------------------
