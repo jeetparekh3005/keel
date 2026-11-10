@@ -29,7 +29,7 @@
         "oidcAudience": { "type": "string", "minLength": 1 },
         "oidcJwksUri": { "type": "string" },
         "otlpEndpoint": { "type": "string" },
-        "corsAllowOrigins": { "type": "string" }
+        "corsAllowOrigins": { "type": "array", "items": { "type": "string" } }
       }
     },
     "database": {
