@@ -30,7 +30,7 @@ dev = [
     "alembic>=1.13",          # migration tool (run by the service image at deploy)
     "grpcio>=1.60",           # keel-core[grpc] extra - installed for the gRPC tests
     "opentelemetry-instrumentation-grpc>=0.48b0",
-    "psycopg[binary]>=3.3.6",   # sync Postgres driver for Alembic migrations in CI
+    "psycopg[binary]>=3.3.8",   # sync Postgres driver for Alembic migrations in CI
     "nats-py>=2.6",           # keel-core[nats] extra - installed for the NATS integration test
 ]
 
