@@ -6,10 +6,14 @@
 
 FROM cgr.dev/chainguard/rust:latest AS build
 WORKDIR /app
+# cargo-auditable embeds the exact dependency list into the binary, so Trivy (and
+# `cargo audit bin`) can detect RUSTSEC advisories in the shipped distroless image, which
+# otherwise carries no crate metadata. Source-level CVE gating still runs in rust.yml.
+RUN cargo install cargo-auditable --locked
 COPY Cargo.toml Cargo.lock ./
 COPY packages ./packages
 COPY services ./services
-RUN cargo build --release --locked \
+RUN cargo auditable build --release --locked \
     --package reference-service-rust --bin reference-service
 
 FROM cgr.dev/chainguard/glibc-dynamic:latest

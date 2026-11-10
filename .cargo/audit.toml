@@ -1,0 +1,17 @@
+# cargo-audit configuration (consumed by the `cargo audit` gate in rust.yml).
+#
+# Triaged, accepted-risk advisories. Each entry is a KNOWN advisory with no in-range fix
+# whose exposure is test/dev-only; the gate still blocks any NEW advisory. Review on each
+# dependency bump (Dependabot cargo ecosystem).
+[advisories]
+ignore = [
+    # rsa 0.9.x "Marvin Attack" timing sidechannel. `rsa` is a DEV-only dependency used
+    # solely to generate ephemeral RSA keypairs in the OIDC auth tests; it is not in the
+    # shipped binary. No fixed release exists (the advisory's >=0.10.0 is unpublished), and
+    # the timing attack does not apply to one-shot test keygen.
+    "RUSTSEC-2023-0071",
+    # libsqlite3-sys CVE via C SQLite. SQLite is used only by the in-memory test database;
+    # production connects to Postgres and never opens a SQLite datasource, so the vulnerable
+    # code is never exercised. No in-range fix (needs >=0.39.0 via a future sqlx release).
+    "RUSTSEC-2026-0459",
+]

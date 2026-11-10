@@ -70,4 +70,12 @@ jobs:
         # Postgres service above and KEEL_TEST_DATABASE_URL make it a real round-trip
         # (it fails loudly, not silently, if the DB is missing).
         run: cargo test --all --locked -- --include-ignored
-      # cargo-audit / cargo-deny join this lane in a later slice.
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        with:
+          tool: cargo-audit
+      - name: Audit dependencies for RUSTSEC advisories (blocking)
+        # Source-level CVE gate against Cargo.lock: the distroless release binary hides
+        # crate metadata from Trivy's image scan, so this is where Rust advisories are
+        # caught. Fails the build on any known-vulnerable dependency.
+        run: cargo audit
