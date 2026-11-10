@@ -17,6 +17,9 @@ config:
   otlpEndpoint: ""
   otlpInsecure: false
   corsAllowOrigins: "[]" # JSON array string
+  # Peers whose X-Forwarded-* headers are trusted. "*" trusts the in-cluster proxy;
+  # tighten to your ingress/mesh source range where known.
+  forwardedAllowIps: "*"
 
 # KEEL_DATABASE_URL is a secret: reference an existing Secret, never values.
 database:
