@@ -9,7 +9,9 @@ use opentelemetry_otlp::WithExportConfig as _;
 use opentelemetry_sdk::trace::SdkTracerProvider;
 use opentelemetry_sdk::Resource;
 use tracing_subscriber::prelude::*;
-use tracing_subscriber::{fmt, EnvFilter};
+use tracing_subscriber::EnvFilter;
+
+use crate::redact::RedactingJsonLayer;
 
 /// Build the shared telemetry Resource: service name/version, deployment environment,
 /// and a per-instance id (so replicas are distinguishable in traces/metrics).
@@ -42,7 +44,7 @@ pub fn init(
     otlp_endpoint: Option<&str>,
 ) -> Option<SdkTracerProvider> {
     let filter = EnvFilter::try_new(level).unwrap_or_else(|_| EnvFilter::new("info"));
-    let fmt_layer = fmt::layer().json().flatten_event(true);
+    let fmt_layer = RedactingJsonLayer::new(std::io::stdout);
 
     let (otel_layer, provider) = match otlp_endpoint {
         Some(endpoint) => {
