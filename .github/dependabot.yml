@@ -36,3 +36,30 @@ updates:
     labels:
       - "type:chore"
       - "area:ts"
+
+  # Rust dependencies (Cargo workspace). Security advisories are also gated by cargo-audit in CI.
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
+    labels:
+      - "type:chore"
+      - "area:rust"
+
+  # Container images pinned by digest in the service Dockerfiles (e.g. the uv build tool),
+  # so the digest pins are kept current instead of silently going stale.
+  - package-ecosystem: docker
+    directories:
+      - /services/reference-service
+      - /services/reference-service-rust
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
+    labels:
+      - "type:chore"
+      - "area:ci"

@@ -120,24 +120,36 @@ jobs:
         with:
           context: .
           file: ${{ matrix.dockerfile }}
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          # Push BY DIGEST only (no human tag yet). The release tag is applied after the
+          # Trivy gate passes, so a failed scan never leaves a vulnerable image reachable
+          # at the release tag (only an unreferenced, GC-able digest).
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,push=true
           labels: ${{ steps.meta.outputs.labels }}
           # No cache-from here: the GHA cache is writable from pull_request runs, so
           # reading it on the signed-release build would let a PR poison layers that
           # end up cosign-signed + SLSA-attested. A release builds clean.
-      - name: Trivy scan the pushed image before signing (gate HIGH/CRITICAL)
-        # Never sign/attest an image we have not scanned. Runs against the exact
-        # pushed digest, so the signature covers a vetted artifact. This is the
-        # signing gate and the compensating control for not digest-pinning the
-        # rolling base (ADR-0008), so it does NOT ignore-unfixed: an unpatched
-        # HIGH/CRITICAL must block signing, not ship signed.
+      - name: Trivy scan the pushed digest before tagging/signing (gate HIGH/CRITICAL)
+        # Gate BEFORE the release tag exists: a failed scan blocks tagging, signing, and
+        # attestation, so nothing vulnerable is ever published at the release tag. Does
+        # NOT ignore-unfixed (the compensating control for the rolling base, ADR-0008).
         uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
         with:
           image-ref: ${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
           severity: HIGH,CRITICAL
           exit-code: "1"
           vuln-type: os,library
+      - name: Apply the release tags now that the scan has passed
+        # Only reached if Trivy passed. Points the semver/sha tags at the vetted digest;
+        # signing below targets the same digest, so the signature covers the tags.
+        run: |
+          flags=""
+          while IFS= read -r tag; do
+            [ -n "$tag" ] && flags="$flags -t $tag"
+          done <<< "${TAGS}"
+          docker buildx imagetools create $flags "${IMAGE}@${DIGEST}"
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          DIGEST: ${{ steps.build.outputs.digest }}
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
       - name: Sign the image (keyless)
         run: cosign sign --yes "${IMAGE}@${DIGEST}"
