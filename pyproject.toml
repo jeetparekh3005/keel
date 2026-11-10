@@ -10,12 +10,15 @@ package = false
 
 [tool.uv.workspace]
 members = ["packages/*", "services/*"]
-# The Rust and Go verticals live under packages/ and services/ too; they are not uv members.
+# The Rust, Go, and TypeScript verticals live under packages/ and services/ too; they are
+# not uv members.
 exclude = [
     "packages/keel-core-rust",
     "services/reference-service-rust",
     "packages/keel-core-go",
     "services/reference-service-go",
+    "packages/keel-core-ts",
+    "services/reference-service-nest",
 ]
 
 [dependency-groups]
@@ -144,7 +147,7 @@ exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError", "^\\s*\\.\\.\\
 
 [tool.codespell]
 skip = "*.lock,./.git,./.venv"
-ignore-words-list = "dependant"  # FastAPI's route.dependant API term, not a typo
+ignore-words-list = "dependant,afterall"  # FastAPI route.dependant + vitest afterAll, not typos
 
 # First-party workspace modules (extend as packages/services are added).
 [tool.deptry]

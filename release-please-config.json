@@ -38,6 +38,16 @@
           "type": "yaml",
           "path": "deploy/charts/reference-service-go/Chart.yaml",
           "jsonpath": "$.appVersion"
+        },
+        {
+          "type": "yaml",
+          "path": "deploy/charts/reference-service-nest/Chart.yaml",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "yaml",
+          "path": "deploy/charts/reference-service-nest/Chart.yaml",
+          "jsonpath": "$.appVersion"
         }
       ]
     }
