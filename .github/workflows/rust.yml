@@ -66,5 +66,8 @@ jobs:
       - name: Clippy (warnings are errors)
         run: cargo clippy --all-targets --all-features -- -D warnings
       - name: Test
-        run: cargo test --all
+        # --include-ignored runs the #[ignore]'d Postgres integration test too; the
+        # Postgres service above and KEEL_TEST_DATABASE_URL make it a real round-trip
+        # (it fails loudly, not silently, if the DB is missing).
+        run: cargo test --all --locked -- --include-ignored
       # cargo-audit / cargo-deny join this lane in a later slice.
