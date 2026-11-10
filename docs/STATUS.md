@@ -67,9 +67,14 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   Chainguard-based image (built + Trivy-scanned per PR, signed + SLSA-attested on release)
   and a Helm chart `deploy/charts/reference-service-rust` with the same PSS-restricted
   posture. CI lane (`rust.yml`): `cargo fmt`/`clippy -D warnings`/`test`, with a Postgres
-  service for the gated CRUD integration test. Not yet at Python parity: HTTP request
-  **metrics** instrumentation, a live **Keycloak** JWKS integration test, and the
-  messaging/gRPC/`api_key`/`mTLS` surfaces (tracked follow-ups).
+  service for the gated CRUD integration test. The JWKS cache refreshes in the background
+  (tolerates IdP key rotation), `/readyz` runs a real dependency check, shutdown is
+  graceful (SIGTERM drain + telemetry flush), and a route-auth + scope conformance test
+  enforces deny-by-default per route. Not yet at Python parity: **structured-log secret
+  redaction** (the Rust logger does not yet redact secret-named fields or scrub secret
+  values), HTTP request **metrics** instrumentation, a live **Keycloak** JWKS integration
+  test, and the messaging/gRPC/`api_key`/`mTLS` surfaces (tracked follow-ups under the
+  `audit: v0.3 hardening` milestone and v0.4).
 
 ## Planned - described in the contract/ADRs but NOT yet implemented
 
@@ -81,6 +86,7 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
 | **Kubernetes/Helm** + runtime `securityContext`, NetworkPolicy | ADR-0004/0008 | **Implemented** - Helm chart at `deploy/charts/reference-service` (non-root, read-only rootfs, drop-all caps, seccomp RuntimeDefault, no SA token, default-deny NetworkPolicy, liveness/readiness probes); lint + kubeconform in CI |
 | Base-image **digest pinning** | platform.yaml image; ADR-0008 | **Deliberately not pinned.** Chainguard bases are rolling/continuously-rebuilt, so every build is Trivy-scanned instead; a static digest pin would freeze stale CVEs. The published image is cosign-signed and attested by its built digest. (No Renovate in this repo; Dependabot covers the github-actions, uv, and npm ecosystems.) |
 | **gRPC IDL/buf**, **Kafka/RabbitMQ** broker adapters | platform.yaml interservice; ADR-0012 | **Partial.** NATS JetStream adapter (`keel-core[nats]`) implemented with trace propagation, held to a shared MessageBus contract; Kafka/RabbitMQ and buf/protobuf IDL still planned. gRPC application auth (deny-by-default) and mTLS credentials are implemented. |
+| Production **secret backends** (Vault, AWS/GCP secret managers) | platform.yaml `secrets.prod_adapters` | **Not implemented.** The `SecretProvider` port exists with an env-backed adapter (dev). The `vault` / `aws_secrets_manager` / `gcp_secret_manager` production adapters named in the contract are not yet built; deployments inject secrets via env (Kubernetes Secret) today. |
 
 This table shrinks as the gaps close. v0.1 delivered the Python vertical and its review
 hardening; v0.2 added the deployment surface (frontend, Helm, image pipeline, brokers,
