@@ -15,7 +15,7 @@ exclude = ["packages/keel-core-rust", "services/reference-service-rust"]
 
 [dependency-groups]
 dev = [
-    "ruff>=0.15",
+    "ruff>=0.17.4",
     "mypy>=1.13",
     "pytest>=8",
     "pytest-asyncio>=0.24",
