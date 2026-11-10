@@ -48,6 +48,16 @@
           "type": "yaml",
           "path": "deploy/charts/reference-service-nest/Chart.yaml",
           "jsonpath": "$.appVersion"
+        },
+        {
+          "type": "yaml",
+          "path": "deploy/charts/reference-service-java/Chart.yaml",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "yaml",
+          "path": "deploy/charts/reference-service-java/Chart.yaml",
+          "jsonpath": "$.appVersion"
         }
       ]
     }

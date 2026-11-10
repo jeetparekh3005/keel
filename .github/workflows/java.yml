@@ -1,0 +1,75 @@
+name: Java
+
+# Format-check, test, layering-check, and vuln-scan the Java/Spring Boot vertical. `mvn verify`
+# runs Spotless (google-java-format), JUnit + the Spring Boot conformance test, ArchUnit
+# (hexagonal layering), and JaCoCo. Trivy is the dependency-CVE gate (the JVM equivalent of
+# govulncheck / pip-audit / pnpm-audit), scanning the built fat jar's bundled dependencies.
+
+on:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - "packages/keel-core-java/**"
+      - "services/reference-service-java/**"
+      - "pom.xml"
+      - ".mvn/**"
+      - "mvnw"
+      - ".github/workflows/java.yml"
+  push:
+    branches: [dev, main]
+    paths:
+      - "packages/keel-core-java/**"
+      - "services/reference-service-java/**"
+      - "pom.xml"
+      - ".mvn/**"
+      - "mvnw"
+      - ".github/workflows/java.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: java-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  java:
+    name: Java (format, test, archunit, vuln)
+    runs-on: ubuntu-latest
+    # Postgres for the reference-service conformance/CRUD integration test.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: keel
+          POSTGRES_PASSWORD: keel
+          POSTGRES_DB: reference
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U keel"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      KEEL_TEST_DATABASE_URL: postgres://keel:keel@localhost:5432/reference
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+      - name: Verify (spotless, tests, archunit, jacoco)
+        run: mvn -B verify
+      - name: Dependency CVEs (Trivy)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: services/reference-service-java/target
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
+          scanners: vuln

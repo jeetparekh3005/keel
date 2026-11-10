@@ -1,0 +1,8 @@
+# Service-specific config. The cross-cutting KEEL_* env bridging, structured JSON logging, and
+# tracing defaults are applied by keel-core's KeelEnvironmentPostProcessor.
+server:
+  # Default to the cross-vertical port; KEEL_PORT (set by the Helm chart) overrides it.
+  port: ${KEEL_PORT:8000}
+spring:
+  application:
+    name: ${KEEL_SERVICE_NAME:reference-service-java}

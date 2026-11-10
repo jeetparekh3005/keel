@@ -1,0 +1,9 @@
+# Values used only to lint + kubeconform the chart in CI. The real chart now
+# `required`s OIDC config, so CI must supply dummy values to render.
+image:
+  tag: "0.0.0-ci"
+config:
+  oidcIssuer: "https://keycloak.ci.invalid/realms/keel"
+  oidcJwksUri: "https://keycloak.ci.invalid/realms/keel/protocol/openid-connect/certs"
+database:
+  existingSecret: "ci-db-secret"

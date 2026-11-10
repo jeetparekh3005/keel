@@ -10,8 +10,8 @@ package = false
 
 [tool.uv.workspace]
 members = ["packages/*", "services/*"]
-# The Rust, Go, and TypeScript verticals live under packages/ and services/ too; they are
-# not uv members.
+# The Rust, Go, TypeScript, and Java verticals live under packages/ and services/ too; they
+# are not uv members.
 exclude = [
     "packages/keel-core-rust",
     "services/reference-service-rust",
@@ -19,6 +19,8 @@ exclude = [
     "services/reference-service-go",
     "packages/keel-core-ts",
     "services/reference-service-nest",
+    "packages/keel-core-java",
+    "services/reference-service-java",
 ]
 
 [dependency-groups]
