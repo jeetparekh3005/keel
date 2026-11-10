@@ -6,11 +6,16 @@ metadata:
     {{- include "reference-service.labels" . | nindent 4 }}
 data:
   KEEL_ENVIRONMENT: {{ .Values.config.environment | quote }}
+  # The binary binds this port; containerPort, probes, and the Service all derive from
+  # service.port, so rendering it here keeps the listen port and the probe port in sync.
+  KEEL_PORT: {{ .Values.service.port | quote }}
   # OIDC issuer/JWKS are mandatory: the service fails deny-by-default startup
   # without them, so fail the install loudly rather than crashloop in-cluster.
   KEEL_OIDC_ISSUER: {{ required "config.oidcIssuer is required" .Values.config.oidcIssuer | quote }}
   KEEL_OIDC_AUDIENCE: {{ .Values.config.oidcAudience | quote }}
   KEEL_OIDC_JWKS_URI: {{ required "config.oidcJwksUri is required" .Values.config.oidcJwksUri | quote }}
   KEEL_OTLP_ENDPOINT: {{ .Values.config.otlpEndpoint | quote }}
-  # Exact CORS origins (deny-by-default when "[]"); the Rust binary parses this as an array.
-  KEEL_CORS_ALLOW_ORIGINS: {{ .Values.config.corsAllowOrigins | quote }}
+  # Exact CORS origins as a YAML list; rendered to a JSON array string the Rust binary
+  # parses (deny-by-default when empty). toJson guarantees a valid array even for a
+  # single `--set` value, so a scalar cannot crashloop the pod.
+  KEEL_CORS_ALLOW_ORIGINS: {{ .Values.config.corsAllowOrigins | toJson | quote }}

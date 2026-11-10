@@ -76,6 +76,9 @@ impl JwksCache {
         self: Arc<Self>,
         interval: Duration,
     ) -> tokio::task::JoinHandle<()> {
+        // tokio::time::interval panics on a zero period; clamp so a misconfigured
+        // interval (e.g. 0) cannot silently kill the refresher instead of refreshing.
+        let interval = interval.max(Duration::from_secs(1));
         tokio::spawn(async move {
             let mut ticker = tokio::time::interval(interval);
             // The first tick fires immediately; skip it since the caller already did the
@@ -119,6 +122,16 @@ impl JwksCache {
                 next.insert(kid, key);
             }
         }
+        // A 200 response with no usable keys must not wipe the cache: that would turn a
+        // transient IdP glitch into a full auth outage. Return an error instead, so the
+        // background task logs and keeps serving the previously cached keys (and startup,
+        // which propagates this error, fails loudly rather than booting keyless).
+        if next.is_empty() {
+            return Err(DomainError::new(
+                ErrorCategory::Unavailable,
+                "jwks response contained no usable keys",
+            ));
+        }
         *self.keys.write().map_err(|_| {
             DomainError::new(ErrorCategory::Unavailable, "jwks cache lock poisoned")
         })? = next;
@@ -143,6 +156,22 @@ mod tests {
     use super::JwksCache;
     use crate::auth::KeyLookupError;
     use jsonwebtoken::DecodingKey;
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn a_zero_refresh_interval_is_clamped_and_does_not_panic_the_task() {
+        // A zero interval would panic tokio::time::interval inside the spawned task and
+        // silently kill the refresher; the clamp keeps it alive.
+        let cache = Arc::new(JwksCache::new("https://idp.example/jwks", false).unwrap());
+        let handle = Arc::clone(&cache).spawn_background_refresh(Duration::ZERO);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(
+            !handle.is_finished(),
+            "the refresher must survive a zero interval (clamped to >= 1s), not panic"
+        );
+        handle.abort();
+    }
 
     #[test]
     fn requires_https_unless_allow_insecure() {

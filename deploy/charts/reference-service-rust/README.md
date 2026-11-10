@@ -5,10 +5,11 @@ Hardened Kubernetes deployment for the keel reference service, Rust vertical (AD
 ## Install
 
 ```sh
-# Provide the DB URL as a Secret (never in values):
-kubectl create secret generic ref-db --from-literal=KEEL_DATABASE_URL="postgresql+asyncpg://..."
+# Provide the DB URL as a Secret (never in values). The Rust service uses sqlx, so the
+# URL is a plain postgres:// DSN (no SQLAlchemy +asyncpg suffix):
+kubectl create secret generic ref-db --from-literal=KEEL_DATABASE_URL="postgres://user:pass@postgres:5432/keel"
 
-helm install ref deploy/charts/reference-service \
+helm install ref deploy/charts/reference-service-rust \
   --set database.existingSecret=ref-db \
   --set config.oidcIssuer=https://keycloak/realms/keel \
   --set config.oidcJwksUri=https://keycloak/realms/keel/protocol/openid-connect/certs

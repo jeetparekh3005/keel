@@ -79,6 +79,29 @@ mod tests {
         conformance::assert_denies_anonymous(&app, "/v1/items/anything").await;
     }
 
+    #[tokio::test]
+    async fn malformed_body_is_rejected_as_problem_json() {
+        // A body-parse failure must honor the uniform error contract (RFC 9457), not
+        // return axum's default text/plain 400.
+        let db = Database::connect("sqlite::memory:").await.unwrap();
+        let app = build_app(&db, stub(&["items:write"]), &AppConfig::default());
+        let response = app
+            .oneshot(
+                Request::post("/v1/items")
+                    .header("authorization", "Bearer tok")
+                    .header("content-type", "application/json")
+                    .body(Body::from("{ not valid json"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            response.headers()["content-type"],
+            "application/problem+json"
+        );
+    }
+
     // The deny-by-default route-auth + scope conformance check for this service. axum has
     // no route introspection (unlike FastAPI's startup check), so every route is
     // enumerated here: anonymous callers get 401 and an authenticated caller holding only
