@@ -18,6 +18,16 @@
           "type": "yaml",
           "path": "deploy/charts/reference-service/Chart.yaml",
           "jsonpath": "$.appVersion"
+        },
+        {
+          "type": "yaml",
+          "path": "deploy/charts/reference-service-rust/Chart.yaml",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "yaml",
+          "path": "deploy/charts/reference-service-rust/Chart.yaml",
+          "jsonpath": "$.appVersion"
         }
       ]
     }

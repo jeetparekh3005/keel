@@ -1,0 +1,54 @@
+replicaCount: 2
+
+image:
+  repository: ghcr.io/jeetparekh3005/keel/reference-service-rust
+  tag: "" # defaults to the chart appVersion (release-please manages it)
+  pullPolicy: IfNotPresent
+
+service:
+  port: 8000
+
+# Non-secret KEEL_* configuration (rendered into a ConfigMap).
+config:
+  environment: prod
+  oidcIssuer: ""
+  oidcAudience: keel-api
+  oidcJwksUri: ""
+  otlpEndpoint: ""
+  corsAllowOrigins: "[]" # JSON array string, e.g. '["https://app.example"]'; "[]" = deny-by-default
+
+# KEEL_DATABASE_URL is a secret: reference an existing Secret, never values.
+database:
+  existingSecret: "" # name of a Secret containing the key below
+  secretKey: KEEL_DATABASE_URL
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: "1"
+    memory: 256Mi
+
+networkPolicy:
+  enabled: true
+  # Ingress: who may reach the HTTP port. Default scopes to the ingress-controller
+  # namespace by its metadata-name label; override per cluster. Naming the source
+  # is what makes this a real default-deny - do not widen to all namespaces.
+  ingressFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx
+  # In-cluster dependency egress (DB, OTLP, NATS, in-cluster OIDC). Scope this
+  # selector to the dependency namespaces in your cluster ({} = all namespaces).
+  egressNamespaceSelector: {}
+  egressPorts: [5432, 4317, 4222, 8080]
+  # Out-of-cluster dependency egress (e.g. an external IdP/JWKS). Leave empty to
+  # deny public-internet egress; set CIDRs to reach an external IdP on 443.
+  egressIPBlocks: []
+  egressIPBlockPorts: [443]
+
+# Availability: keep a replica up during voluntary disruptions (node drain, etc.).
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1

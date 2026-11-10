@@ -1,0 +1,34 @@
+[package]
+name = "reference-service-rust"
+description = "keel reference service (Rust vertical): a thin service over keel-core-rust."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "reference_service_rust"
+path = "src/lib.rs"
+
+[[bin]]
+name = "reference-service"
+path = "src/main.rs"
+
+[dependencies]
+keel-core-rust = { path = "../../packages/keel-core-rust" }
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
+async-trait = "0.1"
+serde = { version = "1", features = ["derive"] }
+uuid = { version = "1", features = ["v4"] }
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio",
+    "any",
+    "postgres",
+] }
+tracing = "0.1"
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+serde_json = "1"

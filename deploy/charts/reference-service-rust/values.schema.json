@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "reference-service chart values",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["replicaCount", "image", "service", "config", "database", "resources", "networkPolicy"],
+  "properties": {
+    "replicaCount": { "type": "integer", "minimum": 1 },
+    "image": {
+      "type": "object",
+      "required": ["repository", "pullPolicy"],
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "tag": { "type": "string" },
+        "pullPolicy": { "type": "string", "enum": ["Always", "IfNotPresent", "Never"] }
+      }
+    },
+    "service": {
+      "type": "object",
+      "required": ["port"],
+      "properties": { "port": { "type": "integer", "minimum": 1, "maximum": 65535 } }
+    },
+    "config": {
+      "type": "object",
+      "required": ["environment", "oidcAudience"],
+      "properties": {
+        "environment": { "type": "string", "minLength": 1 },
+        "oidcIssuer": { "type": "string" },
+        "oidcAudience": { "type": "string", "minLength": 1 },
+        "oidcJwksUri": { "type": "string" },
+        "otlpEndpoint": { "type": "string" },
+        "corsAllowOrigins": { "type": "string" }
+      }
+    },
+    "database": {
+      "type": "object",
+      "required": ["secretKey"],
+      "properties": {
+        "existingSecret": { "type": "string" },
+        "secretKey": { "type": "string", "minLength": 1 }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "required": ["requests", "limits"],
+      "properties": {
+        "requests": { "type": "object" },
+        "limits": { "type": "object" }
+      }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "ingressFrom": { "type": "array" },
+        "egressNamespaceSelector": { "type": "object" },
+        "egressPorts": { "type": "array", "items": { "type": "integer" } },
+        "egressIPBlocks": { "type": "array", "items": { "type": "string" } },
+        "egressIPBlockPorts": { "type": "array", "items": { "type": "integer" } }
+      }
+    },
+    "podDisruptionBudget": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "minAvailable": { "type": ["integer", "string"] }
+      }
+    }
+  }
+}

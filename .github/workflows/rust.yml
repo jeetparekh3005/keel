@@ -1,0 +1,73 @@
+name: Rust
+
+# Format, lint, and test the Rust vertical. The dev environment has no local Rust
+# toolchain (ADR-0017), so this lane is the verification signal for Rust slices.
+
+on:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - "packages/keel-core-rust/**"
+      - "services/reference-service-rust/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - ".github/workflows/rust.yml"
+  push:
+    branches: [dev, main]
+    paths:
+      - "packages/keel-core-rust/**"
+      - "services/reference-service-rust/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - ".github/workflows/rust.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: Rust (fmt, clippy, test)
+    runs-on: ubuntu-latest
+    # Postgres for the reference-service CRUD integration test (gated on the URL below).
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: keel
+          POSTGRES_PASSWORD: keel
+          POSTGRES_DB: reference
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U keel"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      KEEL_TEST_DATABASE_URL: postgres://keel:keel@localhost:5432/reference
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Installs the toolchain declared in rust-toolchain.toml (stable + rustfmt/clippy).
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Format check
+        run: cargo fmt --all --check
+      - name: Clippy (warnings are errors)
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Test
+        # --include-ignored runs the #[ignore]'d Postgres integration test too; the
+        # Postgres service above and KEEL_TEST_DATABASE_URL make it a real round-trip
+        # (it fails loudly, not silently, if the DB is missing).
+        run: cargo test --all --locked -- --include-ignored
+      # cargo-audit / cargo-deny join this lane in a later slice.

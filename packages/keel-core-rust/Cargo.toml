@@ -1,0 +1,47 @@
+[package]
+name = "keel-core-rust"
+description = "keel shared platform library for the Rust vertical (ADR-0009, ADR-0017)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "keel_core"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+figment = { version = "0.10", features = ["env", "toml"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
+tracing-opentelemetry = "0.31"
+opentelemetry = "0.30"
+opentelemetry_sdk = { version = "0.30", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.30", features = ["grpc-tonic", "trace"] }
+uuid = { version = "1", features = ["v4"] }
+axum = "0.8"
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["cors", "limit", "set-header", "request-id"] }
+http-body-util = "0.1"
+jsonwebtoken = "9"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+# rt + time: background JWKS refresh task (tokio::spawn + interval).
+tokio = { version = "1", features = ["rt", "time"] }
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio",
+    "any",
+    "sqlite",
+    "postgres",
+] }
+
+[dev-dependencies]
+figment = { version = "0.10", features = ["env", "toml", "test"] }
+tokio = { version = "1", features = ["macros", "rt"] }
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+# Ephemeral RSA keypairs for the OIDC tests; no key material is committed.
+rsa = { version = "0.9", features = ["pem"] }
+rand = "0.8"
