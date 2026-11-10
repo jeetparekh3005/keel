@@ -1,6 +1,8 @@
 apiVersion: v2
 name: reference-service-rust
-description: keel reference service, Rust vertical - hardened Kubernetes deployment (ADR-0008, ADR-0017).
+description: >-
+  keel reference service, Rust vertical - hardened Kubernetes deployment
+  (ADR-0008, ADR-0017).
 type: application
-version: 0.1.0
-appVersion: 0.1.0
+version: 0.3.0
+appVersion: 0.3.0
