@@ -11,6 +11,8 @@ description = "Redaction-test fixtures: documented example AWS key and a fake PA
 # Scope to the test files that assert redaction behaviour.
 paths = [
   '''packages/keel-core-py/tests/test_logging\.py''',
+  '''packages/keel-core-rust/src/redact\.rs''',
+  '''packages/keel-core-rust/src/logging\.rs''',
 ]
 # Belt-and-braces: the specific documented example values, anywhere they appear.
 regexes = [

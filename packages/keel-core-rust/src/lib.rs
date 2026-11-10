@@ -14,6 +14,7 @@ pub mod jwks;
 pub mod logging;
 pub mod persistence;
 pub mod ports;
+pub mod redact;
 pub mod telemetry;
 pub mod testkit;
 pub mod webauth;
