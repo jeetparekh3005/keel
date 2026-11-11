@@ -1,6 +1,8 @@
 apiVersion: v2
 name: reference-service-go
-description: keel reference service, Go vertical - hardened Kubernetes deployment (ADR-0004, ADR-0008, ADR-0018).
+description: >-
+  keel reference service, Go vertical - hardened Kubernetes deployment
+  (ADR-0004, ADR-0008, ADR-0018).
 type: application
-version: 0.1.0
-appVersion: 0.1.0
+version: 0.4.0
+appVersion: 0.4.0

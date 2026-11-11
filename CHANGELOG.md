@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.4.0](https://github.com/jeetparekh3005/keel/compare/v0.3.2...v0.4.0) (2026-11-11)
+
+
+### Features
+
+* **go:** config loader + RFC 9457 error taxonomy + domain errors ([#328](https://github.com/jeetparekh3005/keel/issues/328)) ([9b0e2fb](https://github.com/jeetparekh3005/keel/commit/9b0e2fb7a8223202787da5e2e84a4da173f3cf35)), closes [#309](https://github.com/jeetparekh3005/keel/issues/309)
+* **go:** container image + Helm chart + supply-chain CI ([#342](https://github.com/jeetparekh3005/keel/issues/342)) ([8be1700](https://github.com/jeetparekh3005/keel/commit/8be1700c28a10ac0a5fae3bd84b540f14bf1e109))
+* **go:** driven ports + test-kit fakes + behavioral conformance suite ([#340](https://github.com/jeetparekh3005/keel/issues/340)) ([facd39a](https://github.com/jeetparekh3005/keel/commit/facd39adb4c7b42da3bca1bb659b23c5b4f6cc02)), closes [#321](https://github.com/jeetparekh3005/keel/issues/321)
+* **go:** HTTP edge middleware (chi) + health probes + problem+json ([#331](https://github.com/jeetparekh3005/keel/issues/331)) ([4b1bf81](https://github.com/jeetparekh3005/keel/commit/4b1bf81b39ecef86424b6c556de2d8cc8d7849bb)), closes [#315](https://github.com/jeetparekh3005/keel/issues/315)
+* **go:** OIDC/JWT authenticator (go-oidc) + deny-by-default authz ([#332](https://github.com/jeetparekh3005/keel/issues/332)) ([29bac78](https://github.com/jeetparekh3005/keel/commit/29bac786966a710371f1a2dc52579521dec7bf0b)), closes [#317](https://github.com/jeetparekh3005/keel/issues/317)
+* **go:** OpenTelemetry setup with log-to-trace correlation ([#330](https://github.com/jeetparekh3005/keel/issues/330)) ([1f1d54d](https://github.com/jeetparekh3005/keel/commit/1f1d54d502bd99b432e3231460b54aa8eafa59b9)), closes [#313](https://github.com/jeetparekh3005/keel/issues/313)
+* **go:** persistence (pgx Database + unit of work) ([#339](https://github.com/jeetparekh3005/keel/issues/339)) ([c2fd65b](https://github.com/jeetparekh3005/keel/commit/c2fd65b5c2671b115bf11f7baa2f4c648166ea64)), closes [#319](https://github.com/jeetparekh3005/keel/issues/319)
+* **go:** reference-service-go (items aggregate) + composition root ([#341](https://github.com/jeetparekh3005/keel/issues/341)) ([fef1309](https://github.com/jeetparekh3005/keel/commit/fef1309eb483cd0566d14ac39fa93ec1bc9494a7)), closes [#323](https://github.com/jeetparekh3005/keel/issues/323)
+* **go:** scaffold keel-core-go workspace + Go CI lane (govulncheck gate) ([#327](https://github.com/jeetparekh3005/keel/issues/327)) ([c9b4aca](https://github.com/jeetparekh3005/keel/commit/c9b4aca5f103a720539700deca55694f7f8ab523)), closes [#307](https://github.com/jeetparekh3005/keel/issues/307)
+* **go:** structured slog logging with secret redaction ([#329](https://github.com/jeetparekh3005/keel/issues/329)) ([371ac62](https://github.com/jeetparekh3005/keel/commit/371ac625c85d7214530ebc0d5b9dfd5ba5a38639))
+* **java:** Java/Spring Boot backend vertical (keel-core-java + reference-service-java) ([#356](https://github.com/jeetparekh3005/keel/issues/356)) ([cf8adc7](https://github.com/jeetparekh3005/keel/commit/cf8adc7830fb0bc4de7da8368e88da2193685f1a)), closes [#30](https://github.com/jeetparekh3005/keel/issues/30)
+* **ts:** TypeScript/NestJS backend vertical (keel-core-ts + reference-service-nest) ([#355](https://github.com/jeetparekh3005/keel/issues/355)) ([363a763](https://github.com/jeetparekh3005/keel/commit/363a763d70279c6dfc3db016343b492fe5fdaee1)), closes [#344](https://github.com/jeetparekh3005/keel/issues/344) [#345](https://github.com/jeetparekh3005/keel/issues/345) [#346](https://github.com/jeetparekh3005/keel/issues/346) [#347](https://github.com/jeetparekh3005/keel/issues/347) [#348](https://github.com/jeetparekh3005/keel/issues/348) [#349](https://github.com/jeetparekh3005/keel/issues/349) [#350](https://github.com/jeetparekh3005/keel/issues/350) [#351](https://github.com/jeetparekh3005/keel/issues/351) [#352](https://github.com/jeetparekh3005/keel/issues/352) [#353](https://github.com/jeetparekh3005/keel/issues/353)
+
+
+### Bug Fixes
+
+* **java:** remediate v0.4 review findings in the Spring Boot vertical ([#358](https://github.com/jeetparekh3005/keel/issues/358)) ([f6b4664](https://github.com/jeetparekh3005/keel/commit/f6b46641ce350f5f31bfc8fc26ee1152acff7e8d))
+* **security:** clear frontend dev-tooling CVEs (turbo, minimatch) ([#326](https://github.com/jeetparekh3005/keel/issues/326)) ([6601f51](https://github.com/jeetparekh3005/keel/commit/6601f51e8da961fa78c5d270f51bd454efdfa2c0))
+* **ts:** remediate v0.4 review findings (NestJS vertical) ([#357](https://github.com/jeetparekh3005/keel/issues/357)) ([822206e](https://github.com/jeetparekh3005/keel/commit/822206edb53aaaff6e63fc09d71b51264579b663))
+* **v0.4:** remediate the remediation-review findings (telemetry correctness + non-vacuous tests) ([#363](https://github.com/jeetparekh3005/keel/issues/363)) ([2f4ba5e](https://github.com/jeetparekh3005/keel/commit/2f4ba5e8fd2c49f4ce0c0a619b99248bea48f2ef))
+
+
+### Miscellaneous Chores
+
+* integrate dev for the v0.4.0 release ([#364](https://github.com/jeetparekh3005/keel/issues/364)) ([3d89b5a](https://github.com/jeetparekh3005/keel/commit/3d89b5ad51610c61a2b0b8993c37cdf1ab4b66f3))
+
 ## [0.3.2](https://github.com/jeetparekh3005/keel/compare/v0.3.1...v0.3.2) (2026-11-10)
 
 
