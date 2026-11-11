@@ -1,0 +1,56 @@
+# Copier template for a keel Go service (ADR-0021, ADR-0009 Tier 2).
+# `keel new service --language go` (copier copy) renders this into a thin chi service that
+# depends on keel-core-go; `keel update` (copier update) propagates template changes. The template
+# is the reference service with its service-specific identifiers parameterized; CI regenerates the
+# reference service from it and asserts byte-identical output (the dogfood test).
+
+_subdirectory: template
+_answers_file: .copier-answers.yml
+# Render every file (the Go sources have no literal << >> and the custom delimiters below avoid any
+# collision with Go's own braces), rather than only *.jinja files.
+_templates_suffix: ""
+
+# Custom Jinja delimiters so Go's own braces never collide with templating. Variables are << >>,
+# blocks <% %>, comments <# #>.
+_envops:
+  variable_start_string: "<<"
+  variable_end_string: ">>"
+  block_start_string: "<%"
+  block_end_string: "%>"
+  comment_start_string: "<#"
+  comment_end_string: "#>"
+
+service_slug:
+  type: str
+  help: "Service slug (kebab-case): directory, Go module suffix, image"
+  default: "orders-service"
+
+service_name:
+  type: str
+  help: "Binary / service name (kebab-case): the compiled command and the ServiceName default"
+  default: "<< service_slug >>"
+
+aggregate:
+  type: str
+  help: "Primary aggregate, singular (e.g. order)"
+  default: "item"
+
+aggregate_pascal:
+  type: str
+  default: "<< aggregate.split('_') | map('capitalize') | join >>"
+  when: false
+
+aggregate_plural:
+  type: str
+  help: "Plural of the aggregate (routes, table, scope prefix)"
+  default: "<< aggregate >>s"
+
+aggregate_pascal_plural:
+  type: str
+  default: "<< aggregate_plural.split('_') | map('capitalize') | join >>"
+  when: false
+
+scope_prefix:
+  type: str
+  help: "OAuth scope prefix (e.g. orders -> orders:read / orders:write)"
+  default: "<< aggregate_plural >>"

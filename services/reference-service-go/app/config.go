@@ -2,9 +2,9 @@ package app
 
 import "github.com/jeetparekh3005/keel/packages/keel-core-go/config"
 
-// ReferenceConfig is the typed, KEEL_-prefixed service configuration. Secure by default:
+// ServiceConfig is the typed, KEEL_-prefixed service configuration. Secure by default:
 // environment defaults to production.
-type ReferenceConfig struct {
+type ServiceConfig struct {
 	ServiceName      string   `env:"SERVICE_NAME" envDefault:"reference-service"`
 	Version          string   `env:"VERSION" envDefault:"0.0.0"`
 	Environment      string   `env:"ENVIRONMENT" envDefault:"production"`
@@ -18,7 +18,7 @@ type ReferenceConfig struct {
 	CORSAllowOrigins []string `env:"CORS_ALLOW_ORIGINS" envSeparator:","`
 }
 
-// LoadConfig reads ReferenceConfig from the KEEL_-prefixed environment (fail-fast).
-func LoadConfig() (ReferenceConfig, error) {
-	return config.Load[ReferenceConfig]()
+// LoadConfig reads ServiceConfig from the KEEL_-prefixed environment (fail-fast).
+func LoadConfig() (ServiceConfig, error) {
+	return config.Load[ServiceConfig]()
 }
