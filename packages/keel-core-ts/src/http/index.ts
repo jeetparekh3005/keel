@@ -5,4 +5,5 @@ export { CorsMiddleware, CORS_ALLOW_ORIGINS } from './cors.middleware.js';
 export { HealthController } from './health.controller.js';
 export { ProblemExceptionFilter } from './problem.filter.js';
 export { ZodValidationPipe } from './validation.pipe.js';
-export { LOGGER, READINESS, type Logger, type ReadinessCheck } from './tokens.js';
+export { LOGGER, MAX_BODY_BYTES, READINESS, type Logger, type ReadinessCheck } from './tokens.js';
+export { BodyLimitMiddleware } from './body-limit.middleware.js';

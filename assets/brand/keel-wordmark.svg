@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- (c) 2026 Jeet Parekh / keel - All rights reserved -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 200">
+<rect width="720" height="200" fill="#0C2E52"/>
+<rect x="14" y="14" width="692" height="172" fill="none" stroke="#EAF2FB" stroke-width="1.4" opacity="0.4"/>
+<rect x="30" y="30" width="140" height="140" fill="none" stroke="#5E92C0" stroke-width="1.4" opacity="0.5"/>
+<g transform="translate(21.247999999999998,8.119999999999997) scale(0.547)"><g stroke="#5E92C0" stroke-width="1.4" opacity="0.22">
+  <line x1="72" y1="72" x2="72" y2="184"/><line x1="104" y1="72" x2="104" y2="184"/>
+  <line x1="136" y1="72" x2="136" y2="184"/><line x1="168" y1="72" x2="168" y2="184"/>
+  <line x1="48" y1="116" x2="208" y2="116"/><line x1="48" y1="168" x2="208" y2="168"/></g>
+<path d="M 52 150 C 92 153 134 153 166 150 C 184 148 198 130 202 102" fill="none" stroke="#EAF2FB" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/>
+<g stroke="#F2A541" fill="none"><circle cx="118" cy="152" r="8" stroke-width="2.4"/>
+  <line x1="104" y1="152" x2="132" y2="152" stroke-width="2"/><line x1="118" y1="138" x2="118" y2="166" stroke-width="2"/></g></g>
+<line x1="200" y1="30" x2="200" y2="170" stroke="#EAF2FB" stroke-width="1.2" opacity="0.3"/>
+<text x="224" y="118" font-family="ui-monospace, Menlo, monospace" font-size="92" font-weight="700" letter-spacing="4" fill="#EAF2FB">keel</text>
+<text x="228" y="150" font-family="ui-monospace, Menlo, monospace" font-size="13" letter-spacing="0.5" fill="#5E92C0">the keel every project is built on</text>
+<line x1="560" y1="30" x2="560" y2="170" stroke="#EAF2FB" stroke-width="1.2" opacity="0.3"/>
+<text x="574" y="60" font-family="ui-monospace, Menlo, monospace" font-size="11" letter-spacing="2" fill="#5E92C0">SCALE</text>
+<text x="574" y="84" font-family="ui-monospace, Menlo, monospace" font-size="17" fill="#EAF2FB">1:1</text>
+<text x="574" y="130" font-family="ui-monospace, Menlo, monospace" font-size="11" letter-spacing="2" fill="#5E92C0">SHEET</text>
+<text x="574" y="154" font-family="ui-monospace, Menlo, monospace" font-size="17" fill="#EAF2FB">01</text>
+<g stroke="#F2A541" fill="none"><circle cx="690" cy="44" r="4" stroke-width="1.5"/></g>
+</svg>

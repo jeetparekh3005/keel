@@ -1,0 +1,37 @@
+# Reusable CI for a generated keel Rust service (ADR-0009 Tier 3, ADR-0021). An extracted service
+# repo references this by tag:
+#
+#   jobs:
+#     ci:
+#       uses: jeetparekh3005/keel/.github/workflows/service-rust.yml@v1
+#
+# In-tree the vertical is covered by rust.yml; this lane is for the polyrepo future (ADR-0011).
+name: keel Rust service CI
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        type: string
+        default: "."
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust (rustfmt + clippy)
+        run: rustup component add rustfmt clippy
+      - name: Format, lint, test
+        run: |
+          cargo fmt --all --check
+          cargo clippy --all-targets --all-features -- -D warnings
+          cargo test

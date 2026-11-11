@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/brand/keel-wordmark.svg" alt="keel" width="560">
+</p>
+
 # keel
 
 > The keel every project is built on - a polyglot golden-path bootstrapper with auth, data, logging, observability, security, and CI baked in.
@@ -12,7 +16,7 @@ The goal: go from zero to a secure, observable, deployable service in minutes, n
 
 ## Status
 
-**Active development.** keel is built vertical-by-vertical. The **Python golden-path** (v0.1) and the **frontend monorepo + deployment surface** (v0.2) are released; the **Rust vertical** (v0.3) is released. See the [roadmap](#roadmap) and [docs/STATUS.md](docs/STATUS.md) for implemented-vs-planned detail.
+**Active development.** keel is built vertical-by-vertical. Five backend verticals are released - **Python** (v0.1), **Rust** (v0.3), and **Go, Java, and TypeScript/NestJS** (v0.4) - alongside the **frontend monorepo + deployment surface** (v0.2). The **v0.5 generator** is in progress: Copier templates for all five verticals, the `keel` CLI (`new` / `update` / `check`), the `keel update` propagation round-trip, and Tier-3 (a base Helm chart + reusable CI workflows) are done. See the [roadmap](#roadmap) and [docs/STATUS.md](docs/STATUS.md) for implemented-vs-planned detail.
 
 ## Why keel
 
@@ -25,13 +29,13 @@ Teams re-derive the same "right way" to start a service over and over - and get 
 
 ## Roadmap
 
-| Milestone | Scope |
-|-----------|-------|
-| **v0.1** | Python golden-path vertical (reference contract, runnable) |
-| **v0.2** | Monorepo + Next.js frontend |
-| **v0.3** | Rust vertical (contract stress-test) |
-| **v0.4** | Go & Java verticals |
-| **v0.5** | `keel update` + reusable-workflow propagation |
+| Milestone | Scope | Status |
+|-----------|-------|--------|
+| **v0.1** | Python golden-path vertical (reference contract, runnable) | released |
+| **v0.2** | Monorepo + Next.js frontend + deployment surface | released |
+| **v0.3** | Rust vertical (contract stress-test) | released |
+| **v0.4** | Go, Java & TypeScript/NestJS verticals | released |
+| **v0.5** | Copier generator + `keel update` propagation + reusable workflows | in progress |
 
 ## Development
 
@@ -58,3 +62,8 @@ The full deterministic gate set (ADR-0010) runs in CI on every PR.
 ## License
 
 [Apache-2.0](LICENSE) © 2026 Jeet Parekh
+
+The keel name and the logo and brand assets in [`assets/brand/`](assets/brand/) are not
+covered by the Apache-2.0 license. They are copyright Jeet Parekh, all rights reserved,
+and may not be used to represent a derived or unaffiliated project. See
+[`assets/brand/README.md`](assets/brand/README.md).

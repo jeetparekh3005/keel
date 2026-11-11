@@ -5,6 +5,8 @@
 // values are scrubbed for secret patterns, and the message string is scrubbed too. Nested
 // objects are descended into (unlike pino's path-based `redact`, which only matches declared
 // paths).
+import { format } from 'node:util';
+
 import { trace } from '@opentelemetry/api';
 import pino, { type DestinationStream, type Logger } from 'pino';
 
@@ -85,8 +87,22 @@ export function createLogger(level: string, destination?: DestinationStream): Lo
       },
       mixin: correlationMixin,
       hooks: {
-        // Scrub secret patterns out of the message string (and any string positional args).
+        // Scrub secret patterns out of the message. pino interpolates `logger.info(fmt, ...args)`
+        // when it serializes, so scrubbing each arg in isolation misses a token split across the
+        // format string and its arg (`info('authorization: Bearer %s', token)` - neither piece
+        // matches the bearer pattern alone). So when interpolation args are present, pre-format the
+        // final message here and scrub that, dropping the args so the token cannot survive in clear.
         logMethod(args, method) {
+          // pino's call shapes: (msg, ...interp) or (mergeObj, msg, ...interp).
+          const msgIdx = typeof args[0] === 'object' && args[0] !== null ? 1 : 0;
+          const msg = args[msgIdx];
+          if (typeof msg === 'string' && args.length > msgIdx + 1) {
+            const message = scrubText(format(msg, ...args.slice(msgIdx + 1)));
+            const next = msgIdx === 1 ? [args[0], message] : [message];
+            method.apply(this, next as Parameters<typeof method>);
+            return;
+          }
+          // No interpolation args: scrub each string positional directly.
           const scrubbed = args.map((arg) => (typeof arg === 'string' ? scrubText(arg) : arg));
           method.apply(this, scrubbed as Parameters<typeof method>);
         },

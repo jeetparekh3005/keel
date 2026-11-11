@@ -1,0 +1,8 @@
+apiVersion: v2
+name: keel-service-base
+description: >-
+  Shared hardened Kubernetes templates for keel reference services (ADR-0004, ADR-0008).
+  A library chart the per-service charts depend on, so hardening propagates by version bump
+  (ADR-0009 Tier 3, ADR-0021).
+type: library
+version: 0.5.0

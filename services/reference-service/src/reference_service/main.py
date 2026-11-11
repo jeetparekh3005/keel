@@ -20,12 +20,12 @@ from keel_core.adapters.outbound.telemetry import (
     observe_log_drops,
 )
 from reference_service.composition import build_app
-from reference_service.config import ReferenceConfig
+from reference_service.config import ServiceConfig
 
 
 def create_application() -> FastAPI:
     """Build the production application (observability + OIDC + composed app)."""
-    config = ReferenceConfig()
+    config = ServiceConfig()
 
     # Non-blocking logging: the background writer sinks both the app logger and
     # (via configure_logging) third-party stdlib logs; stopped in the lifespan.
@@ -85,7 +85,7 @@ app = create_application()
 
 def serve() -> None:  # pragma: no cover - process entrypoint
     """Run the service with uvicorn (container entrypoint)."""
-    config = ReferenceConfig()
+    config = ServiceConfig()
     uvicorn.run(
         app,
         host="0.0.0.0",  # noqa: S104  # bind all in container

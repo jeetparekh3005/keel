@@ -33,6 +33,11 @@ func TestScrubTextPatterns(t *testing.T) {
 	if got := scrubText("Bearer abcdef1234567890"); got != redacted {
 		t.Errorf("bearer not scrubbed: %q", got)
 	}
+	// The bearer pattern uses \s+, so a token separated from the scheme by more than one space
+	// is still redacted (the two-space vector the TS/Java v0.4 review flagged; #359 parity).
+	if got := scrubText("Bearer  abcdef1234567890"); got != redacted {
+		t.Errorf("two-space bearer not scrubbed: %q", got)
+	}
 }
 
 func TestLuhn(t *testing.T) {

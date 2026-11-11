@@ -59,7 +59,9 @@ jobs:
           cache-dependency-path: "**/go.sum"
       - name: Format check
         run: |
-          unformatted=$(gofmt -l .)
+          # templates/ holds Copier templates (<< >> placeholders), not valid Go, so exclude them
+          # (the generator lane dogfoods a rendered service instead).
+          unformatted=$(gofmt -l $(git ls-files '*.go' | grep -v '^templates/'))
           if [ -n "$unformatted" ]; then
             echo "gofmt needs to run on:"; echo "$unformatted"; exit 1
           fi

@@ -7,10 +7,10 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import { initTelemetry } from '@keel/core';
 
 import { AppModule } from './app.module.js';
-import { loadReferenceConfig } from './config.js';
+import { loadServiceConfig } from './config.js';
 
 async function bootstrap(): Promise<void> {
-  const config = loadReferenceConfig();
+  const config = loadServiceConfig();
 
   const shutdownTelemetry = initTelemetry({
     serviceName: config.SERVICE_NAME,

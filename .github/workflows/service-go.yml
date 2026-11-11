@@ -1,0 +1,42 @@
+# Reusable CI for a generated keel Go service (ADR-0009 Tier 3, ADR-0021). An extracted service
+# repo references this by tag:
+#
+#   jobs:
+#     ci:
+#       uses: jeetparekh3005/keel/.github/workflows/service-go.yml@v1
+#
+# In-tree the vertical is covered by go.yml; this lane is for the polyrepo future (ADR-0011).
+name: keel Go service CI
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        type: string
+        default: "."
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache-dependency-path: ${{ inputs.working-directory }}/go.sum
+      - name: Format check
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - name: Vet, lint, test, vuln-scan
+        run: |
+          go vet ./...
+          go run honnef.co/go/tools/cmd/staticcheck@latest ./...
+          go test ./...
+          go run golang.org/x/vuln/cmd/govulncheck@latest ./...

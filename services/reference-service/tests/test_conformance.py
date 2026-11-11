@@ -19,14 +19,14 @@ from keel_core.testkit.contract import (
 )
 from keel_core.testkit.fakes import StubAuthenticator
 from reference_service.composition import build_app
-from reference_service.config import ReferenceConfig
+from reference_service.config import ServiceConfig
 
 _AUTH = {"authorization": "Bearer tok"}
 
 
 def test_all_business_routes_require_auth():
     # platform.yaml auth.access_control: deny-by-default, enforced at startup.
-    app = build_app(ReferenceConfig(), authenticator=StubAuthenticator({}))
+    app = build_app(ServiceConfig(), authenticator=StubAuthenticator({}))
     assert_routes_require_auth(app)  # raises if any non-exempt route is unprotected
 
 

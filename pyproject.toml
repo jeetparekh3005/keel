@@ -36,7 +36,8 @@ dev = [
     "httpx>=0.27",            # Starlette TestClient transport (tests only)
     "aiosqlite>=0.20",        # async SQLite driver for fast repository tests
     "jsonschema>=4.23",       # validate platform.yaml against its schema
-    "pyyaml>=6.0",            # load platform.yaml in tests
+    "pyyaml>=6.0",            # load platform.yaml in tests + the keel CLI
+    "types-PyYAML>=6.0",      # yaml stubs for mypy (keel_cli loads platform.yaml in src)
     "alembic>=1.13",          # migration tool (run by the service image at deploy)
     "grpcio>=1.60",           # keel-core[grpc] extra - installed for the gRPC tests
     "opentelemetry-instrumentation-grpc>=0.48b0",
@@ -51,8 +52,10 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-src = ["packages/keel-core-py/src", "services/reference-service/src"]
-extend-exclude = ["**/migrations/**"]
+src = ["packages/keel-core-py/src", "packages/keel-cli/src", "services/reference-service/src"]
+# templates/ holds Copier templates (<< >> placeholders), not runnable source; the generator
+# lane (generator.yml) renders + lints a generated service instead.
+extend-exclude = ["**/migrations/**", "templates/**"]
 
 [tool.ruff.lint]
 select = [
@@ -88,7 +91,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["keel_core", "reference_service"]
+known-first-party = ["keel_core", "keel_cli", "reference_service"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
@@ -119,7 +122,7 @@ warn_redundant_casts = true
 no_implicit_reexport = true
 
 [[tool.mypy.overrides]]
-module = ["grpc.*", "opentelemetry.instrumentation.*", "opentelemetry.exporter.*", "nats.*"]
+module = ["grpc.*", "opentelemetry.instrumentation.*", "opentelemetry.exporter.*", "nats.*", "copier.*"]
 ignore_missing_imports = true
 
 # ---------------------------------------------------------------------------
@@ -139,6 +142,8 @@ branch = true
 # Trace code that runs inside SQLAlchemy's async greenlets (and threadpools),
 # otherwise DB-path lines show as false "missing" and the report is untrustworthy.
 concurrency = ["greenlet", "thread"]
+# `python -m <pkg>` entrypoints are trivial `if __name__` shims exercised by the console script.
+omit = ["**/__main__.py"]
 # main.py wiring is tested (see test_main.py); only serve()/entrypoint + the
 # live-OTLP branch carry `# pragma: no cover`.
 
@@ -153,4 +158,4 @@ ignore-words-list = "dependant,afterall"  # FastAPI route.dependant + vitest aft
 
 # First-party workspace modules (extend as packages/services are added).
 [tool.deptry]
-known_first_party = ["keel_core", "reference_service"]
+known_first_party = ["keel_core", "keel_cli", "reference_service"]

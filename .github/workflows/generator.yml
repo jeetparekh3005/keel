@@ -1,0 +1,205 @@
+name: Generator
+
+# Guards the service templates. Two checks:
+#   1. python-template  - scaffold a *new* service and prove it builds against keel-core and
+#      passes its own conformance suite (the template is not broken).
+#   2. dogfood-reference - regenerate the *actual* reference service from the template with the
+#      reference's own answers, assert the output is byte-identical to the committed reference,
+#      then build it and run its full suite (incl. Postgres integration). This is the lockstep
+#      guarantee (ADR-0021, issue #370): a change to services/reference-service that is not
+#      reflected in templates/service-python fails CI, so template and reference never drift.
+
+on:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - "templates/**"
+      - "packages/keel-core-py/**"
+      - "services/reference-service/**"
+      - "services/reference-service-go/**"
+      - "services/reference-service-rust/**"
+      - "services/reference-service-java/**"
+      - "services/reference-service-nest/**"
+      - ".github/workflows/generator.yml"
+  push:
+    branches: [dev, main]
+    paths:
+      - "templates/**"
+      - "packages/keel-core-py/**"
+      - "services/reference-service/**"
+      - "services/reference-service-go/**"
+      - "services/reference-service-rust/**"
+      - "services/reference-service-java/**"
+      - "services/reference-service-nest/**"
+      - ".github/workflows/generator.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: generator-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python-template:
+    name: Generator (new Python service builds + conforms)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Scaffold a sample service from the Python template
+        run: |
+          uvx copier copy --defaults --trust \
+            --data service_name="Sample Service" \
+            --data aggregate=widget \
+            templates/service-python services/sample-service
+      - name: Build the generated service against keel-core
+        run: uv sync --all-packages
+      - name: Run the generated service's conformance, CRUD, and authz tests
+        run: |
+          uv run --directory services/sample-service python -m pytest \
+            tests/test_conformance.py tests/test_widgets.py tests/test_authz.py -q
+
+  dogfood-reference:
+    name: Dogfood (reference service regenerates byte-identically from the template)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Regenerate the reference service from the template (overwrite in place)
+        # Feed the template the reference service's own answers. The committed reference has no
+        # .copier-answers.yml (it is the source, not a generated instance), so drop the one Copier
+        # writes before diffing.
+        run: |
+          uvx copier copy --defaults --overwrite --trust \
+            --data service_name="Reference service" \
+            --data aggregate=item \
+            templates/service-python services/reference-service
+          rm -f services/reference-service/.copier-answers.yml
+      - name: Assert byte-identical to the committed reference (no drift)
+        run: |
+          if ! git diff --exit-code -- services/reference-service; then
+            echo "::error::services/reference-service drifted from templates/service-python."
+            echo "A change to the reference service must be mirrored in the template (or vice"
+            echo "versa). Re-run the template generation locally and commit the delta. See ADR-0021."
+            exit 1
+          fi
+      - name: Build the regenerated service against keel-core
+        run: uv sync --all-packages
+      - name: Run the reference service's full suite
+        # The Postgres integration test skips without KEEL_TEST_DATABASE_URL; it runs against the
+        # (byte-identical) committed reference in the python workflow's integration job.
+        run: uv run --directory services/reference-service python -m pytest -q
+
+  dogfood-reference-go:
+    name: Dogfood (Go reference service regenerates byte-identically from the template)
+    runs-on: ubuntu-latest
+    # Byte-identical regeneration is the anti-drift guarantee; the Go toolchain is not needed here
+    # because go.yml builds + tests the (byte-identical) committed reference. Only Copier + git.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Regenerate the Go reference service from the template (overwrite in place)
+        run: |
+          uvx copier copy --defaults --overwrite --trust \
+            --data service_slug=reference-service-go \
+            --data service_name=reference-service \
+            --data aggregate=item \
+            templates/service-go services/reference-service-go
+          rm -f services/reference-service-go/.copier-answers.yml
+      - name: Assert byte-identical to the committed Go reference (no drift)
+        run: |
+          if ! git diff --exit-code -- services/reference-service-go; then
+            echo "::error::services/reference-service-go drifted from templates/service-go."
+            echo "A change to the Go reference service must be mirrored in the template (or vice"
+            echo "versa). Re-run the template generation locally and commit the delta. See ADR-0021."
+            exit 1
+          fi
+
+  dogfood-reference-rust:
+    name: Dogfood (Rust reference service regenerates byte-identically from the template)
+    runs-on: ubuntu-latest
+    # Byte-identical regeneration is the anti-drift guarantee; the Rust toolchain is not needed
+    # here because rust.yml builds + tests the (byte-identical) committed reference. Only Copier + git.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Regenerate the Rust reference service from the template (overwrite in place)
+        run: |
+          uvx copier copy --defaults --overwrite --trust \
+            --data service_slug=reference-service-rust \
+            --data service_name=reference-service \
+            --data aggregate=item \
+            templates/service-rust services/reference-service-rust
+          rm -f services/reference-service-rust/.copier-answers.yml
+      - name: Assert byte-identical to the committed Rust reference (no drift)
+        run: |
+          if ! git diff --exit-code -- services/reference-service-rust; then
+            echo "::error::services/reference-service-rust drifted from templates/service-rust."
+            echo "A change to the Rust reference service must be mirrored in the template (or vice"
+            echo "versa). Re-run the template generation locally and commit the delta. See ADR-0021."
+            exit 1
+          fi
+
+  dogfood-reference-java:
+    name: Dogfood (Java reference service regenerates byte-identically from the template)
+    runs-on: ubuntu-latest
+    # Byte-identical regeneration is the anti-drift guarantee; the JDK/Maven toolchain is not needed
+    # here because java.yml builds + tests the (byte-identical) committed reference. Only Copier + git.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Regenerate the Java reference service from the template (overwrite in place)
+        run: |
+          uvx copier copy --defaults --overwrite --trust \
+            --data service_slug=reference-service-java \
+            --data service_name=reference-service \
+            --data service_pkg=reference \
+            --data service_pascal=Reference \
+            --data aggregate=item \
+            templates/service-java services/reference-service-java
+          rm -f services/reference-service-java/.copier-answers.yml
+      - name: Assert byte-identical to the committed Java reference (no drift)
+        run: |
+          if ! git diff --exit-code -- services/reference-service-java; then
+            echo "::error::services/reference-service-java drifted from templates/service-java."
+            echo "A change to the Java reference service must be mirrored in the template (or vice"
+            echo "versa). Re-run the template generation locally and commit the delta. See ADR-0021."
+            exit 1
+          fi
+
+  dogfood-reference-ts:
+    name: Dogfood (TypeScript reference service regenerates byte-identically from the template)
+    runs-on: ubuntu-latest
+    # Byte-identical regeneration is the anti-drift guarantee; the Node toolchain is not needed here
+    # because nest.yml builds + tests the (byte-identical) committed reference. Only Copier + git.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Regenerate the TypeScript reference service from the template (overwrite in place)
+        run: |
+          uvx copier copy --defaults --overwrite --trust \
+            --data service_slug=reference-service-nest \
+            --data aggregate=item \
+            templates/service-ts services/reference-service-nest
+          rm -f services/reference-service-nest/.copier-answers.yml
+      - name: Assert byte-identical to the committed TypeScript reference (no drift)
+        run: |
+          if ! git diff --exit-code -- services/reference-service-nest; then
+            echo "::error::services/reference-service-nest drifted from templates/service-ts."
+            echo "A change to the TypeScript reference service must be mirrored in the template (or"
+            echo "vice versa). Re-run the template generation locally and commit the delta. ADR-0021."
+            exit 1
+          fi

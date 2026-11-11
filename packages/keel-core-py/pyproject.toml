@@ -6,8 +6,8 @@ requires-python = ">=3.12"
 dependencies = [
     "pydantic-settings>=2.5",  # pulls pydantic; declare pydantic directly when a module imports it
     "structlog>=24.4",
-    "fastapi>=0.162.1",
-    "sqlalchemy[asyncio]>=2.1.6",
+    "fastapi>=0.162.2",
+    "sqlalchemy[asyncio]>=2.1.8",
     "pyjwt[crypto]>=2.15.1",
     "starlette>=0.37",            # ASGI middleware types/utilities (fastapi pins a compatible version)
     "opentelemetry-sdk>=1.27",    # OTLP exporter added at deployment time

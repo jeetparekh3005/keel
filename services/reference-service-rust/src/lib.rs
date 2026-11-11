@@ -11,4 +11,4 @@ pub mod repository;
 pub mod service;
 
 pub use composition::build_app;
-pub use config::ReferenceConfig;
+pub use config::ServiceConfig;
