@@ -135,6 +135,17 @@ def test_secrets_in_message_string_are_scrubbed():
     assert "[REDACTED]" in message
 
 
+def test_bearer_token_with_multiple_spaces_is_scrubbed():
+    # The bearer pattern uses \s+, so a token separated from the scheme by more than one space
+    # (a formatting quirk, or a printf-split that collapses to extra whitespace) is still redacted
+    # - the two-space vector the TS/Java v0.4 review flagged (#359 parity back-port).
+    logger, buffer = capturing_logger()
+    logger.info("authorization: Bearer  abcdef0123456789token")
+    message = _last_record(buffer)["message"]
+    assert "abcdef0123456789token" not in message
+    assert "[REDACTED]" in message
+
+
 def test_oversized_field_is_truncated():
     buffer = io.StringIO()
     logger_capped = StructuredLogger(service="t", version="0", stream=buffer, max_field_len=10)
