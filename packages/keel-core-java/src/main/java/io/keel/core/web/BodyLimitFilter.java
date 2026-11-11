@@ -19,7 +19,9 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * that declares an over-limit Content-Length is rejected up front with a 413. A chunked request (no
  * Content-Length) is bounded by wrapping its input stream in a counting stream that aborts once the
  * cap is read, mirroring Go's http.MaxBytesReader; the abort surfaces as a 413 via the exception
- * handler. Both the stream and the reader are wrapped so JSON and form reads are covered.
+ * handler. This bounds the JSON API surface (read via the request input stream/reader).
+ * form-urlencoded/multipart bodies are parsed by Tomcat at the connector before this wrapper, so
+ * they are bounded separately by server.tomcat.max-http-form-post-size (set from the same cap).
  */
 public class BodyLimitFilter extends OncePerRequestFilter {
 

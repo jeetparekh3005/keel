@@ -12,7 +12,7 @@ import {
   type OptionalFactoryDependency,
   type Provider,
 } from '@nestjs/common';
-import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 
 import { type Authenticator, AUTHENTICATOR } from './auth/principal.js';
 import { AuthGuard } from './auth/auth.guard.js';
@@ -22,6 +22,7 @@ import { HealthController } from './http/health.controller.js';
 import { ProblemExceptionFilter } from './http/problem.filter.js';
 import { RequestIdMiddleware } from './http/request-id.middleware.js';
 import { SecurityHeadersMiddleware } from './http/security-headers.middleware.js';
+import { TracingInterceptor } from './http/tracing.interceptor.js';
 import { LOGGER, READINESS, type ReadinessCheck } from './http/tokens.js';
 
 /** The default request body cap (1 MiB), bounding the large-payload DoS vector. */
@@ -86,6 +87,7 @@ export class KeelCoreModule implements NestModule {
       },
       { provide: APP_GUARD, useClass: AuthGuard },
       { provide: APP_FILTER, useClass: ProblemExceptionFilter },
+      { provide: APP_INTERCEPTOR, useClass: TracingInterceptor },
     ];
 
     return {

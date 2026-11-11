@@ -1,7 +1,7 @@
-# Keep the Docker build context small and reproducible: the service Dockerfiles COPY from the
-# repo root, so exclude build output, dependencies, and VCS/local cruft that the image rebuilds
-# from source anyway. (The Python vertical has its own service-dir .dockerignore; this covers
-# the repo-root-context builds used by the Go/Rust/TS/Java images.)
+# Keep the Docker build context small and reproducible: every image builds with `context: .`
+# (image.yml), so BuildKit reads only this root .dockerignore - it governs all five builds
+# (Python included; the service-dir .dockerignore is not consulted for a root context). Exclude
+# build output, dependencies, and VCS/local cruft that the image rebuilds from source anyway.
 .git
 **/node_modules
 **/dist

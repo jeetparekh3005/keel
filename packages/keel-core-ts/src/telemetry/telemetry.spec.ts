@@ -56,4 +56,16 @@ describe('trace correlation', () => {
     logger.info('outside any span');
     expect(lines[0].trace_id).toBeUndefined();
   });
+
+  it('preserves a valid-shaped (even all-zero) id but scrubs a secret logged under those keys', () => {
+    const { lines, stream } = capture();
+    const logger = createLogger('info', stream);
+    // A valid id shape (all-zero is Luhn-valid) must survive the scrubber unmangled.
+    logger.info({ trace_id: '0'.repeat(32), span_id: 'a'.repeat(16) }, 'valid ids');
+    expect(lines[0].trace_id).toBe('0'.repeat(32));
+    expect(lines[0].span_id).toBe('a'.repeat(16));
+    // A secret mis-logged under the exempt key must still be scrubbed (the exemption is shape-gated).
+    logger.info({ trace_id: 'Bearer abcdef0123456789token' }, 'secret under key');
+    expect(lines[1].trace_id).toBe('[REDACTED]');
+  });
 });

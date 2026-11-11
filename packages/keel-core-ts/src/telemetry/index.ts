@@ -1,10 +1,10 @@
-// OpenTelemetry wiring (platform.yaml telemetry): a shared resource (service identity), HTTP
-// server instrumentation (so every request runs inside a span), and optional OTLP trace
-// export. The instrumentation is always registered, so log-to-trace correlation works whether
-// or not export is on: the pino mixin in ../logging reads the active span's trace_id/span_id.
-// Export (an OTLP exporter + batch processor) is added only when an endpoint is configured.
+// OpenTelemetry wiring (platform.yaml telemetry): when an OTLP endpoint is configured, start
+// the SDK (tracer provider + async-context manager + OTLP exporter). Spans are created per
+// request by the TracingInterceptor (../http), which is independent of module load order; the
+// pino mixin (../logging) reads the active span to stamp trace_id/span_id. Both tracing and
+// export are gated on the endpoint: with none configured this is a no-op and logs carry no
+// trace fields.
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
-import { HttpInstrumentation } from '@opentelemetry/instrumentation-http';
 import { resourceFromAttributes } from '@opentelemetry/resources';
 import { NodeSDK } from '@opentelemetry/sdk-node';
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
@@ -20,12 +20,11 @@ export interface TelemetryOptions {
 }
 
 /**
- * Start OpenTelemetry tracing when an OTLP endpoint is configured: register HTTP server
- * instrumentation (so every request runs inside a span) and the OTLP exporter. The
- * instrumentation is the piece that makes log-to-trace correlation actually produce output -
- * the pino mixin in ../logging reads the active span the instrumentation creates. Returns a
- * shutdown function to flush and tear down at exit; a no-op when no endpoint is configured
- * (tracing off, so logs carry no trace fields). Call once at startup, before serving traffic.
+ * Start OpenTelemetry when an OTLP endpoint is configured: NodeSDK registers the tracer
+ * provider, the async-context manager (so the TracingInterceptor's per-request span propagates
+ * to the async handler and its logs), and the OTLP exporter. Returns a shutdown function to
+ * flush and tear down at exit; a no-op when no endpoint is configured (tracing off, so logs
+ * carry no trace fields). Call once at startup, before serving traffic.
  */
 export function initTelemetry(options: TelemetryOptions): () => Promise<void> {
   if (!options.otlpEndpoint) {
@@ -41,7 +40,6 @@ export function initTelemetry(options: TelemetryOptions): () => Promise<void> {
 
   const sdk = new NodeSDK({
     resource,
-    instrumentations: [new HttpInstrumentation()],
     traceExporter: new OTLPTraceExporter({ url: options.otlpEndpoint }),
   });
   sdk.start();

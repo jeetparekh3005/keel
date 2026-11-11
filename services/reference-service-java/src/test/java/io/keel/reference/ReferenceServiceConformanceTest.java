@@ -51,11 +51,28 @@ class ReferenceServiceConformanceTest {
 
   @Autowired Tracer tracer;
 
+  @Autowired org.springframework.context.ApplicationContext applicationContext;
+
   @DynamicPropertySource
   static void properties(DynamicPropertyRegistry registry) {
     registry.add("keel.database-url", () -> System.getenv("KEEL_TEST_DATABASE_URL"));
     // A small body limit so over-limit requests exercise the 413 paths.
     registry.add("keel.max-body-bytes", () -> "64");
+    // Configure OTLP export so the exporter wiring can be asserted (the v0.4 remediation review
+    // found the endpoint was bridged to a removed Boot 3 property name, so export was dead).
+    registry.add(
+        "management.opentelemetry.tracing.export.otlp.endpoint", () -> "http://localhost:4318");
+  }
+
+  @Test
+  void otlpSpanExporterIsWiredWhenEndpointConfigured() {
+    // A SpanExporter bean exists only if the OTLP tracing auto-config bound the endpoint under
+    // the correct Boot 4 property; would be absent under the removed Boot 3 name.
+    assertTrue(
+        applicationContext.getBeanNamesForType(io.opentelemetry.sdk.trace.export.SpanExporter.class)
+                .length
+            > 0,
+        "no OTLP SpanExporter bean - export is not wired");
   }
 
   @Test
