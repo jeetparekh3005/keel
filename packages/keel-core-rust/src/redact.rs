@@ -335,6 +335,9 @@ mod tests {
         assert_eq!(scrub_text(jwt), "[REDACTED]");
         assert_eq!(scrub_text("AKIAIOSFODNN7EXAMPLE"), "[REDACTED]");
         assert!(scrub_text("Bearer abcdef12345").contains("[REDACTED]"));
+        // \s+ in the bearer pattern: a token separated by more than one space is still scrubbed
+        // (the two-space vector the TS/Java v0.4 review flagged; #359 parity back-port).
+        assert!(scrub_text("Bearer  abcdef12345").contains("[REDACTED]"));
         // Luhn-valid card redacted; a random long number is left alone.
         assert_eq!(scrub_text("4111 1111 1111 1111"), "[REDACTED]");
         assert_eq!(scrub_text("1234567890123456"), "1234567890123456");
