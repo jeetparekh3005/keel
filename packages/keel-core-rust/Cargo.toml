@@ -46,4 +46,4 @@ tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
 # Ephemeral RSA keypairs for the OIDC tests; no key material is committed.
 rsa = { version = "0.9", features = ["pem"] }
-rand = "0.8"
+rand = "0.10"
