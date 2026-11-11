@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { middleware } from "./middleware";
+import { proxy } from "./proxy";
 import nextConfig from "./next.config.mjs";
 
 type Header = { key: string; value: string };
@@ -47,9 +47,9 @@ describe("HSTS production gating", () => {
   });
 });
 
-describe("CSP middleware", () => {
+describe("CSP proxy", () => {
   it("sets a nonce-based CSP that lets Next hydrate and denies framing", () => {
-    const res = middleware(new NextRequest("https://example.test/"));
+    const res = proxy(new NextRequest("https://example.test/"));
     const csp = res.headers.get("content-security-policy");
     expect(csp).toBeTruthy();
     // A nonce (not a bare 'self') is what unblocks Next's inline hydration scripts.
