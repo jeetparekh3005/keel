@@ -42,7 +42,9 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ inputs.node-version }}
-          cache: pnpm
+          # No `cache: pnpm`: it hard-fails the step when no pnpm-lock.yaml exists, and a freshly
+          # generated standalone service has none until its first install. The reusable lane must
+          # work on an uncached repo; dependency caching is a speed-only concern, not a gate.
       - run: pnpm install
       - name: Lint, type-check, test, build
         run: |

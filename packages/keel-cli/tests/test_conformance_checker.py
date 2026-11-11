@@ -173,5 +173,41 @@ def test_ts_getscopes_identifier_does_not_satisfy_authz(tmp_path: Path) -> None:
     assert not _result(report, "deny-by-default-authz").ok
 
 
+def test_stray_triple_quote_in_line_comment_does_not_swallow_real_markers(tmp_path: Path) -> None:
+    # A '#' comment containing a lone ''' used to make the DOTALL triple-quote regex span from
+    # that line to the next ''' many lines down, deleting the genuine wiring in between (a false
+    # "missing" verdict). Line comments must be stripped before docstrings so the markers survive.
+    svc = _write_service(
+        tmp_path,
+        pyproject=CONFORMANT_PYPROJECT,
+        source=(
+            "# a note with a stray ''' quote\n"
+            "from keel_core.adapters.inbound.http import create_app\n"
+            "from keel_core.config import BaseServiceConfig\n"
+            "from keel_core.adapters.inbound.http import require_scopes\n"
+            "# another note ending with ''' here\n"
+        ),
+        answers=True,
+    )
+    report = check_service(svc, CONTRACT)
+    assert report.ok, [r for r in report.results if not r.ok and not r.advisory]
+
+
+def test_poetry_style_dependency_declaration_is_recognized(tmp_path: Path) -> None:
+    # Poetry keeps deps in [tool.poetry.dependencies] as a table keyed by name, not PEP 621's
+    # [project.dependencies] list. The manifest parser must honor both or it false-fails Poetry.
+    svc = _write_service(
+        tmp_path,
+        pyproject=(
+            '[tool.poetry]\nname = "svc"\n\n'
+            "[tool.poetry.dependencies]\n"
+            'python = "^3.12"\nkeel-core = "^0.1"\nfastapi = "*"\n'
+        ),
+        source=CONFORMANT_SOURCE,
+        answers=True,
+    )
+    assert _result(check_service(svc, CONTRACT), "keel-core-dependency").ok
+
+
 def _result(report, check_id):  # type: ignore[no-untyped-def]
     return next(r for r in report.results if r.check_id == check_id)
