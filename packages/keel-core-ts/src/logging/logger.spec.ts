@@ -50,7 +50,10 @@ describe('createLogger redaction', () => {
     const cap = capture();
     const logger = createLogger('info', cap.stream);
     logger.info('ctx %o', { password: 'plaintextvalueone', ok: 1 });
-    logger.info('ctx %j', { apiKey: 'plaintextvaluetwo', nested: { token: 'plaintextvaluethree' } });
+    logger.info('ctx %j', {
+      apiKey: 'plaintextvaluetwo',
+      nested: { token: 'plaintextvaluethree' },
+    });
     const out = cap
       .records()
       .map((r) => String(r.message))
