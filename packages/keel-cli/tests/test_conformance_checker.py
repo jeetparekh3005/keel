@@ -12,6 +12,7 @@ CONTRACT = REPO / "platform.yaml"
 
 
 GO_REFERENCE = REPO / "services" / "reference-service-go"
+RUST_REFERENCE = REPO / "services" / "reference-service-rust"
 
 
 def test_go_reference_service_passes_every_hard_check() -> None:
@@ -20,6 +21,16 @@ def test_go_reference_service_passes_every_hard_check() -> None:
     assert not hard_failures, f"Go reference should be conformant, failed: {hard_failures}"
     assert report.ok
     # Go wiring is detected via Go-specific markers, not the Python ones.
+    assert _result(report, "keel-core-dependency").ok
+    assert _result(report, "app-factory").ok
+    assert _result(report, "deny-by-default-authz").ok
+
+
+def test_rust_reference_service_passes_every_hard_check() -> None:
+    report = check_service(RUST_REFERENCE, CONTRACT)
+    hard_failures = [r for r in report.results if not r.ok and not r.advisory]
+    assert not hard_failures, f"Rust reference should be conformant, failed: {hard_failures}"
+    assert report.ok
     assert _result(report, "keel-core-dependency").ok
     assert _result(report, "app-factory").ok
     assert _result(report, "deny-by-default-authz").ok

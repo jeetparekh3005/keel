@@ -17,6 +17,7 @@ on:
       - "packages/keel-core-py/**"
       - "services/reference-service/**"
       - "services/reference-service-go/**"
+      - "services/reference-service-rust/**"
       - ".github/workflows/generator.yml"
   push:
     branches: [dev, main]
@@ -25,6 +26,7 @@ on:
       - "packages/keel-core-py/**"
       - "services/reference-service/**"
       - "services/reference-service-go/**"
+      - "services/reference-service-rust/**"
       - ".github/workflows/generator.yml"
 
 permissions:
@@ -112,6 +114,33 @@ jobs:
           if ! git diff --exit-code -- services/reference-service-go; then
             echo "::error::services/reference-service-go drifted from templates/service-go."
             echo "A change to the Go reference service must be mirrored in the template (or vice"
+            echo "versa). Re-run the template generation locally and commit the delta. See ADR-0021."
+            exit 1
+          fi
+
+  dogfood-reference-rust:
+    name: Dogfood (Rust reference service regenerates byte-identically from the template)
+    runs-on: ubuntu-latest
+    # Byte-identical regeneration is the anti-drift guarantee; the Rust toolchain is not needed
+    # here because rust.yml builds + tests the (byte-identical) committed reference. Only Copier + git.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Regenerate the Rust reference service from the template (overwrite in place)
+        run: |
+          uvx copier copy --defaults --overwrite --trust \
+            --data service_slug=reference-service-rust \
+            --data service_name=reference-service \
+            --data aggregate=item \
+            templates/service-rust services/reference-service-rust
+          rm -f services/reference-service-rust/.copier-answers.yml
+      - name: Assert byte-identical to the committed Rust reference (no drift)
+        run: |
+          if ! git diff --exit-code -- services/reference-service-rust; then
+            echo "::error::services/reference-service-rust drifted from templates/service-rust."
+            echo "A change to the Rust reference service must be mirrored in the template (or vice"
             echo "versa). Re-run the template generation locally and commit the delta. See ADR-0021."
             exit 1
           fi

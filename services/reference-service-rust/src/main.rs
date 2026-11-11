@@ -10,11 +10,11 @@ use keel_core::jwks::JwksCache;
 use keel_core::persistence::Database;
 use keel_core::webauth::SharedAuthenticator;
 use reference_service_rust::repository::SqlItemRepository;
-use reference_service_rust::{build_app, ReferenceConfig};
+use reference_service_rust::{build_app, ServiceConfig};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config = ReferenceConfig::from_env()?;
+    let config = ServiceConfig::from_env()?;
     let tracer = keel_core::telemetry::init(
         &config.service_name,
         &config.version,

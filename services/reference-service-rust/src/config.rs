@@ -5,9 +5,9 @@ use serde::Deserialize;
 
 /// Typed service configuration. Secure by default: `environment` defaults to
 /// `production`, so the JWKS endpoint must be https unless an explicit dev environment
-/// opts in (see [`ReferenceConfig::is_dev_like`]).
+/// opts in (see [`ServiceConfig::is_dev_like`]).
 #[derive(Debug, Clone, Deserialize)]
-pub struct ReferenceConfig {
+pub struct ServiceConfig {
     #[serde(default = "default_service_name")]
     pub service_name: String,
     #[serde(default = "default_version")]
@@ -61,7 +61,7 @@ fn default_port() -> u16 {
     8000
 }
 
-impl ReferenceConfig {
+impl ServiceConfig {
     /// Load from `KEEL_`-prefixed environment variables (fail-fast on missing OIDC).
     ///
     /// # Errors
