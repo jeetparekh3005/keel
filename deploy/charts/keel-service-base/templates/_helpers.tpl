@@ -1,19 +1,19 @@
-{{- define "reference-service.name" -}}
+{{- define "keel-service-base.name" -}}
 {{- .Chart.Name -}}
 {{- end -}}
 
-{{- define "reference-service.fullname" -}}
+{{- define "keel-service-base.fullname" -}}
 {{- printf "%s-%s" .Release.Name .Chart.Name | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
-{{- define "reference-service.labels" -}}
-app.kubernetes.io/name: {{ include "reference-service.name" . }}
+{{- define "keel-service-base.labels" -}}
+app.kubernetes.io/name: {{ include "keel-service-base.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end -}}
 
-{{- define "reference-service.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "reference-service.name" . }}
+{{- define "keel-service-base.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "keel-service-base.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
