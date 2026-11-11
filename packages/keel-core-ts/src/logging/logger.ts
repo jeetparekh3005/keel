@@ -97,7 +97,14 @@ export function createLogger(level: string, destination?: DestinationStream): Lo
           const msgIdx = typeof args[0] === 'object' && args[0] !== null ? 1 : 0;
           const msg = args[msgIdx];
           if (typeof msg === 'string' && args.length > msgIdx + 1) {
-            const message = scrubText(format(msg, ...args.slice(msgIdx + 1)));
+            // Redact each interpolation arg BEFORE formatting: an object arg (`%o`/`%j`) is
+            // key-redacted (a `password`/`token` field -> [REDACTED]) just like a merge field,
+            // then the formatted string is pattern-scrubbed. Without this, util.format would
+            // serialise `{ password: 'x' }` verbatim and scrubText (patterns only) would miss it.
+            const redactedArgs = args
+              .slice(msgIdx + 1)
+              .map((arg) => (arg !== null && typeof arg === 'object' ? redactValue(arg) : arg));
+            const message = scrubText(format(msg, ...redactedArgs));
             const next = msgIdx === 1 ? [args[0], message] : [message];
             method.apply(this, next as Parameters<typeof method>);
             return;

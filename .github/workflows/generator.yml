@@ -62,6 +62,34 @@ jobs:
           uv run --directory services/sample-service python -m pytest \
             tests/test_conformance.py tests/test_widgets.py tests/test_authz.py -q
 
+  generator-go-nonitem:
+    name: Generator (a Go service with a non-item aggregate is gofmt-clean)
+    runs-on: ubuntu-latest
+    # The Go dogfood only renders aggregate=item (byte-identical). Struct-tag alignment is
+    # gofmt-width-dependent, so a different/longer aggregate name would otherwise ship a service
+    # that fails its own `gofmt -l` CI gate. This renders a non-item aggregate and asserts the
+    # generated output is gofmt-clean, catching that class here rather than in the user's first run.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+      - name: Scaffold a Go service with a multi-word aggregate and assert gofmt-clean
+        run: |
+          uvx copier copy --defaults --trust \
+            --data service_slug=orders-service \
+            --data service_name=orders \
+            --data aggregate=order_line \
+            templates/service-go /tmp/go-order-line
+          unformatted=$(gofmt -l /tmp/go-order-line)
+          if [ -n "$unformatted" ]; then
+            echo "::error::a generated Go service is not gofmt-clean: $unformatted"
+            exit 1
+          fi
+
   dogfood-reference:
     name: Dogfood (reference service regenerates byte-identically from the template)
     runs-on: ubuntu-latest

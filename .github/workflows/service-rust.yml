@@ -35,3 +35,12 @@ jobs:
           cargo fmt --all --check
           cargo clippy --all-targets --all-features -- -D warnings
           cargo test
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        with:
+          tool: cargo-audit
+      - name: Audit dependencies for RUSTSEC advisories (blocking)
+        # The distroless release binary hides crate metadata from Trivy's image scan, so this
+        # source-level audit against Cargo.lock is where Rust advisories are caught - matching the
+        # in-tree rust.yml gate.
+        run: cargo audit

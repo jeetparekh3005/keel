@@ -45,3 +45,8 @@ jobs:
         run: uv run mypy src
       - name: Tests
         run: uv run pytest
+      - name: Dependency CVEs (pip-audit, blocking)
+        # Mirrors the in-tree security.yml gate: audit the resolved dependencies for advisories.
+        run: |
+          uv export --format requirements-txt --no-emit-project --no-dev -o requirements.txt
+          uvx pip-audit==2.9.0 --requirement requirements.txt
