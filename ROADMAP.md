@@ -9,7 +9,7 @@ This file is a human-readable mirror; the issues are the source of truth.
 | **v0.2** | Frontend monorepo (Next.js) + deployment: k8s/Helm, image publish pipeline, brokers, api_key/mTLS, CORS, IdP/broker integration tests | **released** ([v0.2.0](https://github.com/jeetparekh3005/keel/releases/tag/v0.2.0)) |
 | **v0.3** | Rust vertical (the contract stress-test) | **released** ([v0.3.0](https://github.com/jeetparekh3005/keel/releases/tag/v0.3.0)) |
 | **v0.4** | Go, Java, and TypeScript (NestJS) backend verticals | **released** ([v0.4.0](https://github.com/jeetparekh3005/keel/releases/tag/v0.4.0)) |
-| **v0.5** | Copier generator (`keel new service`) + `keel update` propagation + reusable workflows | in progress (Python generator done: template + dogfood + `keel` CLI + update round-trip; next: Tier-3 reusable workflows/base chart (#32) and Go/Rust/TS/Java templates) |
+| **v0.5** | Copier generator (`keel new service`) + `keel update` propagation + reusable workflows | in progress (generator done for all five verticals: byte-identical-dogfooded templates + language-aware `keel` CLI + update round-trip; remaining: Tier-3 reusable workflows/base chart (#32)) |
 
 See [docs/STATUS.md](docs/STATUS.md) for implemented-vs-planned detail, and the
 milestone issues for the concrete work items. Releases follow [ADR-0015](docs/adr/0015-release-and-versioning.md).
