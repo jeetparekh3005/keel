@@ -52,6 +52,8 @@ class ThingsController {
         writer: principal('u-writer', 'things:write'),
       }),
       readiness: () => true,
+      // A tiny cap so an over-limit body (any content-type) exercises the 413 path.
+      maxBodyBytes: 32,
     }),
   ],
   controllers: [ThingsController],
@@ -91,6 +93,18 @@ describe('KeelCoreModule wiring (conformance)', () => {
       '/v1/things',
       JSON.stringify({ name: 'x'.repeat(200) }),
     );
+  });
+
+  it('returns a 413 for an over-limit NON-JSON body (content-type-agnostic)', async () => {
+    // The JSON body parser only caps JSON; a text/plain over-limit body must still be rejected by
+    // the content-type-agnostic body-limit middleware, with the security headers intact.
+    const res = await request(server)
+      .post('/v1/things')
+      .set('Authorization', 'Bearer writer')
+      .set('Content-Type', 'text/plain')
+      .send('x'.repeat(200));
+    expect(res.status).toBe(413);
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
   });
 
   it('drops server-fault detail from the problem body (logs it server-side)', async () => {
