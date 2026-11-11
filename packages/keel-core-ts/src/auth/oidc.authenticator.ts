@@ -26,6 +26,8 @@ export class OidcAuthenticator implements Authenticator {
         issuer: this.issuer,
         audience: this.audience,
         algorithms: ['RS256'],
+        // Require an expiry: a validly-signed token with no exp must not be accepted forever.
+        requiredClaims: ['exp'],
       });
       payload = verified.payload;
     } catch (err) {
@@ -85,11 +87,22 @@ function asStringArray(value: unknown): string[] {
  * failure or timeout fetching the JWKS) is Unavailable (503); anything else (bad signature,
  * expired, wrong iss/aud, unknown kid) is Unauthenticated (401).
  */
+const KEY_SOURCE_OUTAGE_CODES = new Set([
+  'ERR_JWKS_TIMEOUT', // jose timed out fetching the JWKS
+  'ERR_JOSE_GENERIC', // jose's catch-all: a non-200 JWKS response or unparsable body
+  'ERR_JWKS_INVALID', // the JWKS document itself is malformed
+]);
+
 function classifyVerifyError(err: unknown): DomainError {
   const code = (err as { code?: string } | undefined)?.code;
-  // ERR_JWKS_TIMEOUT is jose's; a raw fetch/network failure arrives as a TypeError with no
-  // jose code. Both mean the signing-key source could not be reached.
-  if (code === 'ERR_JWKS_TIMEOUT' || (code === undefined && err instanceof TypeError)) {
+  // A key-source outage (timeout, non-200/unparsable JWKS, a raw fetch TypeError with no jose
+  // code) is Unavailable: the caller's token may be perfectly valid, so do not report 401 and
+  // make clients discard good credentials. Everything else (bad signature, expired, missing
+  // exp, wrong iss/aud, unknown kid) is a genuine auth failure.
+  if (
+    (code !== undefined && KEY_SOURCE_OUTAGE_CODES.has(code)) ||
+    (code === undefined && err instanceof TypeError)
+  ) {
     return new DomainError(ErrorCategory.Unavailable, 'signing-key source unavailable');
   }
   return new DomainError(ErrorCategory.Unauthenticated, 'invalid token');

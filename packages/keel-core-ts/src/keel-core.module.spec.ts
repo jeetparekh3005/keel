@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Module, Post } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { Server } from 'node:http';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -15,8 +16,10 @@ import {
   assertDeniesAnonymous,
   assertHealth,
   assertProblemResponse,
+  assertReadyzReportsNotReady,
   assertRequiresScope,
   assertSecurityHeaders,
+  assertSecurityHeadersOn413,
   parseProblem,
 } from './conformance/index.js';
 import { principal, StubAuthenticator } from './testkit/index.js';
@@ -61,7 +64,10 @@ describe('KeelCoreModule wiring (conformance)', () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [TestAppModule] }).compile();
-    app = moduleRef.createNestApplication();
+    app = moduleRef.createNestApplication<NestExpressApplication>({ bodyParser: false });
+    // A tiny body limit so an over-limit POST exercises the 413 error path (which must still
+    // carry the security headers).
+    (app as NestExpressApplication).useBodyParser('json', { limit: 32 });
     await app.init();
     server = app.getHttpServer() as Server;
   });
@@ -76,6 +82,15 @@ describe('KeelCoreModule wiring (conformance)', () => {
     await assertCorsDenyByDefault(server);
     await assertDeniesAnonymous(server, 'POST', '/v1/things');
     await assertRequiresScope(server, 'POST', '/v1/things', 'reader', { name: 'widget' });
+  });
+
+  it('returns a 413 WITH security headers for an over-limit body', async () => {
+    await assertSecurityHeadersOn413(
+      server,
+      'POST',
+      '/v1/things',
+      JSON.stringify({ name: 'x'.repeat(200) }),
+    );
   });
 
   it('drops server-fault detail from the problem body (logs it server-side)', async () => {
@@ -109,5 +124,36 @@ describe('KeelCoreModule wiring (conformance)', () => {
       .set('Authorization', 'bearer writer')
       .send({ name: 'widget' });
     expect(res.status).toBe(201);
+  });
+});
+
+@Module({
+  imports: [
+    KeelCoreModule.forRoot({
+      logLevel: 'silent',
+      corsAllowOrigins: [],
+      authenticator: new StubAuthenticator({}),
+      // A failing dependency: /readyz must report 503, not 200.
+      readiness: () => false,
+    }),
+  ],
+})
+class NotReadyAppModule {}
+
+describe('KeelCoreModule readiness', () => {
+  let app: INestApplication;
+
+  beforeAll(async () => {
+    const moduleRef = await Test.createTestingModule({ imports: [NotReadyAppModule] }).compile();
+    app = moduleRef.createNestApplication();
+    await app.init();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('/readyz reports 503 when the readiness check fails', async () => {
+    await assertReadyzReportsNotReady(app.getHttpServer() as Server);
   });
 });
