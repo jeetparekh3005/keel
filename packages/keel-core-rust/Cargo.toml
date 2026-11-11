@@ -19,10 +19,10 @@ thiserror = "2"
 figment = { version = "0.10", features = ["env", "toml"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
-tracing-opentelemetry = "0.31"
-opentelemetry = "0.30"
-opentelemetry_sdk = { version = "0.30", features = ["rt-tokio"] }
-opentelemetry-otlp = { version = "0.30", features = ["grpc-tonic", "trace"] }
+tracing-opentelemetry = "0.34"
+opentelemetry = "0.33"
+opentelemetry_sdk = { version = "0.33", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.33", features = ["grpc-tonic", "trace"] }
 uuid = { version = "1", features = ["v4"] }
 axum = "0.8"
 tower = { version = "0.5", features = ["util"] }
@@ -45,5 +45,5 @@ tokio = { version = "1", features = ["macros", "rt"] }
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
 # Ephemeral RSA keypairs for the OIDC tests; no key material is committed.
-rsa = { version = "0.9", features = ["pem"] }
-rand = "0.8"
+rsa = "0.10"
+rand = "0.10"
