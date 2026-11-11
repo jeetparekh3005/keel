@@ -5,7 +5,7 @@ import type { NextRequest } from "next/server";
 // inline hydration scripts; the documented fix is a per-request nonce that Next
 // applies to its own scripts. 'strict-dynamic' lets those scripts load their
 // chunks without allowlisting every path. Non-CSP headers live in next.config.
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
   const csp = [
     "default-src 'self'",
