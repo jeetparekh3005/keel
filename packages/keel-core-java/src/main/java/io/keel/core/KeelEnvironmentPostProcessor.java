@@ -25,6 +25,9 @@ public class KeelEnvironmentPostProcessor implements EnvironmentPostProcessor {
     bridge(environment, bridges, "KEEL_LOG_LEVEL", "logging.level.root");
     bridge(environment, bridges, "KEEL_SERVICE_NAME", "spring.application.name");
     bridge(environment, bridges, "KEEL_MAX_BODY_BYTES", "server.tomcat.max-swallow-size");
+    // Bound form bodies at the connector too (Tomcat parses form-urlencoded before the filter
+    // stream wrapper sees it); the JSON API surface is bounded by the body-limit filter.
+    bridge(environment, bridges, "KEEL_MAX_BODY_BYTES", "server.tomcat.max-http-form-post-size");
     bridge(
         environment,
         bridges,
@@ -38,7 +41,10 @@ public class KeelEnvironmentPostProcessor implements EnvironmentPostProcessor {
 
     String otlpEndpoint = environment.getProperty("KEEL_OTLP_ENDPOINT");
     if (otlpEndpoint != null && !otlpEndpoint.isEmpty()) {
-      bridges.put("management.otlp.tracing.endpoint", otlpEndpoint);
+      // Boot 4 relocated this from the Boot 3 name management.otlp.tracing.endpoint; the old
+      // name is deprecated-at-error and no longer bound, so a span exporter is only wired under
+      // the new namespace.
+      bridges.put("management.opentelemetry.tracing.export.otlp.endpoint", otlpEndpoint);
     }
     environment.getPropertySources().addFirst(new MapPropertySource("keel-bridges", bridges));
 
