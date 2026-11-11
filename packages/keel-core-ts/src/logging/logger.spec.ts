@@ -43,6 +43,19 @@ describe('createLogger redaction', () => {
     expect(String(cap.records()[0].message)).toContain('[REDACTED]');
   });
 
+  it('preserves an Error interpolation arg (%o) - message and stack survive redaction', () => {
+    // Regression: redactValue rebuilds objects from enumerable props, which is empty for an Error
+    // (message/stack are non-enumerable), so redacting an Error arg flattened it to {} and lost the
+    // diagnostics of the ubiquitous logger.error('... %o', err). Error/Date/Map must pass through.
+    const cap = capture();
+    const logger = createLogger('info', cap.stream);
+    logger.error('operation failed %o', new Error('db connection refused'));
+    const message = String(cap.records()[0].message);
+    expect(message).toContain('db connection refused');
+    expect(message).toContain('Error');
+    expect(message).not.toBe('operation failed {}');
+  });
+
   it('key-redacts secret-family fields inside an object interpolation arg (%o / %j)', () => {
     // util.format serialises the object verbatim, so pattern-only scrubbing would miss a secret
     // under a secret-family KEY. The interpolation path must apply the same key-based redaction

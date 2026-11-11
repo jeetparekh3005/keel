@@ -107,10 +107,11 @@ describe('KeelCoreModule wiring (conformance)', () => {
     expect(res.headers['x-content-type-options']).toBe('nosniff');
   });
 
-  it('caps an over-limit CHUNKED body with no Content-Length (streaming, not just header)', async () => {
+  it('aborts an over-limit CHUNKED body with no Content-Length (bounds buffering, not a 413)', async () => {
     // A Transfer-Encoding: chunked request carries no Content-Length, so the header fast-path
-    // cannot see it; the streaming counter must still abort it rather than buffer it. Sent raw
-    // against a listening instance (supertest always sets Content-Length, so it cannot drive this).
+    // cannot see it; the streaming counter must bound buffering by ABORTING the connection (a
+    // socket reset, not a decorated 413 - see BodyLimitMiddleware). Sent raw against a listening
+    // instance (supertest always sets Content-Length, so it cannot drive this path).
     const { request: httpRequest } = await import('node:http');
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
     const { port } = server.address() as { port: number };
@@ -133,9 +134,10 @@ describe('KeelCoreModule wiring (conformance)', () => {
         req.write('x'.repeat(4096)); // > the 32-byte cap; no Content-Length set => chunked
         req.end();
       });
-      // The over-limit chunked body must be rejected: a 413, or the connection is reset - never
-      // accepted (201/200). Before the streaming cap it reached the handler (a 400/201).
-      expect(outcome === 'aborted' || outcome === 'status:413').toBe(true);
+      // The over-limit chunked body must be aborted (connection reset), never accepted or reach
+      // the handler. Before the streaming cap it reached the handler (a 400/201), so this guards
+      // that the body is bounded - not a decorated-413 contract (the Content-Length path covers 413).
+      expect(outcome).toBe('aborted');
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
