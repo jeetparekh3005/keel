@@ -153,8 +153,11 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   and tests it, so template and reference cannot drift. The **`keel` CLI** (`packages/keel-cli`)
   wraps `copier copy`/`copier update` (`keel new` / `keel update`) and adds a static `platform.yaml`
   conformance check (`keel check`: depends on keel-core, uses its app factory + typed config, routes
-  carry `require_scopes`). Not yet: the Go/Rust/TS/Java templates, the `keel update` round-trip in CI
-  (issue #372), and Tier-3 reusable CI workflows + base Helm chart (issue #32).
+  carry `require_scopes`). The **`keel update` round-trip** is proven in CI: a test stands up a
+  git-tagged copy of the template, generates a service, makes a local edit, advances the template,
+  and asserts `keel update` propagates the template change (rendered with the service's answers)
+  while preserving the local edit (ADR-0021 Tier-2 propagation). Not yet: the Go/Rust/TS/Java
+  templates, and Tier-3 reusable CI workflows + base Helm chart (issue #32).
 
 ## Planned - described in the contract/ADRs but NOT yet implemented
 
