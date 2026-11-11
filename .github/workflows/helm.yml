@@ -42,6 +42,14 @@ jobs:
           python3 -m pip install --quiet pyyaml
           for chart in deploy/charts/*/; do
             echo "=== $chart ==="
+            # The base chart is a Helm library (ADR-0009 Tier 3): it renders nothing on its own,
+            # so lint it but skip templating/policy-checks (the service charts exercise its output).
+            if grep -q '^type: library' "$chart/Chart.yaml"; then
+              helm lint "$chart"
+              continue
+            fi
+            # Resolve the file:// keel-service-base dependency into charts/ before rendering.
+            helm dependency update "$chart"
             helm lint "$chart" -f "$chart/ci/test-values.yaml"
             helm template rs "$chart" -f "$chart/ci/test-values.yaml" \
               | ./kubeconform -strict -summary -schema-location default
