@@ -89,13 +89,13 @@ function asStringArray(value: unknown): string[] {
  */
 const KEY_SOURCE_OUTAGE_CODES = new Set([
   'ERR_JWKS_TIMEOUT', // jose timed out fetching the JWKS
-  'ERR_JOSE_GENERIC', // jose's catch-all: a non-200 JWKS response or unparseable body
+  'ERR_JOSE_GENERIC', // jose's catch-all: a non-200 JWKS response or unparsable body
   'ERR_JWKS_INVALID', // the JWKS document itself is malformed
 ]);
 
 function classifyVerifyError(err: unknown): DomainError {
   const code = (err as { code?: string } | undefined)?.code;
-  // A key-source outage (timeout, non-200/unparseable JWKS, a raw fetch TypeError with no jose
+  // A key-source outage (timeout, non-200/unparsable JWKS, a raw fetch TypeError with no jose
   // code) is Unavailable: the caller's token may be perfectly valid, so do not report 401 and
   // make clients discard good credentials. Everything else (bad signature, expired, missing
   // exp, wrong iss/aud, unknown kid) is a genuine auth failure.
