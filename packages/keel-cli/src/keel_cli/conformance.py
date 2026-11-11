@@ -14,8 +14,12 @@ It is deliberately not a replacement for the service's behavioural conformance s
 
 from __future__ import annotations
 
+import json
+import re
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
+from xml.etree import ElementTree
 
 import yaml
 
@@ -57,8 +61,11 @@ class LanguageSpec:
 
     name: str
     manifest: str  # build manifest filename (its presence also detects the language)
-    dep_module: str  # the keel-core library module name expected in the manifest
+    dep_module: str  # the keel-core library module name expected as a declared dependency
     source_suffix: str  # source file extension to scan
+    comment_style: (
+        str  # "c" (// + /* */) or "python" (# + triple-quoted) - stripped before matching
+    )
     app_factory: tuple[str, ...]  # any present => the keel-core app factory is used
     app_factory_detail: str
     typed_config: tuple[str, ...]
@@ -74,6 +81,7 @@ LANGUAGES: tuple[LanguageSpec, ...] = (
         manifest="pyproject.toml",
         dep_module="keel-core",
         source_suffix=".py",
+        comment_style="python",
         app_factory=("from keel_core.adapters.inbound.http import create_app",),
         app_factory_detail="keel_core create_app (health + RFC 9457 + edge hardening)",
         typed_config=("BaseServiceConfig",),
@@ -86,6 +94,7 @@ LANGUAGES: tuple[LanguageSpec, ...] = (
         manifest="go.mod",
         dep_module="keel-core-go",
         source_suffix=".go",
+        comment_style="c",
         app_factory=("keel-core-go/httpx", "httpx.NewRouter("),
         app_factory_detail="keel-core-go httpx.NewRouter (health + RFC 9457 + edge hardening)",
         typed_config=("keel-core-go/config", "config.Load"),
@@ -98,6 +107,7 @@ LANGUAGES: tuple[LanguageSpec, ...] = (
         manifest="Cargo.toml",
         dep_module="keel-core-rust",
         source_suffix=".rs",
+        comment_style="c",
         app_factory=("create_app_with_readiness",),
         app_factory_detail="keel_core create_app_with_readiness (health + RFC 9457 + hardening)",
         typed_config=("keel_core::config::load",),
@@ -110,8 +120,9 @@ LANGUAGES: tuple[LanguageSpec, ...] = (
         manifest="pom.xml",
         dep_module="keel-core",
         source_suffix=".java",
-        app_factory=("@SpringBootApplication",),
-        app_factory_detail="Spring Boot on keel-core auto-config (health + RFC 9457 + hardening)",
+        comment_style="c",
+        app_factory=("io.keel.core.web", "io.keel.core.config"),
+        app_factory_detail="imports keel-core (Spring auto-config: health + RFC 9457 + hardening)",
         typed_config=("io.keel.core.config", "KeelProperties"),
         typed_config_detail="typed config via keel-core KeelProperties (KEEL_ env, fail-fast)",
         authz=("@PreAuthorize",),
@@ -122,11 +133,12 @@ LANGUAGES: tuple[LanguageSpec, ...] = (
         manifest="package.json",
         dep_module="@keel/core",
         source_suffix=".ts",
+        comment_style="c",
         app_factory=("KeelCoreModule",),
         app_factory_detail="NestJS KeelCoreModule (health + RFC 9457 + edge hardening)",
         typed_config=("loadConfig", "loadServiceConfig"),
         typed_config_detail="typed config via @keel/core loadConfig (KEEL_ env, fail-fast, zod)",
-        authz=("@Scopes", "Scopes("),
+        authz=("@Scopes",),
         authz_detail="routes guarded by @Scopes",
     ),
 )
@@ -136,11 +148,64 @@ def _detect(service_dir: Path) -> LanguageSpec | None:
     return next((spec for spec in LANGUAGES if (service_dir / spec.manifest).is_file()), None)
 
 
-def _read_source(service_dir: Path, suffix: str) -> str:
-    """Concatenate the service's source for coarse text checks (``src/`` first if present)."""
+_C_BLOCK = re.compile(r"/\*.*?\*/", re.DOTALL)
+_C_LINE = re.compile(r"//[^\n]*")
+_PY_LINE = re.compile(r"#[^\n]*")
+_PY_TRIPLE = re.compile(r"('{3}|\"{3}).*?\1", re.DOTALL)
+
+
+def _strip_comments(text: str, style: str) -> str:
+    """Remove comments/docstrings so a marker only in a comment cannot satisfy a wiring check."""
+    if style == "python":
+        text = _PY_TRIPLE.sub(" ", text)
+        return _PY_LINE.sub("", text)
+    text = _C_BLOCK.sub(" ", text)
+    return _C_LINE.sub("", text)
+
+
+def _read_source(service_dir: Path, spec: LanguageSpec) -> str:
+    """Concatenate the service's source (``src/`` first if present), with comments stripped."""
     src = service_dir / "src"
     base = src if src.is_dir() else service_dir
-    return "\n".join(path.read_text(encoding="utf-8") for path in sorted(base.rglob(f"*{suffix}")))
+    raw = "\n".join(
+        path.read_text(encoding="utf-8") for path in sorted(base.rglob(f"*{spec.source_suffix}"))
+    )
+    return _strip_comments(raw, spec.comment_style)
+
+
+def _dep_base(spec: str) -> str:
+    """A requirement string -> its bare name ('keel-core>=0.1' -> 'keel-core')."""
+    return re.split(r"[<>=!~;\[ ]", spec, maxsplit=1)[0].strip()
+
+
+def _declares_dependency(manifest: Path, module: str) -> bool:
+    """Parse the manifest to confirm ``module`` is a declared dependency, not a mere text match."""
+    text = manifest.read_text(encoding="utf-8")
+    name = manifest.name
+    try:
+        if name == "pyproject.toml":
+            deps = tomllib.loads(text).get("project", {}).get("dependencies", [])
+            return any(_dep_base(dep) == module for dep in deps)
+        if name == "Cargo.toml":
+            data = tomllib.loads(text)
+            tables = ("dependencies", "dev-dependencies", "build-dependencies")
+            return any(module in data.get(table, {}) for table in tables)
+        if name == "package.json":
+            data = json.loads(text)
+            tables = ("dependencies", "devDependencies", "peerDependencies")
+            return any(module in data.get(table, {}) for table in tables)
+        if name == "go.mod":
+            # A require directive line names the module; ignore `//` comments.
+            return any(module in line.split("//", 1)[0] for line in text.splitlines())
+        if name == "pom.xml":
+            root = ElementTree.fromstring(text)  # noqa: S314 - local build file, not untrusted input
+            return any(
+                (el.tag.endswith("artifactId")) and (el.text or "").strip() == module
+                for el in root.iter()
+            )
+    except (tomllib.TOMLDecodeError, json.JSONDecodeError, ElementTree.ParseError):
+        return False
+    return module in text
 
 
 def _check_contract(contract_path: Path) -> CheckResult:
@@ -191,17 +256,18 @@ def check_service(service_dir: Path, contract_path: Path) -> ConformanceReport:
         )
         return ConformanceReport(service_dir=service_dir, results=tuple(results))
 
-    manifest_text = (service_dir / spec.manifest).read_text(encoding="utf-8")
-    source = _read_source(service_dir, spec.source_suffix)
+    declares = _declares_dependency(service_dir / spec.manifest, spec.dep_module)
+    source = _read_source(service_dir, spec)
     results += [
-        # Depends on keel-core: the Tier-1 library every platform guarantee rides on.
+        # Depends on keel-core: the Tier-1 library every platform guarantee rides on. Parsed from
+        # the manifest's dependency tables, so a mere text/comment occurrence does not count.
         CheckResult(
             "keel-core-dependency",
-            ok=spec.dep_module in manifest_text,
+            ok=declares,
             detail=(
-                f"{spec.dep_module} present in {spec.manifest}"
-                if spec.dep_module in manifest_text
-                else f"{spec.dep_module} not found in {spec.manifest}"
+                f"{spec.dep_module} declared in {spec.manifest}"
+                if declares
+                else f"{spec.dep_module} not a declared dependency in {spec.manifest}"
             ),
         ),
         # Builds its app with keel-core's factory (health + RFC 9457 + edge hardening).
