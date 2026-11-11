@@ -1,0 +1,45 @@
+# Reusable CI for a generated keel TypeScript/NestJS service (ADR-0009 Tier 3, ADR-0021). An
+# extracted service repo references this by tag:
+#
+#   jobs:
+#     ci:
+#       uses: jeetparekh3005/keel/.github/workflows/service-ts.yml@v1
+#
+# In-tree the vertical is covered by nest.yml; this lane is for the polyrepo future (ADR-0011).
+name: keel TypeScript service CI
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        type: string
+        default: "."
+      node-version:
+        type: string
+        default: "24"
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Lint, type-check, test, build
+        run: |
+          pnpm run lint
+          pnpm run typecheck
+          pnpm run test
+          pnpm run build

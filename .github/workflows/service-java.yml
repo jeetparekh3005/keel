@@ -1,0 +1,40 @@
+# Reusable CI for a generated keel Java service (ADR-0009 Tier 3, ADR-0021). An extracted service
+# repo references this by tag:
+#
+#   jobs:
+#     ci:
+#       uses: jeetparekh3005/keel/.github/workflows/service-java.yml@v1
+#
+# In-tree the vertical is covered by java.yml; this lane is for the polyrepo future (ADR-0011).
+name: keel Java service CI
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        type: string
+        default: "."
+      java-version:
+        type: string
+        default: "25"
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: ${{ inputs.java-version }}
+          cache: maven
+      - name: Spotless + verify (tests, ArchUnit, JaCoCo)
+        run: mvn -B verify
