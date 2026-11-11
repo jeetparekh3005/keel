@@ -17,13 +17,14 @@ import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { type Authenticator, AUTHENTICATOR } from './auth/principal.js';
 import { AuthGuard } from './auth/auth.guard.js';
 import { createLogger } from './logging/logger.js';
+import { BodyLimitMiddleware } from './http/body-limit.middleware.js';
 import { CorsMiddleware, CORS_ALLOW_ORIGINS } from './http/cors.middleware.js';
 import { HealthController } from './http/health.controller.js';
 import { ProblemExceptionFilter } from './http/problem.filter.js';
 import { RequestIdMiddleware } from './http/request-id.middleware.js';
 import { SecurityHeadersMiddleware } from './http/security-headers.middleware.js';
 import { TracingInterceptor } from './http/tracing.interceptor.js';
-import { LOGGER, READINESS, type ReadinessCheck } from './http/tokens.js';
+import { LOGGER, MAX_BODY_BYTES, READINESS, type ReadinessCheck } from './http/tokens.js';
 
 /** The default request body cap (1 MiB), bounding the large-payload DoS vector. */
 export const DEFAULT_MAX_BODY_BYTES = 1 << 20;
@@ -40,6 +41,8 @@ export interface KeelCoreOptions {
   authenticator: Authenticator;
   /** Readiness check backing /readyz (e.g. a DB ping). */
   readiness: ReadinessCheck;
+  /** Request body cap in bytes (content-type-agnostic); defaults to DEFAULT_MAX_BODY_BYTES. */
+  maxBodyBytes?: number;
 }
 
 /** Async options so a service can build KeelCoreOptions from its own injected providers. */
@@ -85,6 +88,11 @@ export class KeelCoreModule implements NestModule {
         useFactory: (opts: KeelCoreOptions) => opts.corsAllowOrigins,
         inject: [KEEL_OPTIONS],
       },
+      {
+        provide: MAX_BODY_BYTES,
+        useFactory: (opts: KeelCoreOptions) => opts.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES,
+        inject: [KEEL_OPTIONS],
+      },
       { provide: APP_GUARD, useClass: AuthGuard },
       { provide: APP_FILTER, useClass: ProblemExceptionFilter },
       { provide: APP_INTERCEPTOR, useClass: TracingInterceptor },
@@ -100,8 +108,11 @@ export class KeelCoreModule implements NestModule {
   }
 
   // Apply the edge middleware to every route, outer-to-inner: security headers (outermost)
-  // decorate every response, then request-id, then deny-by-default CORS.
+  // decorate every response, then request-id, then deny-by-default CORS, then the body-size cap
+  // (a 413 here still carries the headers set above and is rendered as RFC 9457 by the filter).
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(SecurityHeadersMiddleware, RequestIdMiddleware, CorsMiddleware).forRoutes('*');
+    consumer
+      .apply(SecurityHeadersMiddleware, RequestIdMiddleware, CorsMiddleware, BodyLimitMiddleware)
+      .forRoutes('*');
   }
 }

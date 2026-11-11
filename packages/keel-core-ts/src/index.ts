@@ -45,10 +45,12 @@ export {
 } from './auth/index.js';
 
 export {
+  BodyLimitMiddleware,
   CORS_ALLOW_ORIGINS,
   CorsMiddleware,
   HealthController,
   LOGGER,
+  MAX_BODY_BYTES,
   ProblemExceptionFilter,
   READINESS,
   type ReadinessCheck,
