@@ -14,8 +14,8 @@ export default defineConfig({
       include: ['src/**/*.ts'],
       exclude: ['src/**/*.spec.ts', 'src/**/index.ts'],
       // A floor so coverage cannot silently regress (the Python vertical enforces one too).
-      // Set near the current level; raise toward Python's 85% as coverage grows.
-      thresholds: { statements: 70, branches: 55, functions: 75, lines: 70 },
+      // Ratcheted up toward Python's 85% as coverage grows; set just under the current level.
+      thresholds: { statements: 74, branches: 61, functions: 82, lines: 74 },
     },
   },
 });
