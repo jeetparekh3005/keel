@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "reference-service.fullname" . }}
+  labels:
+    {{- include "reference-service.labels" . | nindent 4 }}
+data:
+  KEEL_ENVIRONMENT: {{ .Values.config.environment | quote }}
+  KEEL_LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+  KEEL_VERSION: {{ .Chart.AppVersion | quote }}
+  # The binary binds this port; containerPort, probes, and the Service all derive from
+  # service.port, so rendering it here keeps the listen port and the probe port in sync.
+  KEEL_PORT: {{ .Values.service.port | quote }}
+  # OIDC issuer/JWKS are mandatory: the service fails deny-by-default startup
+  # without them, so fail the install loudly rather than crashloop in-cluster.
+  KEEL_OIDC_ISSUER: {{ required "config.oidcIssuer is required" .Values.config.oidcIssuer | quote }}
+  # Audience is mandatory for the Java vertical (fail-fast): without it a same-issuer token
+  # minted for another resource server would be accepted.
+  KEEL_OIDC_AUDIENCE: {{ required "config.oidcAudience is required" .Values.config.oidcAudience | quote }}
+  KEEL_OIDC_JWKS_URI: {{ required "config.oidcJwksUri is required" .Values.config.oidcJwksUri | quote }}
+  # Size the heap to the cgroup memory limit (Java is container-aware); the default 25% is too
+  # small for the Spring context and risks an OOMKill under the 512Mi limit.
+  JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=75.0"
+  KEEL_OTLP_ENDPOINT: {{ .Values.config.otlpEndpoint | quote }}
+  # Exact CORS origins as a YAML list; Spring binds the comma-separated value to a List,
+  # so render the list joined by commas (deny-by-default when empty).
+  KEEL_CORS_ALLOW_ORIGINS: {{ join "," .Values.config.corsAllowOrigins | quote }}

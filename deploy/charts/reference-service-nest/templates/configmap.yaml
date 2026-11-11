@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "reference-service.fullname" . }}
+  labels:
+    {{- include "reference-service.labels" . | nindent 4 }}
+data:
+  KEEL_ENVIRONMENT: {{ .Values.config.environment | quote }}
+  KEEL_LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+  KEEL_VERSION: {{ .Chart.AppVersion | quote }}
+  # The binary binds this port; containerPort, probes, and the Service all derive from
+  # service.port, so rendering it here keeps the listen port and the probe port in sync.
+  KEEL_PORT: {{ .Values.service.port | quote }}
+  # OIDC issuer/JWKS are mandatory: the service fails deny-by-default startup
+  # without them, so fail the install loudly rather than crashloop in-cluster.
+  KEEL_OIDC_ISSUER: {{ required "config.oidcIssuer is required" .Values.config.oidcIssuer | quote }}
+  KEEL_OIDC_AUDIENCE: {{ .Values.config.oidcAudience | quote }}
+  KEEL_OIDC_JWKS_URI: {{ required "config.oidcJwksUri is required" .Values.config.oidcJwksUri | quote }}
+  KEEL_OTLP_ENDPOINT: {{ .Values.config.otlpEndpoint | quote }}
+  # Exact CORS origins as a YAML list; the service reads a comma-separated value (@keel/core
+  # csvList), so render the list joined by commas (deny-by-default when empty).
+  KEEL_CORS_ALLOW_ORIGINS: {{ join "," .Values.config.corsAllowOrigins | quote }}

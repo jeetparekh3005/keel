@@ -1,0 +1,13 @@
+{{- if and .Values.podDisruptionBudget.enabled (gt (int .Values.replicaCount) 1) }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "reference-service.fullname" . }}
+  labels:
+    {{- include "reference-service.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "reference-service.selectorLabels" . | nindent 6 }}
+{{- end }}

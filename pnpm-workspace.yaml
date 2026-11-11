@@ -1,2 +1,4 @@
 packages:
   - "apps/*"
+  - "packages/keel-core-ts"
+  - "services/reference-service-nest"

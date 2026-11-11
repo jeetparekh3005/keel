@@ -1,0 +1,81 @@
+name: Go
+
+# Format, vet, lint, test, and vuln-scan the Go vertical. govulncheck is the
+# dependency-CVE gate (the Go-native equivalent of pip-audit / cargo-audit).
+
+on:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - "packages/keel-core-go/**"
+      - "services/reference-service-go/**"
+      - "go.work"
+      - "go.work.sum"
+      - ".github/workflows/go.yml"
+  push:
+    branches: [dev, main]
+    paths:
+      - "packages/keel-core-go/**"
+      - "services/reference-service-go/**"
+      - "go.work"
+      - "go.work.sum"
+      - ".github/workflows/go.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: go-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go (fmt, vet, staticcheck, test, vuln)
+    runs-on: ubuntu-latest
+    # Postgres for the persistence/reference integration tests (gated on the URL below).
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: keel
+          POSTGRES_PASSWORD: keel
+          POSTGRES_DB: reference
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U keel"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      KEEL_TEST_DATABASE_URL: postgres://keel:keel@localhost:5432/reference
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache-dependency-path: "**/go.sum"
+      - name: Format check
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "gofmt needs to run on:"; echo "$unformatted"; exit 1
+          fi
+      - name: Vet, lint, test, and vuln-scan each module
+        # The repo is a go.work with nested modules, so run the per-module gate inside
+        # each module directory. govulncheck is blocking: it fails the build on any known
+        # vulnerability the code actually reaches.
+        run: |
+          set -e
+          for mod in $(find packages services -name go.mod 2>/dev/null | xargs -n1 dirname | sort -u); do
+            echo "::group::$mod"
+            ( cd "$mod"
+              go vet ./...
+              go run honnef.co/go/tools/cmd/staticcheck@latest ./...
+              go test ./...
+              go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+            )
+            echo "::endgroup::"
+          done

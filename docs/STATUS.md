@@ -78,6 +78,72 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   span-export path** (log-sink redaction does not cover span-field export), HTTP request
   **metrics** instrumentation, a live **Keycloak** JWKS integration test, and the
   messaging/gRPC/`api_key`/`mTLS` surfaces (tracked follow-ups on v0.4).
+- **Go vertical (v0.4)**: a third language vertical, same hexagonal boundaries, stdlib-first
+  (ADR-0018). Shared library `packages/keel-core-go` (a Cargo-workspace-equivalent `go.work`
+  module) + thin `services/reference-service-go` (net/http + go-chi/chi). Implements the full
+  contract: typed `KEEL_`-prefixed config (fail-fast); RFC 9457 errors with server-fault
+  detail scrubbing; structured JSON logging on `log/slog` with secret redaction and **per-line
+  trace correlation**; OpenTelemetry traces; edge hardening (security headers outermost, body
+  limit, request-id, deny-by-default CORS) and health probes with a real readiness check;
+  **OIDC/JWT auth via go-oidc, whose RemoteKeySet refreshes the JWKS natively** (and accepts
+  the Entra `scp`-as-string form); pgx persistence with a unit-of-work; the `Clock`/`SecretProvider`
+  ports and a reusable **conformance suite** the reference service runs against its composed app
+  (items CRUD verified against real Postgres). Shipped like the others: a hardened Chainguard
+  image (Trivy reads the Go binary's embedded module list directly; signed + SLSA-attested on
+  release) and a Helm chart with the same PSS-restricted posture. CI lane (`go.yml`): gofmt,
+  go vet, staticcheck, go test (with a Postgres service), and **govulncheck as a blocking
+  dependency-CVE gate**. Several Rust follow-ups are built in from the start here (native JWKS
+  refresh, `scp`-string, log-trace correlation, ReDoS-immune scrubbers, honest `t.Skip`
+  integration gating). Not yet: HTTP request metrics and a live Keycloak JWKS test.
+- **TypeScript/NestJS vertical (v0.4)**: a fourth language vertical, same hexagonal
+  boundaries, deliberately batteries-included (NestJS + DI) as the contrast to the stdlib-first
+  Go/Rust services (ADR-0019). Shared library `packages/keel-core-ts` (`@keel/core`) + thin
+  `services/reference-service-nest` in the repo-root pnpm workspace. Implements the full
+  contract: typed `KEEL_`-prefixed config via **zod** (fail-fast), which also validates request
+  DTOs (one typed validator, not class-validator); RFC 9457 errors with server-fault detail
+  scrubbing; structured JSON logging on **pino** with family-based secret redaction + value
+  scrubbing (JWT/AWS/bearer/PEM/Luhn, written ReDoS-safe) and **per-line trace correlation**;
+  OpenTelemetry traces (OTel JS); edge hardening as NestJS middleware (security headers
+  outermost, body limit -> 413, request-id, deny-by-default CORS) and health probes with a real
+  readiness check; **OIDC/JWT auth via jose, whose createRemoteJWKSet refreshes the JWKS
+  natively** (and accepts the Entra `scp`-as-string form); a **structurally deny-by-default**
+  global guard (every route needs auth + its scope unless explicitly `@Public`); pg persistence
+  with a unit-of-work; the `Clock`/`SecretProvider` ports and a reusable **conformance suite**
+  the reference service runs against its composed app (items CRUD verified against real
+  Postgres). Shipped like the others: a hardened Chainguard image (Trivy scans the shipped
+  `node_modules`; signed + SLSA-attested on release) and a Helm chart with the same
+  PSS-restricted posture. CI lane (`nest.yml`): prettier, typescript-eslint (type-checked),
+  `tsc`, vitest (with a Postgres service), and **`pnpm audit` as a blocking dependency-CVE
+  gate**. TypeScript is pinned to the latest 5.x the toolchain supports (not the 7.x native-port
+  compiler, which typescript-eslint and NestJS do not yet support). Not yet: HTTP request
+  metrics, a live Keycloak JWKS test, and JSON-formatting NestJS's own bootstrap log lines (the
+  app/error path already logs through the redacting pino logger).
+- **Java/Spring Boot vertical (v0.4)**: a fifth language vertical, same hexagonal boundaries,
+  the dominant enterprise JVM framework (ADR-0020), where several contract requirements are
+  framework-native. Shared library `packages/keel-core-java` (`keel-core`) + thin
+  `services/reference-service-java` in a Maven reactor; keel-core ships as a Spring Boot
+  **auto-configuration** so the service is wired by just depending on it. Implements the full
+  contract: typed, fail-fast `@ConfigurationProperties` bound from the same `KEEL_*` env (an
+  EnvironmentPostProcessor bridges them to Spring's own property names); RFC 9457 via Spring's
+  `ProblemDetail` with server-fault detail scrubbing; **structured JSON logging** with
+  family-based secret redaction + value scrubbing (JWT/AWS/bearer/PEM/Luhn, ReDoS-safe) applied
+  through Spring Boot's structured-logging value processor, and **per-line trace correlation**
+  (Micrometer Tracing populates `traceId`/`spanId`); OpenTelemetry/OTLP tracing; edge hardening
+  as servlet filters (security headers outermost, body limit -> 413, request-id, deny-by-default
+  CORS) and health probes with a real readiness check; **OIDC/JWT auth via Spring Security
+  resource server**, whose `NimbusJwtDecoder` refreshes the JWKS natively (and a custom
+  converter accepts the Entra `scp`-as-string form), **structurally deny-by-default**
+  (`anyRequest().authenticated()`) with per-route `@PreAuthorize` scopes; `JdbcClient`
+  persistence (thin SQL, not an ORM) with a `SELECT 1` readiness; the `Clock`/`SecretProvider`
+  ports and a reusable **conformance suite** (driven over the JDK HttpClient) the reference
+  service runs against its composed app (items CRUD verified against real Postgres). Shipped
+  like the others: a hardened Chainguard JRE image (Trivy scans the fat jar's bundled deps;
+  signed + SLSA-attested on release) and a Helm chart with the same PSS-restricted posture. CI
+  lane (`java.yml`): **Spotless (google-java-format)**, JUnit + the Spring Boot conformance test
+  (with a Postgres service), an **ArchUnit** hexagonal-layering test, JaCoCo, and **Trivy as the
+  blocking dependency-CVE gate**. Java is pinned to **25 LTS** (not the non-LTS 27). Not yet:
+  HTTP request metrics beyond Micrometer's defaults, a live Keycloak JWKS test, and a hard
+  JaCoCo coverage floor (needs cross-module report-aggregation).
 
 ## Planned - described in the contract/ADRs but NOT yet implemented
 

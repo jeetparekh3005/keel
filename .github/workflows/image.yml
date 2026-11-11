@@ -14,6 +14,8 @@ on:
       - "pyproject.toml"
       - "uv.lock"
       - "Cargo.toml"
+      - "go.work"
+      - "go.work.sum"
       - "Cargo.lock"
       - "**/Dockerfile"
       - ".github/workflows/image.yml"
@@ -52,6 +54,12 @@ jobs:
             dockerfile: services/reference-service/Dockerfile
           - name: reference-service-rust
             dockerfile: services/reference-service-rust/Dockerfile
+          - name: reference-service-go
+            dockerfile: services/reference-service-go/Dockerfile
+          - name: reference-service-nest
+            dockerfile: services/reference-service-nest/Dockerfile
+          - name: reference-service-java
+            dockerfile: services/reference-service-java/Dockerfile
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -95,6 +103,12 @@ jobs:
             dockerfile: services/reference-service/Dockerfile
           - name: reference-service-rust
             dockerfile: services/reference-service-rust/Dockerfile
+          - name: reference-service-go
+            dockerfile: services/reference-service-go/Dockerfile
+          - name: reference-service-nest
+            dockerfile: services/reference-service-nest/Dockerfile
+          - name: reference-service-java
+            dockerfile: services/reference-service-java/Dockerfile
     env:
       IMAGE: ghcr.io/${{ github.repository }}/${{ matrix.name }}
     steps:

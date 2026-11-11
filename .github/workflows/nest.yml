@@ -1,0 +1,78 @@
+name: TypeScript backend
+
+# Format, lint, type-check, test, and vuln-scan the TypeScript/NestJS vertical. pnpm audit
+# is the dependency-CVE gate (the Node-native equivalent of pip-audit / cargo-audit /
+# govulncheck). The frontend app has its own lane (frontend.yml); this one is scoped to
+# keel-core-ts + reference-service-nest.
+
+on:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - "packages/keel-core-ts/**"
+      - "services/reference-service-nest/**"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/nest.yml"
+  push:
+    branches: [dev, main]
+    paths:
+      - "packages/keel-core-ts/**"
+      - "services/reference-service-nest/**"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/nest.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nest-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  nest:
+    name: Node (lint, typecheck, test, vuln)
+    runs-on: ubuntu-latest
+    # Postgres for the reference-service CRUD integration test (gated on the URL below).
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: keel
+          POSTGRES_PASSWORD: keel
+          POSTGRES_DB: reference
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U keel"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      KEEL_TEST_DATABASE_URL: postgres://keel:keel@localhost:5432/reference
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Audit dependencies (CVE gate)
+        run: pnpm audit --audit-level high
+      # The service resolves @keel/core from its built dist, so build the library first.
+      - name: Build the shared library
+        run: pnpm --filter @keel/core run build
+      - name: Lint
+        run: pnpm --filter @keel/core --filter reference-service-nest run lint
+      - name: Type-check
+        run: pnpm --filter @keel/core --filter reference-service-nest run typecheck
+      - name: Format check
+        run: pnpm --filter @keel/core --filter reference-service-nest run format:check
+      - name: Test (with Postgres)
+        run: pnpm --filter @keel/core --filter reference-service-nest run test
+      - name: Build the service
+        run: pnpm --filter reference-service-nest run build
