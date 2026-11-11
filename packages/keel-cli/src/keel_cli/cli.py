@@ -75,16 +75,19 @@ def new(
     type=click.Path(exists=True, file_okay=False, path_type=Path),
     default=".",
 )
-def update(service_dir: Path) -> None:  # pragma: no cover - thin copier passthrough
+@click.option("--defaults", is_flag=True, help="Accept template defaults for any new questions.")
+def update(service_dir: Path, *, defaults: bool) -> None:
     """Re-apply the template at its newest version into SERVICE_DIR (``copier update``).
 
-    Exercised end to end by the round-trip CI (issue #372): ``copier update`` needs a
-    git-tagged template and a committed ``.copier-answers.yml`` to diff against, which a unit
-    test cannot cheaply stand up. The body is a direct passthrough to ``copier.run_update``.
+    ``copier update`` needs SERVICE_DIR to be a clean git repo with a committed
+    ``.copier-answers.yml``; it 3-way-merges template changes forward while preserving local
+    edits (git is the safety net, so template changes are applied with ``overwrite``). Stored
+    answers are reused; ``--defaults`` accepts template defaults for any questions the newer
+    template adds, for non-interactive use.
     """
     from copier import run_update
 
-    run_update(str(service_dir), defaults=False, unsafe=True)
+    run_update(str(service_dir), defaults=defaults, overwrite=True, unsafe=True)
     click.echo(f"updated {service_dir}")
     _echo_check(service_dir, soft=True)
 
