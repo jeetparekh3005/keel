@@ -105,6 +105,18 @@ LANGUAGES: tuple[LanguageSpec, ...] = (
         authz=("require_scopes", "webauth::Authed"),
         authz_detail="routes guarded by Authed::require_scopes",
     ),
+    LanguageSpec(
+        name="java",
+        manifest="pom.xml",
+        dep_module="keel-core",
+        source_suffix=".java",
+        app_factory=("@SpringBootApplication",),
+        app_factory_detail="Spring Boot on keel-core auto-config (health + RFC 9457 + hardening)",
+        typed_config=("io.keel.core.config", "KeelProperties"),
+        typed_config_detail="typed config via keel-core KeelProperties (KEEL_ env, fail-fast)",
+        authz=("@PreAuthorize",),
+        authz_detail="routes guarded by @PreAuthorize scopes",
+    ),
 )
 
 
