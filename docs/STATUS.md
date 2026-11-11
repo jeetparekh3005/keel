@@ -160,7 +160,14 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   update` round-trip** is proven in CI: a test stands up a git-tagged copy of the template, generates
   a service, makes a local edit, advances the template, and asserts `keel update` propagates the
   template change (rendered with the service's answers) while preserving the local edit (ADR-0021
-  Tier-2 propagation). Not yet: Tier-3 reusable CI workflows + base Helm chart (issue #32).
+  Tier-2 propagation). **Tier-3 propagation** (issue #32) is in place: a Helm **library chart**
+  (`deploy/charts/keel-service-base`) holds the shared hardened manifests and the per-service charts
+  depend on it, so a hardening change propagates by a dependency bump (verified: `helm template`
+  output is byte-identical before/after). Reusable **`workflow_call` CI workflows**
+  (`.github/workflows/service-<lang>.yml`) encapsulate each language's gate and generated services
+  ship a `ci.yml` that references them by tag; in-tree the verticals are still covered by the central
+  per-language workflows, so the reusable lanes are the mechanism for the polyrepo future (ADR-0011,
+  which also needs the keel-core packages published per language).
 
 ## Planned - described in the contract/ADRs but NOT yet implemented
 
