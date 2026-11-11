@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/brand/keel-wordmark.svg" alt="keel" width="560">
+</p>
+
 # keel
 
 > The keel every project is built on - a polyglot golden-path bootstrapper with auth, data, logging, observability, security, and CI baked in.
@@ -58,3 +62,8 @@ The full deterministic gate set (ADR-0010) runs in CI on every PR.
 ## License
 
 [Apache-2.0](LICENSE) © 2026 Jeet Parekh
+
+The keel name and the logo and brand assets in [`assets/brand/`](assets/brand/) are not
+covered by the Apache-2.0 license. They are copyright Jeet Parekh, all rights reserved,
+and may not be used to represent a derived or unaffiliated project. See
+[`assets/brand/README.md`](assets/brand/README.md).

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- (c) 2026 Jeet Parekh / keel - All rights reserved -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+<rect width="256" height="256" fill="#0C2E52"/>
+<g stroke="#5E92C0" stroke-width="1.4" opacity="0.22">
+  <line x1="72" y1="72" x2="72" y2="184"/><line x1="104" y1="72" x2="104" y2="184"/>
+  <line x1="136" y1="72" x2="136" y2="184"/><line x1="168" y1="72" x2="168" y2="184"/>
+  <line x1="48" y1="116" x2="208" y2="116"/><line x1="48" y1="168" x2="208" y2="168"/></g>
+<path d="M 52 150 C 92 153 134 153 166 150 C 184 148 198 130 202 102" fill="none" stroke="#EAF2FB" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/>
+<g stroke="#F2A541" fill="none"><circle cx="118" cy="152" r="8" stroke-width="2.4"/>
+  <line x1="104" y1="152" x2="132" y2="152" stroke-width="2"/><line x1="118" y1="138" x2="118" y2="166" stroke-width="2"/></g>
+</svg>
