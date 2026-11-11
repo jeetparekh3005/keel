@@ -133,5 +133,45 @@ def test_unknown_contract_version_fails(tmp_path: Path) -> None:
     assert not _result(check_service(svc, bad), "contract").ok
 
 
+def test_markers_only_in_comments_or_docstrings_do_not_count(tmp_path: Path) -> None:
+    # The wiring markers appear ONLY in a docstring (and keel-core only in a pyproject comment);
+    # comment/docstring stripping + manifest parsing must reject this, not greenlight it.
+    (tmp_path / "src" / "svc").mkdir(parents=True)
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "x"\n# keel-core would be nice but is not used here\n'
+        'dependencies = ["fastapi"]\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "src" / "svc" / "app.py").write_text(
+        '"""Does NOT use: from keel_core.adapters.inbound.http import create_app, '
+        'BaseServiceConfig, or require_scopes - these names are only in this docstring."""\n'
+        "from fastapi import FastAPI\n",
+        encoding="utf-8",
+    )
+    (tmp_path / ".copier-answers.yml").write_text("_src_path: x\n", encoding="utf-8")
+    report = check_service(tmp_path, CONTRACT)
+    assert not report.ok
+    assert not _result(report, "keel-core-dependency").ok
+    assert not _result(report, "app-factory").ok
+    assert not _result(report, "typed-config").ok
+    assert not _result(report, "deny-by-default-authz").ok
+
+
+def test_ts_getscopes_identifier_does_not_satisfy_authz(tmp_path: Path) -> None:
+    # A NestJS service with a getScopes() helper but NO @Scopes decorator must fail authz: the
+    # dropped "Scopes(" marker used to match getScopes(/hasScopes( and greenlight an unguarded app.
+    (tmp_path / "src").mkdir()
+    (tmp_path / "package.json").write_text(
+        '{"name":"x","dependencies":{"@keel/core":"workspace:*"}}', encoding="utf-8"
+    )
+    (tmp_path / "src" / "app.ts").write_text(
+        "import { KeelCoreModule, loadConfig } from '@keel/core';\n"
+        "function scopesFor(u: User) { return getScopes(u); }\n",
+        encoding="utf-8",
+    )
+    report = check_service(tmp_path, CONTRACT)
+    assert not _result(report, "deny-by-default-authz").ok
+
+
 def _result(report, check_id):  # type: ignore[no-untyped-def]
     return next(r for r in report.results if r.check_id == check_id)
