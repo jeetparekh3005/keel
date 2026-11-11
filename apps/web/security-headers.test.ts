@@ -57,4 +57,18 @@ describe("CSP proxy", () => {
     expect(csp).toContain("default-src 'self'");
     expect(csp).toContain("frame-ancestors 'none'");
   });
+
+  it("propagates the nonce on the REQUEST headers so Next stamps it on inline scripts", () => {
+    // The load-bearing half: NextResponse.next({ request: { headers } }) is what makes Next read
+    // the nonce and apply it to its inline hydration scripts. Without it, the response CSP would
+    // still look right but strict-dynamic would block hydration. Next encodes the overridden
+    // request headers onto the response as x-middleware-request-*, so assert the SAME nonce and
+    // CSP reached the request - a regression that drops the request propagation now turns this red.
+    const res = proxy(new NextRequest("https://example.test/"));
+    const responseCsp = res.headers.get("content-security-policy") ?? "";
+    const nonce = responseCsp.match(/'nonce-([^']+)'/)?.[1];
+    expect(nonce).toBeTruthy();
+    expect(res.headers.get("x-middleware-request-x-nonce")).toBe(nonce);
+    expect(res.headers.get("x-middleware-request-content-security-policy")).toBe(responseCsp);
+  });
 });
