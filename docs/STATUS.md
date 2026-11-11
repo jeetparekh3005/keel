@@ -145,19 +145,22 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   HTTP request metrics beyond Micrometer's defaults, a live Keycloak JWKS test, and a hard
   JaCoCo coverage floor (needs cross-module report-aggregation).
 
-- **Service generator (v0.5, Python; ADR-0021).** A **Copier** template at
-  `templates/service-python` scaffolds a new thin FastAPI service (the reference service with its
-  name/aggregate/scopes turned into questions); custom `<< >>` Jinja delimiters avoid colliding
-  with Python braces. It is **dogfooded**: CI (`generator.yml`) regenerates the reference service
-  from the template and asserts the output is **byte-identical** to the committed tree, then builds
-  and tests it, so template and reference cannot drift. The **`keel` CLI** (`packages/keel-cli`)
-  wraps `copier copy`/`copier update` (`keel new` / `keel update`) and adds a static `platform.yaml`
-  conformance check (`keel check`: depends on keel-core, uses its app factory + typed config, routes
-  carry `require_scopes`). The **`keel update` round-trip** is proven in CI: a test stands up a
-  git-tagged copy of the template, generates a service, makes a local edit, advances the template,
-  and asserts `keel update` propagates the template change (rendered with the service's answers)
-  while preserving the local edit (ADR-0021 Tier-2 propagation). Not yet: the Go/Rust/TS/Java
-  templates, and Tier-3 reusable CI workflows + base Helm chart (issue #32).
+- **Service generator (v0.5, all five verticals; ADR-0021).** A **Copier** template per language
+  (`templates/service-<lang>` for python, go, rust, java, ts) scaffolds a new thin service (the
+  reference service with its name/aggregate/scopes turned into questions). Custom Jinja delimiters
+  avoid colliding with each language's syntax: `<< >>` for Python/Go, and `@< >@` for Rust/Java/TS
+  (whose angle generics `Foo<Item>` would make `<< >>` mis-lex, and whose manifests use `[[bin]]` /
+  `<tags>` / `${}`). Each is **dogfooded**: CI (`generator.yml`) regenerates every reference service
+  from its template and asserts the output is **byte-identical** to the committed tree, so template
+  and reference cannot drift (each language's own workflow builds + tests the identical reference).
+  The **`keel` CLI** (`packages/keel-cli`) wraps `copier copy`/`copier update` (`keel new --language
+  <lang>` / `keel update`) and adds a static, **language-aware** `platform.yaml` conformance check
+  (`keel check`: detects the language by build manifest, then checks the keel-core dependency, the
+  app factory, typed config, and deny-by-default authz with per-language markers). The **`keel
+  update` round-trip** is proven in CI: a test stands up a git-tagged copy of the template, generates
+  a service, makes a local edit, advances the template, and asserts `keel update` propagates the
+  template change (rendered with the service's answers) while preserving the local edit (ADR-0021
+  Tier-2 propagation). Not yet: Tier-3 reusable CI workflows + base Helm chart (issue #32).
 
 ## Planned - described in the contract/ADRs but NOT yet implemented
 
