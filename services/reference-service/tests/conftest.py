@@ -7,13 +7,13 @@ from keel_core.adapters.outbound.persistence import Database
 from keel_core.ports.auth import Principal
 from keel_core.testkit.fakes import StubAuthenticator
 from reference_service.composition import build_app
-from reference_service.config import ReferenceConfig
+from reference_service.config import ServiceConfig
 
 
 @pytest.fixture
 async def client():
     database = Database("sqlite+aiosqlite://", poolclass=StaticPool)
-    config = ReferenceConfig(database_url="sqlite+aiosqlite://")
+    config = ServiceConfig(database_url="sqlite+aiosqlite://")
     app = build_app(
         config,
         authenticator=StubAuthenticator(

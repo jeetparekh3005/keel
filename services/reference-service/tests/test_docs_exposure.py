@@ -9,14 +9,14 @@ from keel_core.adapters.outbound.persistence import Database
 from keel_core.ports.auth import Principal
 from keel_core.testkit.fakes import StubAuthenticator
 from reference_service.composition import build_app
-from reference_service.config import ReferenceConfig
+from reference_service.config import ServiceConfig
 
 DOC_PATHS = ("/openapi.json", "/docs", "/redoc")
 
 
 async def _client(environment: str) -> tuple[httpx.AsyncClient, Database]:
     database = Database("sqlite+aiosqlite://", poolclass=StaticPool)
-    config = ReferenceConfig(database_url="sqlite+aiosqlite://", environment=environment)
+    config = ServiceConfig(database_url="sqlite+aiosqlite://", environment=environment)
     app = build_app(
         config,
         authenticator=StubAuthenticator(
@@ -54,7 +54,7 @@ async def test_docs_hidden_in_production(path: str) -> None:
 async def test_docs_hidden_by_default_when_environment_unset(path: str) -> None:
     # Secure by default: with no KEEL_ENVIRONMENT, docs must be hidden (fail closed).
     database = Database("sqlite+aiosqlite://", poolclass=StaticPool)
-    config = ReferenceConfig(database_url="sqlite+aiosqlite://")  # environment unset
+    config = ServiceConfig(database_url="sqlite+aiosqlite://")  # environment unset
     assert config.environment == "production"
     app = build_app(
         config,

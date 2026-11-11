@@ -11,7 +11,7 @@ from keel_core.adapters.outbound.persistence import Database
 from reference_service.adapters.inbound.http import router as items_router
 from reference_service.adapters.outbound.persistence import SqlItemRepository
 from reference_service.application.item_service import ItemService
-from reference_service.config import ReferenceConfig
+from reference_service.config import ServiceConfig
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from keel_core.ports.logging import Logger
 
 
-def _make_database(config: ReferenceConfig) -> Database:
+def _make_database(config: ServiceConfig) -> Database:
     # Pool tuning applies to server databases; sqlite uses its own pooling.
     engine_kwargs: dict[str, object] = {"pool_pre_ping": True}
     if not config.database_url.startswith("sqlite"):
@@ -40,7 +40,7 @@ def _make_database(config: ReferenceConfig) -> Database:
 
 
 def build_app(
-    config: ReferenceConfig,
+    config: ServiceConfig,
     *,
     authenticator: Authenticator,
     database: Database | None = None,
