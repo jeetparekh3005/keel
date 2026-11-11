@@ -70,20 +70,26 @@ public class SecurityConfig {
   @Bean
   @ConditionalOnMissingBean(JwtDecoder.class)
   public JwtDecoder jwtDecoder(KeelProperties properties) {
-    if (properties.oidcJwksUri().isEmpty()) {
-      throw new IllegalStateException("KEEL_OIDC_JWKS_URI is required to verify tokens");
-    }
+    // Fail fast on the auth config that must be present: without an audience a same-issuer
+    // token minted for another resource server would be accepted (cross-audience reuse), so
+    // require it like the JWKS URI and issuer rather than silently skipping aud binding.
+    requireConfigured("KEEL_OIDC_JWKS_URI", properties.oidcJwksUri());
+    requireConfigured("KEEL_OIDC_ISSUER", properties.oidcIssuer());
+    requireConfigured("KEEL_OIDC_AUDIENCE", properties.oidcAudience());
+
     NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(properties.oidcJwksUri()).build();
     List<OAuth2TokenValidator<Jwt>> validators = new ArrayList<>();
     validators.add(new JwtTimestampValidator());
-    if (!properties.oidcIssuer().isEmpty()) {
-      validators.add(new JwtIssuerValidator(properties.oidcIssuer()));
-    }
-    if (!properties.oidcAudience().isEmpty()) {
-      validators.add(audienceValidator(properties.oidcAudience()));
-    }
+    validators.add(new JwtIssuerValidator(properties.oidcIssuer()));
+    validators.add(audienceValidator(properties.oidcAudience()));
     decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(validators));
     return decoder;
+  }
+
+  private static void requireConfigured(String envVar, String value) {
+    if (value == null || value.isEmpty()) {
+      throw new IllegalStateException(envVar + " is required to verify tokens");
+    }
   }
 
   private static JwtAuthenticationConverter authConverter() {

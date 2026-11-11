@@ -14,8 +14,13 @@ data:
   # OIDC issuer/JWKS are mandatory: the service fails deny-by-default startup
   # without them, so fail the install loudly rather than crashloop in-cluster.
   KEEL_OIDC_ISSUER: {{ required "config.oidcIssuer is required" .Values.config.oidcIssuer | quote }}
-  KEEL_OIDC_AUDIENCE: {{ .Values.config.oidcAudience | quote }}
+  # Audience is mandatory for the Java vertical (fail-fast): without it a same-issuer token
+  # minted for another resource server would be accepted.
+  KEEL_OIDC_AUDIENCE: {{ required "config.oidcAudience is required" .Values.config.oidcAudience | quote }}
   KEEL_OIDC_JWKS_URI: {{ required "config.oidcJwksUri is required" .Values.config.oidcJwksUri | quote }}
+  # Size the heap to the cgroup memory limit (Java is container-aware); the default 25% is too
+  # small for the Spring context and risks an OOMKill under the 512Mi limit.
+  JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=75.0"
   KEEL_OTLP_ENDPOINT: {{ .Values.config.otlpEndpoint | quote }}
   # Exact CORS origins as a YAML list; Spring binds the comma-separated value to a List,
   # so render the list joined by commas (deny-by-default when empty).

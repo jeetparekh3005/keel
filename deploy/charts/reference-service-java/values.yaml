@@ -25,13 +25,15 @@ database:
   existingSecret: "" # name of a Secret containing the key below
   secretKey: KEEL_DATABASE_URL
 
+# A JVM needs more headroom than the stdlib/Node services: the Spring context (Security,
+# JWKS, Tomcat, HikariCP, JDBC) plus metaspace does not fit the 256Mi the other charts use.
 resources:
   requests:
-    cpu: 50m
-    memory: 128Mi
+    cpu: 100m
+    memory: 256Mi
   limits:
     cpu: "1"
-    memory: 256Mi
+    memory: 512Mi
 
 networkPolicy:
   enabled: true

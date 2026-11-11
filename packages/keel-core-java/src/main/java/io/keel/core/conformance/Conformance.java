@@ -61,6 +61,46 @@ public final class Conformance {
         "CORS must be deny-by-default");
   }
 
+  /**
+   * An over-limit request body is rejected with a 413 that STILL carries the security headers (the
+   * error path must not bypass them). {@code oversizedBody} must exceed the app's configured body
+   * limit.
+   */
+  public void assertSecurityHeadersOn413(String method, String path, String oversizedBody) {
+    HttpResponse<String> res =
+        sendRequest(
+            HttpRequest.newBuilder(URI.create(baseUri + path))
+                .header("Content-Type", "application/json")
+                .method(method, BodyPublishers.ofString(oversizedBody))
+                .build());
+    expect(
+        res.statusCode() == 413,
+        method + " " + path + " over-limit = " + res.statusCode() + ", want 413");
+    for (String header :
+        new String[] {
+          "content-security-policy",
+          "x-content-type-options",
+          "x-frame-options",
+          "referrer-policy",
+          "permissions-policy"
+        }) {
+      expect(
+          res.headers().firstValue(header).isPresent(),
+          "413 response missing security header " + header);
+    }
+  }
+
+  /**
+   * /readyz reports 503 when the readiness check fails. The server must be composed with a failing
+   * readiness check. Catches an always-ready stub passing conformance unnoticed.
+   */
+  public void assertReadyzReportsNotReady() {
+    HttpResponse<String> res = send("GET", "/readyz", null, null);
+    expect(
+        res.statusCode() == 503,
+        "/readyz with a failing dependency = " + res.statusCode() + ", want 503");
+  }
+
   /** A protected route rejects an unauthenticated caller with 401. */
   public void assertDeniesAnonymous(String method, String path) {
     HttpResponse<String> res = send(method, path, null, null);
