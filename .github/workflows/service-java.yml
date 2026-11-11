@@ -38,3 +38,16 @@ jobs:
           cache: maven
       - name: Spotless + verify (tests, ArchUnit, JaCoCo)
         run: mvn -B verify
+      - name: Dependency CVEs (Trivy filesystem scan, blocking)
+        # The in-tree java.yml catches Java CVEs with Trivy on the built image; for a standalone
+        # repo (no image build here) a filesystem scan of the pom dependencies is the equivalent.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_DB_REPOSITORY: "mirror.gcr.io/aquasec/trivy-db,ghcr.io/aquasecurity/trivy-db"
+          TRIVY_JAVA_DB_REPOSITORY: "mirror.gcr.io/aquasec/trivy-java-db,ghcr.io/aquasecurity/trivy-java-db"
+        with:
+          scan-type: fs
+          scan-ref: ${{ inputs.working-directory }}
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          exit-code: "1"
