@@ -1,0 +1,66 @@
+# Copier template for a keel Java service (ADR-0021, ADR-0009 Tier 2).
+# `keel new service --language java` (copier copy) renders this into a thin Spring Boot service
+# that depends on keel-core (Java); `keel update` (copier update) propagates template changes. The
+# template is the reference service with its service-specific identifiers parameterized; CI
+# regenerates the reference service from it and asserts byte-identical output (the dogfood test).
+
+_subdirectory: template
+_answers_file: .copier-answers.yml
+_templates_suffix: ""
+
+# Delimiters @< >@ / @% %@ / @# #@. Java angle generics (List<Item>) put a `<` immediately before
+# the aggregate, so << >> mis-lexes as <<<; pom.xml is all <tags> and application.yml uses ${...}.
+# The `@` prefix never abuts Java type syntax, XML tags, or ${} placeholders (and never forms an
+# annotation, which is @Name), so @< >@ is collision-free (verified absent from the source).
+_envops:
+  variable_start_string: "@<"
+  variable_end_string: ">@"
+  block_start_string: "@%"
+  block_end_string: "%@"
+  comment_start_string: "@#"
+  comment_end_string: "#@"
+
+service_slug:
+  type: str
+  help: "Service slug (kebab-case): directory, KEEL_SERVICE_NAME default, image"
+  default: "orders-service"
+
+service_name:
+  type: str
+  help: "Maven artifactId / service name (kebab-case)"
+  default: "@< service_slug >@"
+
+service_pkg:
+  type: str
+  help: "Java package segment under io.keel (lowercase, e.g. orders)"
+  default: "@< service_name.split('-')[0] >@"
+
+service_pascal:
+  type: str
+  help: "PascalCase service name for the application class (e.g. Orders)"
+  default: "@< service_pkg | capitalize >@"
+
+aggregate:
+  type: str
+  help: "Primary aggregate, singular (e.g. order)"
+  default: "item"
+
+aggregate_pascal:
+  type: str
+  default: "@< aggregate.split('_') | map('capitalize') | join >@"
+  when: false
+
+aggregate_plural:
+  type: str
+  help: "Plural of the aggregate (routes, table, package, scope prefix)"
+  default: "@< aggregate >@s"
+
+aggregate_pascal_plural:
+  type: str
+  default: "@< aggregate_plural.split('_') | map('capitalize') | join >@"
+  when: false
+
+scope_prefix:
+  type: str
+  help: "OAuth scope prefix (e.g. orders -> orders:read / orders:write)"
+  default: "@< aggregate_plural >@"

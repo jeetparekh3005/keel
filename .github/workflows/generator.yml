@@ -18,6 +18,7 @@ on:
       - "services/reference-service/**"
       - "services/reference-service-go/**"
       - "services/reference-service-rust/**"
+      - "services/reference-service-java/**"
       - ".github/workflows/generator.yml"
   push:
     branches: [dev, main]
@@ -27,6 +28,7 @@ on:
       - "services/reference-service/**"
       - "services/reference-service-go/**"
       - "services/reference-service-rust/**"
+      - "services/reference-service-java/**"
       - ".github/workflows/generator.yml"
 
 permissions:
@@ -141,6 +143,35 @@ jobs:
           if ! git diff --exit-code -- services/reference-service-rust; then
             echo "::error::services/reference-service-rust drifted from templates/service-rust."
             echo "A change to the Rust reference service must be mirrored in the template (or vice"
+            echo "versa). Re-run the template generation locally and commit the delta. See ADR-0021."
+            exit 1
+          fi
+
+  dogfood-reference-java:
+    name: Dogfood (Java reference service regenerates byte-identically from the template)
+    runs-on: ubuntu-latest
+    # Byte-identical regeneration is the anti-drift guarantee; the JDK/Maven toolchain is not needed
+    # here because java.yml builds + tests the (byte-identical) committed reference. Only Copier + git.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Regenerate the Java reference service from the template (overwrite in place)
+        run: |
+          uvx copier copy --defaults --overwrite --trust \
+            --data service_slug=reference-service-java \
+            --data service_name=reference-service \
+            --data service_pkg=reference \
+            --data service_pascal=Reference \
+            --data aggregate=item \
+            templates/service-java services/reference-service-java
+          rm -f services/reference-service-java/.copier-answers.yml
+      - name: Assert byte-identical to the committed Java reference (no drift)
+        run: |
+          if ! git diff --exit-code -- services/reference-service-java; then
+            echo "::error::services/reference-service-java drifted from templates/service-java."
+            echo "A change to the Java reference service must be mirrored in the template (or vice"
             echo "versa). Re-run the template generation locally and commit the delta. See ADR-0021."
             exit 1
           fi
