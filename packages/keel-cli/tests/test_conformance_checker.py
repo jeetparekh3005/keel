@@ -46,6 +46,16 @@ def test_java_reference_service_passes_every_hard_check() -> None:
     assert _result(report, "deny-by-default-authz").ok
 
 
+def test_ts_reference_service_passes_every_hard_check() -> None:
+    report = check_service(REPO / "services" / "reference-service-nest", CONTRACT)
+    hard_failures = [r for r in report.results if not r.ok and not r.advisory]
+    assert not hard_failures, f"TS reference should be conformant, failed: {hard_failures}"
+    assert report.ok
+    assert _result(report, "keel-core-dependency").ok
+    assert _result(report, "app-factory").ok
+    assert _result(report, "deny-by-default-authz").ok
+
+
 def test_reference_service_passes_every_hard_check() -> None:
     report = check_service(REFERENCE, CONTRACT)
     hard_failures = [r for r in report.results if not r.ok and not r.advisory]

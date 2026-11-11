@@ -14,7 +14,7 @@ import click
 from keel_cli import _repo
 from keel_cli.conformance import check_service
 
-SUPPORTED_LANGUAGES = ("python", "go", "rust", "java")
+SUPPORTED_LANGUAGES = ("python", "go", "rust", "java", "ts")
 
 
 @click.group()

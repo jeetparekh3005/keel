@@ -1,7 +1,7 @@
 import { Global, Inject, Module, type OnApplicationShutdown } from '@nestjs/common';
 import { Database, DATABASE } from '@keel/core';
 
-import { loadReferenceConfig, REFERENCE_CONFIG, type ReferenceConfig } from './config.js';
+import { loadServiceConfig, SERVICE_CONFIG, type ServiceConfig } from './config.js';
 
 /**
  * Service infrastructure: the loaded config and the Postgres connection pool, provided
@@ -11,14 +11,14 @@ import { loadReferenceConfig, REFERENCE_CONFIG, type ReferenceConfig } from './c
 @Global()
 @Module({
   providers: [
-    { provide: REFERENCE_CONFIG, useFactory: () => loadReferenceConfig() },
+    { provide: SERVICE_CONFIG, useFactory: () => loadServiceConfig() },
     {
       provide: DATABASE,
-      useFactory: (config: ReferenceConfig) => Database.connect(config.DATABASE_URL),
-      inject: [REFERENCE_CONFIG],
+      useFactory: (config: ServiceConfig) => Database.connect(config.DATABASE_URL),
+      inject: [SERVICE_CONFIG],
     },
   ],
-  exports: [REFERENCE_CONFIG, DATABASE],
+  exports: [SERVICE_CONFIG, DATABASE],
 })
 export class InfraModule implements OnApplicationShutdown {
   constructor(@Inject(DATABASE) private readonly db: Database) {}

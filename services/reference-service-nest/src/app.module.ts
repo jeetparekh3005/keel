@@ -3,7 +3,7 @@ import { Database, DATABASE, KeelCoreModule, OidcAuthenticator } from '@keel/cor
 
 import { InfraModule } from './infra.module.js';
 import { ItemsModule } from './items/items.module.js';
-import { REFERENCE_CONFIG, type ReferenceConfig } from './config.js';
+import { SERVICE_CONFIG, type ServiceConfig } from './config.js';
 
 /**
  * The composition root: the core platform module (wired with the real OIDC authenticator and
@@ -16,8 +16,8 @@ import { REFERENCE_CONFIG, type ReferenceConfig } from './config.js';
     InfraModule,
     KeelCoreModule.forRootAsync({
       imports: [InfraModule],
-      inject: [REFERENCE_CONFIG, DATABASE],
-      useFactory: (config: ReferenceConfig, db: Database) => ({
+      inject: [SERVICE_CONFIG, DATABASE],
+      useFactory: (config: ServiceConfig, db: Database) => ({
         logLevel: config.LOG_LEVEL,
         corsAllowOrigins: config.CORS_ALLOW_ORIGINS,
         authenticator: new OidcAuthenticator(

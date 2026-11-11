@@ -19,6 +19,7 @@ on:
       - "services/reference-service-go/**"
       - "services/reference-service-rust/**"
       - "services/reference-service-java/**"
+      - "services/reference-service-nest/**"
       - ".github/workflows/generator.yml"
   push:
     branches: [dev, main]
@@ -29,6 +30,7 @@ on:
       - "services/reference-service-go/**"
       - "services/reference-service-rust/**"
       - "services/reference-service-java/**"
+      - "services/reference-service-nest/**"
       - ".github/workflows/generator.yml"
 
 permissions:
@@ -173,5 +175,31 @@ jobs:
             echo "::error::services/reference-service-java drifted from templates/service-java."
             echo "A change to the Java reference service must be mirrored in the template (or vice"
             echo "versa). Re-run the template generation locally and commit the delta. See ADR-0021."
+            exit 1
+          fi
+
+  dogfood-reference-ts:
+    name: Dogfood (TypeScript reference service regenerates byte-identically from the template)
+    runs-on: ubuntu-latest
+    # Byte-identical regeneration is the anti-drift guarantee; the Node toolchain is not needed here
+    # because nest.yml builds + tests the (byte-identical) committed reference. Only Copier + git.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Regenerate the TypeScript reference service from the template (overwrite in place)
+        run: |
+          uvx copier copy --defaults --overwrite --trust \
+            --data service_slug=reference-service-nest \
+            --data aggregate=item \
+            templates/service-ts services/reference-service-nest
+          rm -f services/reference-service-nest/.copier-answers.yml
+      - name: Assert byte-identical to the committed TypeScript reference (no drift)
+        run: |
+          if ! git diff --exit-code -- services/reference-service-nest; then
+            echo "::error::services/reference-service-nest drifted from templates/service-ts."
+            echo "A change to the TypeScript reference service must be mirrored in the template (or"
+            echo "vice versa). Re-run the template generation locally and commit the delta. ADR-0021."
             exit 1
           fi

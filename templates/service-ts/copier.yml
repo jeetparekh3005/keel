@@ -1,0 +1,55 @@
+# Copier template for a keel TypeScript/NestJS service (ADR-0021, ADR-0009 Tier 2).
+# `keel new service --language ts` (copier copy) renders this into a thin NestJS service that
+# depends on @keel/core; `keel update` (copier update) propagates template changes. The template is
+# the reference service with its service-specific identifiers parameterized; CI regenerates the
+# reference service from it and asserts byte-identical output (the dogfood test).
+
+_subdirectory: template
+_answers_file: .copier-answers.yml
+_templates_suffix: ""
+
+# Delimiters @< >@ / @% %@ / @# #@. TypeScript angle generics (Array<Item>) put a `<` immediately
+# before the aggregate, so << >> mis-lexes as <<<. The `@` prefix never abuts TS type syntax,
+# template literals (${...}), or decorators (@Name), so @< >@ is collision-free (verified absent).
+_envops:
+  variable_start_string: "@<"
+  variable_end_string: ">@"
+  block_start_string: "@%"
+  block_end_string: "%@"
+  comment_start_string: "@#"
+  comment_end_string: "#@"
+
+service_slug:
+  type: str
+  help: "Service slug (kebab-case): directory, package name, SERVICE_NAME default, image"
+  default: "orders-service"
+
+aggregate:
+  type: str
+  help: "Primary aggregate, singular (e.g. order)"
+  default: "item"
+
+aggregate_pascal:
+  type: str
+  default: "@< aggregate.split('_') | map('capitalize') | join >@"
+  when: false
+
+aggregate_upper:
+  type: str
+  default: "@< aggregate | upper >@"
+  when: false
+
+aggregate_plural:
+  type: str
+  help: "Plural of the aggregate (routes, table, module/file names, scope prefix)"
+  default: "@< aggregate >@s"
+
+aggregate_pascal_plural:
+  type: str
+  default: "@< aggregate_plural.split('_') | map('capitalize') | join >@"
+  when: false
+
+scope_prefix:
+  type: str
+  help: "OAuth scope prefix (e.g. orders -> orders:read / orders:write)"
+  default: "@< aggregate_plural >@"
