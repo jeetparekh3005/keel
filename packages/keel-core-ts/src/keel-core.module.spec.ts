@@ -107,6 +107,40 @@ describe('KeelCoreModule wiring (conformance)', () => {
     expect(res.headers['x-content-type-options']).toBe('nosniff');
   });
 
+  it('caps an over-limit CHUNKED body with no Content-Length (streaming, not just header)', async () => {
+    // A Transfer-Encoding: chunked request carries no Content-Length, so the header fast-path
+    // cannot see it; the streaming counter must still abort it rather than buffer it. Sent raw
+    // against a listening instance (supertest always sets Content-Length, so it cannot drive this).
+    const { request: httpRequest } = await import('node:http');
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+    const { port } = server.address() as { port: number };
+    try {
+      const outcome = await new Promise<string>((resolve) => {
+        const req = httpRequest(
+          {
+            host: '127.0.0.1',
+            port,
+            method: 'POST',
+            path: '/v1/things',
+            headers: { Authorization: 'Bearer writer', 'Content-Type': 'text/plain' },
+          },
+          (res) => {
+            res.resume();
+            resolve(`status:${res.statusCode}`);
+          },
+        );
+        req.on('error', () => resolve('aborted'));
+        req.write('x'.repeat(4096)); // > the 32-byte cap; no Content-Length set => chunked
+        req.end();
+      });
+      // The over-limit chunked body must be rejected: a 413, or the connection is reset - never
+      // accepted (201/200). Before the streaming cap it reached the handler (a 400/201).
+      expect(outcome === 'aborted' || outcome === 'status:413').toBe(true);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
   it('drops server-fault detail from the problem body (logs it server-side)', async () => {
     const res = await request(server).get('/v1/boom').set('Authorization', 'Bearer reader');
     assertProblemResponse(res, 500);

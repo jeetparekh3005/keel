@@ -42,4 +42,22 @@ describe('createLogger redaction', () => {
     logger.info('Authorization: Bearer abcdef0123456789secrettoken');
     expect(String(cap.records()[0].message)).toContain('[REDACTED]');
   });
+
+  it('key-redacts secret-family fields inside an object interpolation arg (%o / %j)', () => {
+    // util.format serialises the object verbatim, so pattern-only scrubbing would miss a secret
+    // under a secret-family KEY. The interpolation path must apply the same key-based redaction
+    // as a merge field (a value whose key is password/token/apiKey -> [REDACTED]).
+    const cap = capture();
+    const logger = createLogger('info', cap.stream);
+    logger.info('ctx %o', { password: 'plaintextvalueone', ok: 1 });
+    logger.info('ctx %j', { apiKey: 'plaintextvaluetwo', nested: { token: 'plaintextvaluethree' } });
+    const out = cap
+      .records()
+      .map((r) => String(r.message))
+      .join('\n');
+    expect(out).not.toContain('plaintextvalueone');
+    expect(out).not.toContain('plaintextvaluetwo');
+    expect(out).not.toContain('plaintextvaluethree');
+    expect(out).toContain('[REDACTED]');
+  });
 });
