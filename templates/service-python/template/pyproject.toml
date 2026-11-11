@@ -1,0 +1,28 @@
+[project]
+name = "keel-<< service_slug >>"
+version = "0.1.0"
+description = "<< service_name >>: a thin FastAPI service built on keel-core (proves the contract)"
+requires-python = ">=3.12"
+dependencies = [
+    "keel-core",
+    "fastapi>=0.162.1",
+    "sqlalchemy[asyncio]>=2.1.6",
+    "pydantic>=2.14.3",
+    "uvicorn[standard]>=0.54.0",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.27",
+    "asyncpg>=0.29",  # Postgres driver loaded by SQLAlchemy via URL (not imported)
+]
+
+[tool.deptry.per_rule_ignores]
+# asyncpg is selected by the database URL at runtime, never imported in source.
+DEP002 = ["asyncpg"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/<< python_package >>"]
+
+[tool.uv.sources]
+keel-core = { workspace = true }

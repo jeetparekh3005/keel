@@ -1,0 +1,49 @@
+name: Generator
+
+# Guards the service templates: scaffold a service from the Python Copier template and prove it
+# builds against keel-core and passes its own conformance suite. This keeps the template from
+# rotting; the stronger lockstep check (regenerate the reference service itself and run its full
+# suite) is the dogfood test (issue #370).
+
+on:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - "templates/**"
+      - "packages/keel-core-py/**"
+      - ".github/workflows/generator.yml"
+  push:
+    branches: [dev, main]
+    paths:
+      - "templates/**"
+      - "packages/keel-core-py/**"
+      - ".github/workflows/generator.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: generator-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python-template:
+    name: Generator (new Python service builds + conforms)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Scaffold a sample service from the Python template
+        run: |
+          uvx copier copy --defaults --trust \
+            --data service_name="Sample Service" \
+            --data aggregate=widget \
+            templates/service-python services/sample-service
+      - name: Build the generated service against keel-core
+        run: uv sync --all-packages
+      - name: Run the generated service's conformance, CRUD, and authz tests
+        run: |
+          uv run --directory services/sample-service python -m pytest \
+            tests/test_conformance.py tests/test_widgets.py tests/test_authz.py -q

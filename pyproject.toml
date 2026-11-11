@@ -52,7 +52,9 @@ dev = [
 line-length = 100
 target-version = "py312"
 src = ["packages/keel-core-py/src", "services/reference-service/src"]
-extend-exclude = ["**/migrations/**"]
+# templates/ holds Copier templates (<< >> placeholders), not runnable source; the generator
+# lane (generator.yml) renders + lints a generated service instead.
+extend-exclude = ["**/migrations/**", "templates/**"]
 
 [tool.ruff.lint]
 select = [
