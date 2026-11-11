@@ -6,10 +6,15 @@ contract (deny-by-default auth, RFC 9457 errors, structured redacting logs, OTel
 hardening, OIDC/JWT, persistence, conformance suite). It is the reference service with its
 service-specific identifiers turned into questions (ADR-0021, ADR-0009 Tier 2).
 
-## Generate a service (`keel new service`)
+## Generate a service (`keel new`)
 
 ```sh
-# until the `keel` CLI lands (issue #371), invoke Copier directly:
+# with the keel CLI (packages/keel-cli):
+keel new orders-service --language python \
+  -d service_name="Orders Service" \
+  -d aggregate=order
+
+# or invoke Copier directly:
 uvx copier copy --trust \
   --data service_name="Orders Service" \
   --data aggregate=order \
@@ -36,7 +41,7 @@ The generated service commits a `.copier-answers.yml` recording the template ver
 To pull forward later template fixes without clobbering local edits:
 
 ```sh
-cd orders-service && uvx copier update --trust
+keel update orders-service        # or: cd orders-service && uvx copier update --trust
 ```
 
 ## Maintaining the template

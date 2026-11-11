@@ -145,6 +145,17 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   HTTP request metrics beyond Micrometer's defaults, a live Keycloak JWKS test, and a hard
   JaCoCo coverage floor (needs cross-module report-aggregation).
 
+- **Service generator (v0.5, Python; ADR-0021).** A **Copier** template at
+  `templates/service-python` scaffolds a new thin FastAPI service (the reference service with its
+  name/aggregate/scopes turned into questions); custom `<< >>` Jinja delimiters avoid colliding
+  with Python braces. It is **dogfooded**: CI (`generator.yml`) regenerates the reference service
+  from the template and asserts the output is **byte-identical** to the committed tree, then builds
+  and tests it, so template and reference cannot drift. The **`keel` CLI** (`packages/keel-cli`)
+  wraps `copier copy`/`copier update` (`keel new` / `keel update`) and adds a static `platform.yaml`
+  conformance check (`keel check`: depends on keel-core, uses its app factory + typed config, routes
+  carry `require_scopes`). Not yet: the Go/Rust/TS/Java templates, the `keel update` round-trip in CI
+  (issue #372), and Tier-3 reusable CI workflows + base Helm chart (issue #32).
+
 ## Planned - described in the contract/ADRs but NOT yet implemented
 
 | Area | Claimed in | Status |
