@@ -82,6 +82,41 @@ export async function assertCorsDenyByDefault(server: Server): Promise<void> {
   assert.ok(!res.headers['access-control-allow-origin'], 'CORS must be deny-by-default');
 }
 
+/**
+ * An over-limit request body is rejected with a 413 that STILL carries the security headers
+ * (the error path must not bypass them). `oversizedBody` must exceed the app's configured body
+ * limit. Catches the class where headers are only applied on the happy path.
+ */
+export async function assertSecurityHeadersOn413(
+  server: Server,
+  method: HttpMethod,
+  path: string,
+  oversizedBody: string,
+): Promise<void> {
+  const res = await open(server, method, path)
+    .set('Content-Type', 'application/json')
+    .send(oversizedBody);
+  assert.equal(res.status, 413, `${method} ${path} over-limit = ${res.status}, want 413`);
+  for (const header of [
+    'content-security-policy',
+    'x-content-type-options',
+    'x-frame-options',
+    'referrer-policy',
+    'permissions-policy',
+  ]) {
+    assert.ok(res.headers[header], `413 response missing security header ${header}`);
+  }
+}
+
+/**
+ * /readyz reports 503 when the readiness check fails. `server` must be an app composed with a
+ * failing readiness check. Catches an always-ready stub passing conformance unnoticed.
+ */
+export async function assertReadyzReportsNotReady(server: Server): Promise<void> {
+  const res = await open(server, 'GET', '/readyz');
+  assert.equal(res.status, 503, `/readyz with a failing dependency = ${res.status}, want 503`);
+}
+
 /** A protected route rejects an unauthenticated caller with 401. */
 export async function assertDeniesAnonymous(
   server: Server,

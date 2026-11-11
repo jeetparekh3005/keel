@@ -27,6 +27,8 @@ describe('value scrubbing', () => {
     expect(scrubText(`token=${jwt}`)).toBe(`token=${REDACTED}`);
     expect(scrubText('key AKIAIOSFODNN7EXAMPLE here')).toBe(`key ${REDACTED} here`);
     expect(scrubText('Authorization: Bearer abcdef0123456789')).toContain(REDACTED);
+    // Parity with Go (\s+): a bearer token separated by more than one space still redacts.
+    expect(scrubText('Authorization: Bearer  abcdef0123456789')).toContain(REDACTED);
     expect(scrubText('-----BEGIN RSA PRIVATE KEY-----')).toBe(REDACTED);
   });
 

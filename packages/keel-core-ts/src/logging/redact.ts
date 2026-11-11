@@ -33,7 +33,7 @@ export function isSecretKey(key: string): boolean {
 const SECRET_PATTERNS: RegExp[] = [
   /eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, // JWT
   /AKIA[0-9A-Z]{16}/g, // AWS access key id
-  /[Bb][Ee][Aa][Rr][Ee][Rr]\s[A-Za-z0-9._~+/-]{8,}=*/g, // bearer token
+  /[Bb][Ee][Aa][Rr][Ee][Rr]\s+[A-Za-z0-9._~+/-]{8,}=*/g, // bearer token (one-or-more spaces)
   /-----BEGIN [A-Z ]*PRIVATE KEY-----/g, // PEM private key
 ];
 

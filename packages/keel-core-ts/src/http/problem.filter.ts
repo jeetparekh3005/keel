@@ -16,6 +16,7 @@ import {
   titleFor,
   typeUriFor,
 } from '../domain/errors.js';
+import { applySecurityHeaders } from './security-headers.middleware.js';
 import { LOGGER, type Logger } from './tokens.js';
 
 const PROBLEM_CONTENT_TYPE = 'application/problem+json';
@@ -36,6 +37,9 @@ export class ProblemExceptionFilter implements ExceptionFilter {
     const res = http.getResponse<ServerResponse>();
     const problem = this.toProblem(exception, req.url);
 
+    // The body-limit 413 (and any body-parser error) reaches the filter via Express's error
+    // path, bypassing the edge middleware, so set the security headers here too.
+    applySecurityHeaders(res);
     res.statusCode = problem.status;
     res.setHeader('Content-Type', PROBLEM_CONTENT_TYPE);
     res.end(JSON.stringify(problem));

@@ -1,0 +1,15 @@
+# Keep the Docker build context small and reproducible: the service Dockerfiles COPY from the
+# repo root, so exclude build output, dependencies, and VCS/local cruft that the image rebuilds
+# from source anyway. (The Python vertical has its own service-dir .dockerignore; this covers
+# the repo-root-context builds used by the Go/Rust/TS/Java images.)
+.git
+**/node_modules
+**/dist
+**/target
+**/coverage
+**/.next
+**/.turbo
+**/*.log
+.venv
+__pycache__
+**/__pycache__
