@@ -12,6 +12,7 @@ import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -57,6 +58,34 @@ public class ProblemExceptionHandler extends ResponseEntityExceptionHandler {
     ProblemDetail problem =
         new DomainException(
                 ErrorCategory.VALIDATION, detail.isEmpty() ? "validation failed" : detail)
+            .toProblem(instanceOf(request));
+    return ResponseEntity.status(problem.getStatus())
+        .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+        .body(problem);
+  }
+
+  @Override
+  protected ResponseEntity<Object> handleHttpMessageNotReadable(
+      HttpMessageNotReadableException ex,
+      HttpHeaders headers,
+      HttpStatusCode status,
+      WebRequest request) {
+    // A body-limit overflow surfaces here (the chunked case aborts the stream mid-read);
+    // render it as 413 rather than the default 400 for an unreadable body.
+    if (ex.getMostSpecificCause() instanceof PayloadTooLargeException) {
+      ProblemDetail problem = ProblemDetail.forStatus(413);
+      problem.setType(URI.create("urn:keel:error:payload_too_large"));
+      problem.setTitle("Payload Too Large");
+      URI instance = instanceOf(request);
+      if (instance != null) {
+        problem.setInstance(instance);
+      }
+      return ResponseEntity.status(413)
+          .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+          .body(problem);
+    }
+    ProblemDetail problem =
+        new DomainException(ErrorCategory.VALIDATION, "invalid request body")
             .toProblem(instanceOf(request));
     return ResponseEntity.status(problem.getStatus())
         .contentType(MediaType.APPLICATION_PROBLEM_JSON)

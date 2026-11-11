@@ -37,7 +37,7 @@ public final class Redactor {
   private static final Pattern[] SECRET_PATTERNS = {
     Pattern.compile("eyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}"), // JWT
     Pattern.compile("AKIA[0-9A-Z]{16}"), // AWS access key id
-    Pattern.compile("[Bb][Ee][Aa][Rr][Ee][Rr]\\s[A-Za-z0-9._~+/-]{8,}=*"), // bearer token
+    Pattern.compile("[Bb][Ee][Aa][Rr][Ee][Rr]\\s+[A-Za-z0-9._~+/-]{8,}=*"), // bearer (1+ spaces)
     Pattern.compile("-----BEGIN [A-Z ]*PRIVATE KEY-----"), // PEM private key
   };
 

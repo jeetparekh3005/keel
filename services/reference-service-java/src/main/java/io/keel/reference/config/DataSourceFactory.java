@@ -26,9 +26,13 @@ public final class DataSourceFactory {
       if (uri.getPort() > 0) {
         jdbcUrl.append(':').append(uri.getPort());
       }
-      jdbcUrl.append((uri.getPath() == null || uri.getPath().isEmpty()) ? "/" : uri.getPath());
-      if (uri.getQuery() != null) {
-        jdbcUrl.append('?').append(uri.getQuery());
+      // Use the raw (still-encoded) path/query so a percent-encoded db name or connection
+      // param (e.g. options=-c%20search_path=foo) is preserved for JDBC rather than decoded to
+      // a literal space; the user-info is decoded below for the Hikari credential setters.
+      String rawPath = uri.getRawPath();
+      jdbcUrl.append((rawPath == null || rawPath.isEmpty()) ? "/" : rawPath);
+      if (uri.getRawQuery() != null) {
+        jdbcUrl.append('?').append(uri.getRawQuery());
       }
       config.setJdbcUrl(jdbcUrl.toString());
       if (uri.getUserInfo() != null) {

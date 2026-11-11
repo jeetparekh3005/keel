@@ -1,2 +1,2 @@
 org.springframework.boot.logging.structured.StructuredLoggingJsonMembersCustomizer=io.keel.core.logging.RedactingJsonCustomizer
-org.springframework.boot.env.EnvironmentPostProcessor=io.keel.core.KeelEnvironmentPostProcessor
+org.springframework.boot.EnvironmentPostProcessor=io.keel.core.KeelEnvironmentPostProcessor

@@ -29,6 +29,9 @@ class RedactorTest {
         "key " + Redactor.REDACTED + " here", Redactor.scrubText("key AKIAIOSFODNN7EXAMPLE here"));
     assertTrue(
         Redactor.scrubText("Authorization: Bearer abcdef0123456789").contains(Redactor.REDACTED));
+    // Parity with Go (\s+): a bearer token separated by more than one space still redacts.
+    assertTrue(
+        Redactor.scrubText("Authorization: Bearer  abcdef0123456789").contains(Redactor.REDACTED));
     assertEquals(Redactor.REDACTED, Redactor.scrubText("-----BEGIN RSA PRIVATE KEY-----"));
   }
 
