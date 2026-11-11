@@ -76,6 +76,12 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
       - name: Trivy scan (gate on HIGH/CRITICAL)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          # Fallback DB registries: the default mirror.gcr.io once 404'd mid-release on the Java DB
+          # (needed only to scan the Spring Boot fat jar). Trivy tries these in order, so a mirror
+          # hiccup falls back to the canonical GHCR source instead of failing the scan.
+          TRIVY_DB_REPOSITORY: "mirror.gcr.io/aquasec/trivy-db,ghcr.io/aquasecurity/trivy-db"
+          TRIVY_JAVA_DB_REPOSITORY: "mirror.gcr.io/aquasec/trivy-java-db,ghcr.io/aquasecurity/trivy-java-db"
         with:
           image-ref: keel-${{ matrix.name }}:scan
           severity: HIGH,CRITICAL
@@ -147,6 +153,11 @@ jobs:
         # attestation, so nothing vulnerable is ever published at the release tag. Does
         # NOT ignore-unfixed (the compensating control for the rolling base, ADR-0008).
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          # Fallback DB registries so a mirror.gcr.io hiccup on the Java DB cannot fail a release
+          # publish (it did once at v0.4.0); Trivy tries these in order.
+          TRIVY_DB_REPOSITORY: "mirror.gcr.io/aquasec/trivy-db,ghcr.io/aquasecurity/trivy-db"
+          TRIVY_JAVA_DB_REPOSITORY: "mirror.gcr.io/aquasec/trivy-java-db,ghcr.io/aquasecurity/trivy-java-db"
         with:
           image-ref: ${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
           severity: HIGH,CRITICAL
