@@ -1,9 +1,13 @@
 name: Generator
 
-# Guards the service templates: scaffold a service from the Python Copier template and prove it
-# builds against keel-core and passes its own conformance suite. This keeps the template from
-# rotting; the stronger lockstep check (regenerate the reference service itself and run its full
-# suite) is the dogfood test (issue #370).
+# Guards the service templates. Two checks:
+#   1. python-template  - scaffold a *new* service and prove it builds against keel-core and
+#      passes its own conformance suite (the template is not broken).
+#   2. dogfood-reference - regenerate the *actual* reference service from the template with the
+#      reference's own answers, assert the output is byte-identical to the committed reference,
+#      then build it and run its full suite (incl. Postgres integration). This is the lockstep
+#      guarantee (ADR-0021, issue #370): a change to services/reference-service that is not
+#      reflected in templates/service-python fails CI, so template and reference never drift.
 
 on:
   pull_request:
@@ -11,12 +15,14 @@ on:
     paths:
       - "templates/**"
       - "packages/keel-core-py/**"
+      - "services/reference-service/**"
       - ".github/workflows/generator.yml"
   push:
     branches: [dev, main]
     paths:
       - "templates/**"
       - "packages/keel-core-py/**"
+      - "services/reference-service/**"
       - ".github/workflows/generator.yml"
 
 permissions:
@@ -47,3 +53,36 @@ jobs:
         run: |
           uv run --directory services/sample-service python -m pytest \
             tests/test_conformance.py tests/test_widgets.py tests/test_authz.py -q
+
+  dogfood-reference:
+    name: Dogfood (reference service regenerates byte-identically from the template)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Regenerate the reference service from the template (overwrite in place)
+        # Feed the template the reference service's own answers. The committed reference has no
+        # .copier-answers.yml (it is the source, not a generated instance), so drop the one Copier
+        # writes before diffing.
+        run: |
+          uvx copier copy --defaults --overwrite --trust \
+            --data service_name="Reference service" \
+            --data aggregate=item \
+            templates/service-python services/reference-service
+          rm -f services/reference-service/.copier-answers.yml
+      - name: Assert byte-identical to the committed reference (no drift)
+        run: |
+          if ! git diff --exit-code -- services/reference-service; then
+            echo "::error::services/reference-service drifted from templates/service-python."
+            echo "A change to the reference service must be mirrored in the template (or vice"
+            echo "versa). Re-run the template generation locally and commit the delta. See ADR-0021."
+            exit 1
+          fi
+      - name: Build the regenerated service against keel-core
+        run: uv sync --all-packages
+      - name: Run the reference service's full suite
+        # The Postgres integration test skips without KEEL_TEST_DATABASE_URL; it runs against the
+        # (byte-identical) committed reference in the python workflow's integration job.
+        run: uv run --directory services/reference-service python -m pytest -q

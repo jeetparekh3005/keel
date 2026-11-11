@@ -11,7 +11,7 @@ reference_service/
   adapters/
     inbound/http/    # items router (driving)
     outbound/        # SqlItemRepository + ORM record (driven)
-  config.py      # ReferenceConfig (extends keel-core BaseServiceConfig)
+  config.py      # ServiceConfig (extends keel-core BaseServiceConfig)
   composition.py # wires adapters -> ports, builds the app
   main.py        # ASGI entrypoint (uvicorn reference_service.main:app)
 ```
