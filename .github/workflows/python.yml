@@ -41,7 +41,7 @@ jobs:
       - name: Ruff format
         run: uv run ruff format --check .
       - name: Types (mypy strict)
-        run: uv run mypy -p keel_core -p reference_service
+        run: uv run mypy -p keel_core -p keel_cli -p reference_service
       - name: Architecture (import-linter)
         run: uv run lint-imports
       - name: Spelling (codespell)
@@ -54,7 +54,7 @@ jobs:
             uv run --directory "$pkg" deptry src
           done
       - name: Tests (pytest + coverage floor)
-        run: uv run pytest --cov=keel_core --cov=reference_service
+        run: uv run pytest --cov=keel_core --cov=keel_cli --cov=reference_service
 
   integration:
     name: Integration (Postgres)
