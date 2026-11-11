@@ -93,6 +93,18 @@ LANGUAGES: tuple[LanguageSpec, ...] = (
         authz=("RequireScopes", "auth.Middleware"),
         authz_detail="routes guarded by auth.RequireScopes/auth.Middleware",
     ),
+    LanguageSpec(
+        name="rust",
+        manifest="Cargo.toml",
+        dep_module="keel-core-rust",
+        source_suffix=".rs",
+        app_factory=("create_app_with_readiness",),
+        app_factory_detail="keel_core create_app_with_readiness (health + RFC 9457 + hardening)",
+        typed_config=("keel_core::config::load",),
+        typed_config_detail="typed config via keel_core config::load (KEEL_ env prefix, fail-fast)",
+        authz=("require_scopes", "webauth::Authed"),
+        authz_detail="routes guarded by Authed::require_scopes",
+    ),
 )
 
 
