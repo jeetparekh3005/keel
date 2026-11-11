@@ -4,9 +4,9 @@ import { z } from 'zod';
 /**
  * The typed, KEEL_-prefixed service configuration (platform.yaml config: typed, fail-fast).
  * Secure by default: environment defaults to production. Mirrors the Go vertical's
- * ReferenceConfig.
+ * ServiceConfig.
  */
-export const referenceConfigSchema = z.object({
+export const serviceConfigSchema = z.object({
   SERVICE_NAME: z.string().default('reference-service-nest'),
   VERSION: z.string().default('0.0.0'),
   ENVIRONMENT: z.string().default('production'),
@@ -21,12 +21,12 @@ export const referenceConfigSchema = z.object({
   CORS_ALLOW_ORIGINS: csvList(),
 });
 
-export type ReferenceConfig = z.infer<typeof referenceConfigSchema>;
+export type ServiceConfig = z.infer<typeof serviceConfigSchema>;
 
 /** DI token for the loaded service configuration. */
-export const REFERENCE_CONFIG = Symbol('reference.Config');
+export const SERVICE_CONFIG = Symbol('service.Config');
 
-/** Load ReferenceConfig from the KEEL_-prefixed environment (fail-fast). */
-export function loadReferenceConfig(env?: NodeJS.ProcessEnv): ReferenceConfig {
-  return loadConfig(referenceConfigSchema, env);
+/** Load ServiceConfig from the KEEL_-prefixed environment (fail-fast). */
+export function loadServiceConfig(env?: NodeJS.ProcessEnv): ServiceConfig {
+  return loadConfig(serviceConfigSchema, env);
 }

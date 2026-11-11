@@ -117,6 +117,18 @@ LANGUAGES: tuple[LanguageSpec, ...] = (
         authz=("@PreAuthorize",),
         authz_detail="routes guarded by @PreAuthorize scopes",
     ),
+    LanguageSpec(
+        name="ts",
+        manifest="package.json",
+        dep_module="@keel/core",
+        source_suffix=".ts",
+        app_factory=("KeelCoreModule",),
+        app_factory_detail="NestJS KeelCoreModule (health + RFC 9457 + edge hardening)",
+        typed_config=("loadConfig", "loadServiceConfig"),
+        typed_config_detail="typed config via @keel/core loadConfig (KEEL_ env, fail-fast, zod)",
+        authz=("@Scopes", "Scopes("),
+        authz_detail="routes guarded by @Scopes",
+    ),
 )
 
 
