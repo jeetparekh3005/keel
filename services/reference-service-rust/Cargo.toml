@@ -21,7 +21,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal
 async-trait = "0.1"
 serde = { version = "1", features = ["derive"] }
 uuid = { version = "1", features = ["v4"] }
-sqlx = { version = "0.8", default-features = false, features = [
+sqlx = { version = "0.9", default-features = false, features = [
     "runtime-tokio",
     "any",
     "postgres",
