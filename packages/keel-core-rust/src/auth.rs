@@ -156,7 +156,7 @@ mod tests {
     use crate::domain::errors::ErrorCategory;
     use jsonwebtoken::{encode, Algorithm, DecodingKey, EncodingKey, Header};
     use rsa::pkcs8::{EncodePrivateKey, EncodePublicKey, LineEnding};
-    use rsa::RsaPrivateKey;
+    use rsa::PrivateKey;
     use std::sync::OnceLock;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -174,8 +174,8 @@ mod tests {
         static KEYS: OnceLock<TestKeys> = OnceLock::new();
         KEYS.get_or_init(|| {
             let generate = || {
-                let mut rng = rand::thread_rng();
-                RsaPrivateKey::new(&mut rng, 2048).expect("rsa keygen")
+                let mut rng = rand::rng();
+                PrivateKey::new(&mut rng, 2048).expect("rsa keygen")
             };
             let main = generate();
             let other = generate();
