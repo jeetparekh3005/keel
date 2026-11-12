@@ -155,12 +155,21 @@ _PY_TRIPLE = re.compile(r"('{3}|\"{3}).*?\1", re.DOTALL)
 
 
 def _strip_comments(text: str, style: str) -> str:
-    """Remove comments/docstrings so a marker only in a comment cannot satisfy a wiring check."""
+    """Remove comments/docstrings so a marker only in a comment cannot satisfy a wiring check.
+
+    Line comments are stripped BEFORE block/triple-quote comments. The block and triple-quote
+    regexes are DOTALL (they span newlines), so a stray ``/*`` or ``'''`` sitting inside a
+    single-line comment would otherwise match forward to the next delimiter many lines down and
+    delete the real marker code in between (a false "missing" verdict). Removing line comments
+    first strips those stray delimiters, bounding the damage. This is a heuristic, not a lexer:
+    a ``//`` or ``#`` inside a string literal is still treated as a comment, so a marker sharing
+    a line with such a literal can be lost - acceptable because markers recur across the source.
+    """
     if style == "python":
-        text = _PY_TRIPLE.sub(" ", text)
-        return _PY_LINE.sub("", text)
-    text = _C_BLOCK.sub(" ", text)
-    return _C_LINE.sub("", text)
+        text = _PY_LINE.sub("", text)
+        return _PY_TRIPLE.sub(" ", text)
+    text = _C_LINE.sub("", text)
+    return _C_BLOCK.sub(" ", text)
 
 
 def _read_source(service_dir: Path, spec: LanguageSpec) -> str:
@@ -184,8 +193,18 @@ def _declares_dependency(manifest: Path, module: str) -> bool:
     name = manifest.name
     try:
         if name == "pyproject.toml":
-            deps = tomllib.loads(text).get("project", {}).get("dependencies", [])
-            return any(_dep_base(dep) == module for dep in deps)
+            data = tomllib.loads(text)
+            project = data.get("project", {})
+            # PEP 621 core + optional-dependency groups (each group is a list of requirements).
+            reqs = list(project.get("dependencies", []))
+            for group in project.get("optional-dependencies", {}).values():
+                reqs.extend(group)
+            if any(_dep_base(dep) == module for dep in reqs):
+                return True
+            # Poetry fallback: [tool.poetry.dependencies] is a table keyed by the package name.
+            poetry = data.get("tool", {}).get("poetry", {})
+            poetry_tables = ("dependencies", "dev-dependencies")
+            return any(module in poetry.get(table, {}) for table in poetry_tables)
         if name == "Cargo.toml":
             data = tomllib.loads(text)
             tables = ("dependencies", "dev-dependencies", "build-dependencies")

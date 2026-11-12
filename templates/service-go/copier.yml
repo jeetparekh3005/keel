@@ -12,11 +12,12 @@ _templates_suffix: ""
 
 # Re-run gofmt on the rendered output. The template sources are formatted for the reference
 # aggregate (item), so a different aggregate name shifts gofmt's struct-tag/column alignment and
-# the generated service would fail its own `gofmt -l` CI gate. Soft-fail when the Go toolchain is
-# absent (the byte-identical dogfood runs without Go; the committed reference is already
-# gofmt-clean, so there is nothing to reformat there).
+# the generated service would fail its own `gofmt -l` CI gate. When the Go toolchain is absent we
+# do NOT fail generation (the byte-identical dogfood runs without Go, and the committed reference
+# is already gofmt-clean), but we WARN loudly so a user who generated with a non-item aggregate
+# knows the output is unformatted and will trip the gofmt gate until they run `gofmt -w .`.
 _tasks:
-  - "gofmt -w . 2>/dev/null || true"
+  - "command -v gofmt >/dev/null 2>&1 && gofmt -w . || echo 'keel: gofmt not found on PATH - generated Go sources were NOT reformatted; run `gofmt -w .` before committing or the gofmt CI gate will fail.' >&2"
 
 # Custom Jinja delimiters so Go's own braces never collide with templating. Variables are << >>,
 # blocks <% %>, comments <# #>.

@@ -40,6 +40,21 @@ function correlationMixin(): Record<string, string> {
 const TRACE_ID_SHAPE = /^[0-9a-f]{32}$/;
 const SPAN_ID_SHAPE = /^[0-9a-f]{16}$/;
 
+// Only plain objects and arrays are safe to rebuild via redactValue (which reads enumerable
+// own-properties). An Error/Date/Map/Set/RegExp/class instance keeps its data in internal slots
+// or non-enumerable fields, so redactValue would flatten it to `{}` - destroying the message and
+// stack of `logger.error('... %o', err)`. Those are handed to util.format untouched instead.
+function isRedactableContainer(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return true;
+  }
+  if (value === null || typeof value !== 'object') {
+    return false;
+  }
+  const proto = Object.getPrototypeOf(value) as unknown;
+  return proto === Object.prototype || proto === null;
+}
+
 function preserveIfId(value: unknown, shape: RegExp): unknown {
   if (value === undefined) {
     return undefined;
@@ -97,13 +112,15 @@ export function createLogger(level: string, destination?: DestinationStream): Lo
           const msgIdx = typeof args[0] === 'object' && args[0] !== null ? 1 : 0;
           const msg = args[msgIdx];
           if (typeof msg === 'string' && args.length > msgIdx + 1) {
-            // Redact each interpolation arg BEFORE formatting: an object arg (`%o`/`%j`) is
-            // key-redacted (a `password`/`token` field -> [REDACTED]) just like a merge field,
-            // then the formatted string is pattern-scrubbed. Without this, util.format would
-            // serialise `{ password: 'x' }` verbatim and scrubText (patterns only) would miss it.
+            // Key-redact a plain-object/array interpolation arg (`%o`/`%j`) BEFORE formatting, so a
+            // `password`/`token` field becomes [REDACTED] just like a merge field; without it
+            // util.format would serialise `{ password: 'x' }` verbatim and scrubText (patterns
+            // only) would miss it. Error/Date/Map/etc. pass through untouched (redactValue would
+            // flatten them to `{}`, losing an error's message + stack); the formatted string is
+            // still pattern-scrubbed, so a secret inside an Error message is caught by scrubText.
             const redactedArgs = args
               .slice(msgIdx + 1)
-              .map((arg) => (arg !== null && typeof arg === 'object' ? redactValue(arg) : arg));
+              .map((arg) => (isRedactableContainer(arg) ? redactValue(arg) : arg));
             const message = scrubText(format(msg, ...redactedArgs));
             const next = msgIdx === 1 ? [args[0], message] : [message];
             method.apply(this, next as Parameters<typeof method>);
