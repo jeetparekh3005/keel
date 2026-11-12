@@ -133,7 +133,8 @@ export function createLogger(level: string, destination?: DestinationStream): Lo
             const redactedArgs = args
               .slice(msgIdx + 1)
               .map((arg) =>
-                arg !== null && (typeof arg === 'object' || typeof arg === 'function')
+                arg !== null &&
+                (typeof arg === 'object' || typeof arg === 'function' || typeof arg === 'bigint')
                   ? redactValue(arg)
                   : arg,
               );
@@ -152,7 +153,7 @@ export function createLogger(level: string, destination?: DestinationStream): Lo
             if (typeof arg === 'string') {
               return scrubText(arg);
             }
-            if (arg instanceof Error || typeof arg === 'function') {
+            if (arg instanceof Error || typeof arg === 'function' || typeof arg === 'bigint') {
               return redactValue(arg);
             }
             // A merge object (the first positional): redact before pino's mixin-merge reads it.
