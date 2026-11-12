@@ -44,9 +44,10 @@ describe('createLogger redaction', () => {
   });
 
   it('preserves an Error interpolation arg (%o) - message and stack survive redaction', () => {
-    // Regression: redactValue rebuilds objects from enumerable props, which is empty for an Error
-    // (message/stack are non-enumerable), so redacting an Error arg flattened it to {} and lost the
-    // diagnostics of the ubiquitous logger.error('... %o', err). Error/Date/Map must pass through.
+    // Regression: a naive Object.entries rebuild is empty for an Error (message/stack are
+    // non-enumerable), which flattened an Error arg to {} and lost the diagnostics of the
+    // ubiquitous logger.error('... %o', err). The Error branch now rebuilds a scrubbed Error that
+    // keeps message/stack, so these survive.
     const cap = capture();
     const logger = createLogger('info', cap.stream);
     logger.error('operation failed %o', new Error('db connection refused'));
@@ -102,6 +103,53 @@ describe('createLogger redaction', () => {
     expect(message).toContain('request failed');
     expect(message).not.toContain('plaintexterrorkey');
     expect(message).toContain('[REDACTED]');
+  });
+
+  it('scrubs a pattern secret in an ERROR logged as a MERGE field (no final scrubText on that path)', () => {
+    // Regression: the merge-object path `logger.x({ err }, msg)` runs only redactValue, never a
+    // final scrubText, so a bearer/JWT/AWS/PEM secret in the error message or stack must be
+    // scrubbed inside redactValue's Error branch or it leaks in cleartext on the idiomatic pino
+    // error-logging call. (A bearer token stands in for the pattern family; a literal JWT here
+    // would trip the repo's own secret scanner.)
+    const cap = capture();
+    const logger = createLogger('info', cap.stream);
+    const token = 'abcdef0123456789secrettoken';
+    logger.error({ err: new Error(`auth failed with Bearer ${token}`) }, 'request failed');
+    const line = cap
+      .records()
+      .map((r) => JSON.stringify(r))
+      .join('\n');
+    expect(line).not.toContain(token);
+    expect(line).toContain('[REDACTED]');
+    expect(line).toContain('auth failed with'); // non-secret diagnostic preserved
+  });
+
+  it('redacts a secret-family field on an error logged as a merge field, keeping the message', () => {
+    const cap = capture();
+    const logger = createLogger('info', cap.stream);
+    const err = Object.assign(new Error('db write failed'), { apiKey: 'plaintextmergekey' });
+    logger.error({ err }, 'op failed');
+    const line = cap
+      .records()
+      .map((r) => JSON.stringify(r))
+      .join('\n');
+    expect(line).toContain('db write failed');
+    expect(line).not.toContain('plaintextmergekey');
+    expect(line).toContain('[REDACTED]');
+  });
+
+  it('does not crash when an interpolation arg has an own-enumerable getter that throws', () => {
+    const cap = capture();
+    const logger = createLogger('info', cap.stream);
+    const hostile: Record<string, unknown> = {};
+    Object.defineProperty(hostile, 'detail', {
+      enumerable: true,
+      get() {
+        throw new Error('boom');
+      },
+    });
+    expect(() => logger.info('ctx %o', hostile)).not.toThrow();
+    expect(String(cap.records()[0].message)).toContain('[unreadable]');
   });
 
   it('key-redacts secret-family fields inside an object interpolation arg (%o / %j)', () => {
