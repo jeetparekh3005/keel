@@ -21,6 +21,7 @@ import { BodyLimitMiddleware } from './http/body-limit.middleware.js';
 import { CorsMiddleware, CORS_ALLOW_ORIGINS } from './http/cors.middleware.js';
 import { HealthController } from './http/health.controller.js';
 import { ProblemExceptionFilter } from './http/problem.filter.js';
+import { MetricsInterceptor } from './http/metrics.interceptor.js';
 import { RequestIdMiddleware } from './http/request-id.middleware.js';
 import { SecurityHeadersMiddleware } from './http/security-headers.middleware.js';
 import { TracingInterceptor } from './http/tracing.interceptor.js';
@@ -96,6 +97,7 @@ export class KeelCoreModule implements NestModule {
       { provide: APP_GUARD, useClass: AuthGuard },
       { provide: APP_FILTER, useClass: ProblemExceptionFilter },
       { provide: APP_INTERCEPTOR, useClass: TracingInterceptor },
+      { provide: APP_INTERCEPTOR, useClass: MetricsInterceptor },
     ];
 
     return {
