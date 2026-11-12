@@ -187,7 +187,7 @@ describe('createLogger redaction', () => {
   it('does not crash when a Proxy with a throwing ownKeys trap is logged (merge and interp)', () => {
     const cap = capture();
     const logger = createLogger('info', cap.stream);
-    const hostile = (): unknown =>
+    const hostile = (): object =>
       new Proxy(
         { password: 'plaintextproxysecret' },
         {
