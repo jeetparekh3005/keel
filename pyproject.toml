@@ -154,7 +154,7 @@ exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError", "^\\s*\\.\\.\\
 
 [tool.codespell]
 skip = "*.lock,./.git,./.venv"
-ignore-words-list = "dependant,afterall"  # FastAPI route.dependant + vitest afterAll, not typos
+ignore-words-list = "dependant,afterall,atmost"  # FastAPI route.dependant + vitest afterAll + Awaitility atMost, not typos
 
 # First-party workspace modules (extend as packages/services are added).
 [tool.deptry]

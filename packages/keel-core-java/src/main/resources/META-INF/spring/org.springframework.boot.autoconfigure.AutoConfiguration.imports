@@ -1,2 +1,3 @@
 io.keel.core.KeelCoreAutoConfiguration
 io.keel.core.telemetry.HttpServerMetricsAutoConfiguration
+io.keel.core.telemetry.DbPoolMetricsAutoConfiguration

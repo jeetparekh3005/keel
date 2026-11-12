@@ -18,6 +18,9 @@ public final class DataSourceFactory {
 
   public static DataSource from(String url) {
     HikariConfig config = new HikariConfig();
+    // A stable pool name so the exported db.client.connection.pool.name attribute is deterministic
+    // (not Hikari's auto-generated "HikariPool-N") and matches the cross-vertical default (#419).
+    config.setPoolName("default");
     if (url.startsWith("jdbc:")) {
       config.setJdbcUrl(url);
     } else {
