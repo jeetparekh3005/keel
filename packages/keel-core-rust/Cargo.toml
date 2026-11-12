@@ -21,8 +21,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
 tracing-opentelemetry = "0.34"
 opentelemetry = "0.33"
-opentelemetry_sdk = { version = "0.33", features = ["rt-tokio"] }
-opentelemetry-otlp = { version = "0.33", features = ["grpc-tonic", "trace"] }
+opentelemetry_sdk = { version = "0.33", features = ["rt-tokio", "metrics"] }
+opentelemetry-otlp = { version = "0.33", features = ["grpc-tonic", "trace", "metrics"] }
 uuid = { version = "1", features = ["v4"] }
 axum = "0.8"
 tower = { version = "0.5", features = ["util"] }
@@ -44,6 +44,8 @@ figment = { version = "0.10", features = ["env", "toml", "test"] }
 tokio = { version = "1", features = ["macros", "rt"] }
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
+# InMemoryMetricExporter (gated behind the `testing` feature) backs the HTTP metrics test.
+opentelemetry_sdk = { version = "0.33", features = ["rt-tokio", "metrics", "testing"] }
 # Ephemeral RSA keypairs for the OIDC tests; no key material is committed.
 rsa = "0.10"
 rand = "0.10"
