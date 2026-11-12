@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.1](https://github.com/jeetparekh3005/keel/compare/v0.5.0...v0.5.1) (2026-11-12)
+
+
+### Bug Fixes
+
+* remediate independent-review findings (logger, body-limit, conformance, CI lane) ([#403](https://github.com/jeetparekh3005/keel/issues/403)) ([2db9f51](https://github.com/jeetparekh3005/keel/commit/2db9f51c8862894066f2444c3cd6f8b3e1aa3ca2))
+
+
+### Miscellaneous Chores
+
+* integrate v0.5.1 (dev to main) ([0895023](https://github.com/jeetparekh3005/keel/commit/0895023f5a93974ce07add4b96f8604480d7cecb))
+
 ## [0.5.0](https://github.com/jeetparekh3005/keel/compare/v0.4.0...v0.5.0) (2026-11-11)
 
 
