@@ -1,5 +1,6 @@
 package io.keel.core.telemetry;
 
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -13,6 +14,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpResponse.BodyHandlers;
+import java.time.Duration;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.SpringBootConfiguration;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
@@ -65,21 +67,29 @@ class HttpServerMetricsTest {
     assertEquals(200, get("/metrics-probe/42"));
     assertEquals(200, get("/metrics-probe/99"));
 
-    Timer duration =
-        meterRegistry
-            .find(HttpServerMetricsAutoConfiguration.OTEL_REQUEST_DURATION)
-            .tag("uri", "/metrics-probe/{id}")
-            .tag("method", "GET")
-            .tag("status", "200")
-            .timer();
-    assertNotNull(
-        duration,
-        "no http.server.request.duration timer tagged with the URI template - instrumentation,"
-            + " templating, or the OTel-naming filter is missing");
-    assertTrue(
-        duration.count() >= 2,
-        "expected both requests collapsed onto the templated series, got count="
-            + duration.count());
+    // The server-side observation is stopped (and the timer recorded) asynchronously, after the
+    // response has been written back to the client, so poll the registry rather than reading it the
+    // instant the second response arrives - the immediate read otherwise races the recording under
+    // load.
+    await()
+        .atMost(Duration.ofSeconds(10))
+        .untilAsserted(() -> {
+          Timer duration =
+              meterRegistry
+                  .find(HttpServerMetricsAutoConfiguration.OTEL_REQUEST_DURATION)
+                  .tag("uri", "/metrics-probe/{id}")
+                  .tag("method", "GET")
+                  .tag("status", "200")
+                  .timer();
+          assertNotNull(
+              duration,
+              "no http.server.request.duration timer tagged with the URI template -"
+                  + " instrumentation, templating, or the OTel-naming filter is missing");
+          assertTrue(
+              duration.count() >= 2,
+              "expected both requests collapsed onto the templated series, got count="
+                  + duration.count());
+        });
 
     // No raw-path series leaked (would be unbounded cardinality).
     assertNotNull(
