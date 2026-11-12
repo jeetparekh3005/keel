@@ -31,6 +31,13 @@
   <properties>
     <java.version>25</java.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <!-- Per-module JaCoCo floors (epic #419, v0.6 parity). These are the default (keel-core-java)
+         minima; reference-service-java overrides them with its own, higher floors in its pom.
+         The values lock the real measured coverage just under the observed number so the gate
+         blocks any regression; each module sets the highest round value its real coverage clears.
+         See the jacoco check rule below for how they are applied. -->
+    <jacoco.line.min>0.30</jacoco.line.min>
+    <jacoco.branch.min>0.40</jacoco.branch.min>
   </properties>
 
   <build>
@@ -58,10 +65,16 @@
         </executions>
       </plugin>
       <!-- Coverage report + a per-module hard floor so coverage cannot silently regress. The
-           floor is deliberately conservative: keel-core-java's web/auth classes are exercised by
-           the reference service's conformance tests, not keel-core's own tests, so its per-module
-           number undercounts (a cross-module report-aggregate that raises the keel-core floor is a
-           further refinement). The floor still blocks a real regression in either module. -->
+           floor is the real measured coverage, rounded down, and set per module via the
+           jacoco.line.min / jacoco.branch.min properties (default here, overridden in
+           reference-service-java). keel-core-java's web/auth classes (Conformance, SecurityConfig,
+           ProblemExceptionHandler, the HTTP-edge filters, CORS) are exercised by the reference
+           service's conformance tests, not keel-core's own tests, so its per-module number
+           undercounts and sits well below the Python vertical's 85% line floor; a cross-module
+           report-aggregate that counts that coverage against keel-core is the path to parity. Until
+           then the floor blocks a real regression in either module. -->
+      <!-- Measured (mvn verify, Postgres + live Keycloak): keel-core-java LINE 0.3445 / BRANCH
+           0.4127; reference-service-java LINE 0.6914 / BRANCH 0.5000. Floors are set just under. -->
       <plugin>
         <groupId>org.jacoco</groupId>
         <artifactId>jacoco-maven-plugin</artifactId>
@@ -94,12 +107,12 @@
                     <limit>
                       <counter>LINE</counter>
                       <value>COVEREDRATIO</value>
-                      <minimum>0.25</minimum>
+                      <minimum>${jacoco.line.min}</minimum>
                     </limit>
                     <limit>
                       <counter>BRANCH</counter>
                       <value>COVEREDRATIO</value>
-                      <minimum>0.30</minimum>
+                      <minimum>${jacoco.branch.min}</minimum>
                     </limit>
                   </limits>
                 </rule>
