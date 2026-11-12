@@ -14,6 +14,8 @@ export interface PoolStats {
   total: number;
   idle: number;
   waiting: number;
+  /** Maximum connections the pool allows: the saturation denominator. */
+  max: number;
 }
 
 /** A Postgres connection pool. */
@@ -53,6 +55,7 @@ export class Database {
       total: this.pool.totalCount,
       idle: this.pool.idleCount,
       waiting: this.pool.waitingCount,
+      max: this.pool.options.max,
     };
   }
 

@@ -13,6 +13,8 @@ import { NodeSDK } from '@opentelemetry/sdk-node';
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
 import { randomUUID } from 'node:crypto';
 
+export { observeDbPool, type ObserveDbPoolOptions, type PoolStatsSource } from './saturation.js';
+
 /** Telemetry identity and export configuration. */
 export interface TelemetryOptions {
   serviceName: string;
