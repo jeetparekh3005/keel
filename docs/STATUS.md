@@ -80,8 +80,8 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   namespacing). Per-line **log-to-trace correlation** (`trace_id`/`span_id` on every log
   line inside a span) and the **DB pool saturation metric** are now at Python parity. Not
   yet at parity: **redaction of the OTLP span-export path** (log-sink redaction does not
-  cover span-field export), a live **Keycloak** JWKS integration test, and the
-  messaging/gRPC/`api_key`/`mTLS` surfaces (tracked on v0.6, epic #419). **HTTP server request metrics** are now emitted:
+  cover span-field export) and the messaging/gRPC/`api_key`/`mTLS` surfaces (tracked on
+  v0.6, epic #419). A live **Keycloak** JWKS integration test is now in place. **HTTP server request metrics** are now emitted:
   `http.server.request.duration` (histogram, seconds) and `http.server.active_requests`
   (up-down counter), labelled by the route TEMPLATE (`http.route` from axum `MatchedPath`),
   `http.request.method`, and `http.response.status_code`, through a real OpenTelemetry
@@ -103,8 +103,9 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   dependency-CVE gate**. Several Rust follow-ups are built in from the start here (native JWKS
   refresh, `scp`-string, log-trace correlation, ReDoS-immune scrubbers, honest `t.Skip`
   integration gating) plus **route-templated HTTP request metrics** (`http.server.request.duration`,
-  `http.server.active_requests`, via a chi middleware and an OTLP MeterProvider). Not yet: a live
-  Keycloak JWKS test.
+  `http.server.active_requests`, via a chi middleware and an OTLP MeterProvider), a live Keycloak
+  JWKS integration test, and the DB pool saturation metric. At Python parity for the v0.6 surfaces
+  closed so far.
 - **TypeScript/NestJS vertical (v0.4)**: a fourth language vertical, same hexagonal
   boundaries, deliberately batteries-included (NestJS + DI) as the contrast to the stdlib-first
   Go/Rust services (ADR-0019). Shared library `packages/keel-core-ts` (`@keel/core`) + thin
@@ -128,8 +129,8 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   compiler, which typescript-eslint and NestJS do not yet support). HTTP request metrics
   (`http.server.request.duration` histogram + `http.server.active_requests` up-down counter,
   labelled by the matched route template) are emitted via a core MetricsInterceptor against a
-  globally registered OpenTelemetry MeterProvider (OTLP exporter). Not yet: a live Keycloak JWKS
-  test, and JSON-formatting NestJS's own bootstrap log lines (the app/error path already logs
+  globally registered OpenTelemetry MeterProvider (OTLP exporter); a live Keycloak JWKS integration
+  test is now in place. Not yet: JSON-formatting NestJS's own bootstrap log lines (the app/error path already logs
   through the redacting pino logger).
 - **Java/Spring Boot vertical (v0.4)**: a fifth language vertical, same hexagonal boundaries,
   the dominant enterprise JVM framework (ADR-0020), where several contract requirements are
@@ -158,9 +159,9 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   signed + SLSA-attested on release) and a Helm chart with the same PSS-restricted posture. CI
   lane (`java.yml`): **Spotless (google-java-format)**, JUnit + the Spring Boot conformance test
   (with a Postgres service), an **ArchUnit** hexagonal-layering test, JaCoCo, and **Trivy as the
-  blocking dependency-CVE gate**. Java is pinned to **25 LTS** (not the non-LTS 27). Not yet:
-  a live Keycloak JWKS test and a hard JaCoCo coverage floor (needs cross-module
-  report-aggregation).
+  blocking dependency-CVE gate**. Java is pinned to **25 LTS** (not the non-LTS 27). A live
+  Keycloak JWKS integration test is now in place, and a hard JaCoCo floor is enforced
+  (currently a weak 25/30 line/branch; raising it to Python parity is a v0.6 item).
 
 - **Service generator (v0.5, all five verticals; ADR-0021).** A **Copier** template per language
   (`templates/service-<lang>` for python, go, rust, java, ts) scaffolds a new thin service (the
@@ -197,7 +198,7 @@ wired to a sink/gate; `none` = absent.
 | Capability | Python | Rust | Go | Java | TypeScript |
 |------------|--------|------|-----|------|------------|
 | HTTP request metrics (`http.server.*`, route-templated) | full | full | full | full | full |
-| Live Keycloak JWKS integration test | full | none | none | none | none |
+| Live Keycloak JWKS integration test | full | full | full | full | full |
 | Per-line log-to-trace correlation | full | full | full | full | full |
 | OTLP span-export redaction | none | none | none | none | none |
 | `api_key` authentication (hashed, X-API-Key) | full | none | none | none | none |
