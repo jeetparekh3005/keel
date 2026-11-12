@@ -86,8 +86,13 @@ describe.skipIf(!keycloakUrl)('OidcAuthenticator (live Keycloak JWKS)', () => {
 
   it('rejects a tampered token against the live JWKS', async () => {
     const token = await mintToken();
-    // Flip the last character of the signature: a valid structure that fails verification.
-    const tampered = token.slice(0, -1) + (token.endsWith('a') ? 'b' : 'a');
+    // Tamper the PAYLOAD segment so the RS256 signature (computed over header.payload) no longer
+    // matches. Flipping the LAST signature character is unreliable: base64url's final char carries
+    // padding bits, so some flips decode to the identical signature bytes and the token still
+    // verifies (a flaky false pass). Changing a payload byte always invalidates the signature.
+    const [header, payload, signature] = token.split('.');
+    const flip = (c: string): string => (c === 'A' ? 'B' : 'A');
+    const tampered = `${header}.${flip(payload.charAt(0)) + payload.slice(1)}.${signature}`;
 
     const authenticator = new OidcAuthenticator(
       realmBase(),
