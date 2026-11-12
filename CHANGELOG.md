@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.5.2](https://github.com/jeetparekh3005/keel/compare/v0.5.1...v0.5.2) (2026-11-12)
+
+
+### Bug Fixes
+
+* bound logger redaction depth and sanitize merge objects (proof MEDIUM crashes) ([#410](https://github.com/jeetparekh3005/keel/issues/410)) ([aa2a289](https://github.com/jeetparekh3005/keel/commit/aa2a28911edd0622c9367946654251d657946ad8))
+* close exhaustive-proof logger leaks (bare-error message, function props, proxy crash) ([#409](https://github.com/jeetparekh3005/keel/issues/409)) ([d71326b](https://github.com/jeetparekh3005/keel/commit/d71326bc35586b08f07d5107e9d2da49f26a3fd0))
+* close fourth-review findings (merge-path error leak, tokenizer offsets, getter crash) ([#408](https://github.com/jeetparekh3005/keel/issues/408)) ([4abbd45](https://github.com/jeetparekh3005/keel/commit/4abbd457c24d3fce5f5ffb8da7b20617dcab9740))
+* close third-review regressions (logger secret leak, conformance strip, gofmt task) ([#407](https://github.com/jeetparekh3005/keel/issues/407)) ([a8d0c12](https://github.com/jeetparekh3005/keel/commit/a8d0c12b4eeee4f9659a7eb648fb77181707c5c9))
+* redact object Map keys in the logger (final-proof HIGH leak) ([#411](https://github.com/jeetparekh3005/keel/issues/411)) ([3a6ac09](https://github.com/jeetparekh3005/keel/commit/3a6ac094e54e61f028833df770cce8e37d767925))
+
+
+### Miscellaneous Chores
+
+* release v0.5.2 (dev to main) ([9ac8172](https://github.com/jeetparekh3005/keel/commit/9ac81729cedb82116360fa9fc40cf1198439e91b))
+
 ## [0.5.1](https://github.com/jeetparekh3005/keel/compare/v0.5.0...v0.5.1) (2026-11-12)
 
 
