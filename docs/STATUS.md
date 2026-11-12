@@ -40,10 +40,12 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   insufficient scope), and a **route-auth conformance check** that fails app startup (and
   a shipped test) if any non-exempt route lacks an auth dependency. JWT verification runs
   off the event loop (threadpool) with a bounded JWKS timeout.
-- **Metrics**: HTTP server metrics (`http.server.request.duration`,
-  `http.server.active_requests`) come from FastAPI's native OpenTelemetry
-  instrumentation, labelled by **route template** (bounded cardinality); plus a DB
-  connection-pool saturation gauge and a dropped-log counter.
+- **Metrics**: a DB connection-pool saturation gauge (`db.client.connection.count`/`.max`) and
+  a dropped-log counter (`log.records.dropped`) are emitted (`telemetry/saturation.py`). **HTTP
+  request metrics (`http.server.request.duration`, `http.server.active_requests`) are NOT yet
+  emitted** - no ASGI/FastAPI OpenTelemetry instrumentation is installed, and `tests/test_metrics.py`
+  is a placeholder that asserts the instrument's shape without anything producing it. This is a
+  v0.6 parity item across all five verticals (see the parity matrix below).
 - **Port-coverage conformance check**: every driven port in `platform.yaml` must have a
   registered adapter (fails CI otherwise).
 - **Postgres integration test** (CI service container) + an 85% coverage floor.
@@ -168,6 +170,37 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   ship a `ci.yml` that references them by tag; in-tree the verticals are still covered by the central
   per-language workflows, so the reusable lanes are the mechanism for the polyrepo future (ADR-0011,
   which also needs the keel-core packages published per language).
+
+## Cross-vertical parity matrix (v0.6 target)
+
+Python is the reference vertical. The first LTS requires **full functional parity**: every
+capability implemented in every vertical, or explicitly waived. This matrix is the honest,
+code-audited current state and the v0.6 target (every non-`full` cell becomes `full`). It is
+tracked by epic #419. Legend: `full` = implemented + tested; `partial` = plumbing exists but not
+wired to a sink/gate; `none` = absent.
+
+| Capability | Python | Rust | Go | Java | TypeScript |
+|------------|--------|------|-----|------|------------|
+| HTTP request metrics (`http.server.*`, route-templated) | none* | none | none | none | none |
+| Live Keycloak JWKS integration test | full | none | none | none | none |
+| Per-line log-to-trace correlation | full | none | full | full | full |
+| OTLP span-export redaction | none | none | none | none | none |
+| `api_key` authentication (hashed, X-API-Key) | full | none | none | none | none |
+| mTLS credentials | full (gRPC) | none | none | none | none |
+| NATS JetStream MessageBus adapter | full | none | none | none | none |
+| gRPC server (deny-by-default auth + mTLS) | full | none | none | none | none |
+| Enforced CI coverage floor | full (85%) | none | none | weak (25/30) | lib-only |
+| DB pool saturation metric (emitted, not just readable) | full | partial | partial | partial | partial |
+| NestJS bootstrap logs as JSON (TS-only) | n/a | n/a | n/a | n/a | none |
+
+`*` Python's HTTP-request-metrics row was previously described as "done" via FastAPI's native
+instrumentation; a code audit found that instrumentation is not installed and the test is a
+placeholder, so no vertical emits these today. It is a genuine parity gap, not a regression.
+
+The scope is large by design (the backend-integration surfaces - `api_key`, mTLS, NATS, gRPC -
+plus metrics and OTLP-span redaction must reach the four non-Python verticals, and Python needs
+HTTP metrics + OTLP-span redaction). Each capability is "one feature, fanned out across the
+verticals it is still missing from."
 
 ## Planned - described in the contract/ADRs but NOT yet implemented
 
