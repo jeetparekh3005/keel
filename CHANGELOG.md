@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.3](https://github.com/jeetparekh3005/keel/compare/v0.5.2...v0.5.3) (2026-11-12)
+
+
+### Bug Fixes
+
+* redact RegExp own-props and handle BigInt in the logger (clean-proof gate) ([#415](https://github.com/jeetparekh3005/keel/issues/415)) ([c052c9b](https://github.com/jeetparekh3005/keel/commit/c052c9bc281f0ae028b1be2f1d02451f4548baa2))
+
+
+### Miscellaneous Chores
+
+* release v0.5.3 (dev to main) ([57356bc](https://github.com/jeetparekh3005/keel/commit/57356bc86bb5dd1aeda82e07de817ebd35bd181e))
+
 ## [0.5.2](https://github.com/jeetparekh3005/keel/compare/v0.5.1...v0.5.2) (2026-11-12)
 
 
