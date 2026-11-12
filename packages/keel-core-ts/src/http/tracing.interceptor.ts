@@ -8,6 +8,8 @@ import { context as otelContext, SpanKind, SpanStatusCode, trace } from '@opente
 import type { IncomingMessage } from 'node:http';
 import { Observable } from 'rxjs';
 
+import { routeTemplate } from './route-template.js';
+
 /**
  * Starts a server span per request and makes it the active span for the whole handler, so logs
  * emitted during the request carry trace_id/span_id (the pino mixin reads the active span).
@@ -25,10 +27,14 @@ export class TracingInterceptor implements NestInterceptor {
 
   intercept(executionContext: ExecutionContext, next: CallHandler): Observable<unknown> {
     const request = executionContext.switchToHttp().getRequest<IncomingMessage>();
-    const span = this.tracer.startSpan(`${request.method ?? 'HTTP'} ${request.url ?? ''}`.trim(), {
+    // Name the span by the route TEMPLATE (e.g. `GET /v1/items/:id`), not the raw URL: the url
+    // carries per-request id values that fragment traces and blow up span-name cardinality.
+    const route = routeTemplate(executionContext);
+    const span = this.tracer.startSpan(`${request.method ?? 'HTTP'} ${route}`.trim(), {
       kind: SpanKind.SERVER,
       attributes: {
         'http.request.method': request.method,
+        'http.route': route,
         'url.path': request.url,
       },
     });

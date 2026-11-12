@@ -100,7 +100,9 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   go vet, staticcheck, go test (with a Postgres service), and **govulncheck as a blocking
   dependency-CVE gate**. Several Rust follow-ups are built in from the start here (native JWKS
   refresh, `scp`-string, log-trace correlation, ReDoS-immune scrubbers, honest `t.Skip`
-  integration gating). Not yet: HTTP request metrics and a live Keycloak JWKS test.
+  integration gating) plus **route-templated HTTP request metrics** (`http.server.request.duration`,
+  `http.server.active_requests`, via a chi middleware and an OTLP MeterProvider). Not yet: a live
+  Keycloak JWKS test.
 - **TypeScript/NestJS vertical (v0.4)**: a fourth language vertical, same hexagonal
   boundaries, deliberately batteries-included (NestJS + DI) as the contrast to the stdlib-first
   Go/Rust services (ADR-0019). Shared library `packages/keel-core-ts` (`@keel/core`) + thin
@@ -121,9 +123,12 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   PSS-restricted posture. CI lane (`nest.yml`): prettier, typescript-eslint (type-checked),
   `tsc`, vitest (with a Postgres service), and **`pnpm audit` as a blocking dependency-CVE
   gate**. TypeScript is pinned to the latest 5.x the toolchain supports (not the 7.x native-port
-  compiler, which typescript-eslint and NestJS do not yet support). Not yet: HTTP request
-  metrics, a live Keycloak JWKS test, and JSON-formatting NestJS's own bootstrap log lines (the
-  app/error path already logs through the redacting pino logger).
+  compiler, which typescript-eslint and NestJS do not yet support). HTTP request metrics
+  (`http.server.request.duration` histogram + `http.server.active_requests` up-down counter,
+  labelled by the matched route template) are emitted via a core MetricsInterceptor against a
+  globally registered OpenTelemetry MeterProvider (OTLP exporter). Not yet: a live Keycloak JWKS
+  test, and JSON-formatting NestJS's own bootstrap log lines (the app/error path already logs
+  through the redacting pino logger).
 - **Java/Spring Boot vertical (v0.4)**: a fifth language vertical, same hexagonal boundaries,
   the dominant enterprise JVM framework (ADR-0020), where several contract requirements are
   framework-native. Shared library `packages/keel-core-java` (`keel-core`) + thin
@@ -185,7 +190,7 @@ wired to a sink/gate; `none` = absent.
 
 | Capability | Python | Rust | Go | Java | TypeScript |
 |------------|--------|------|-----|------|------------|
-| HTTP request metrics (`http.server.*`, route-templated) | none* | full | none | none | none |
+| HTTP request metrics (`http.server.*`, route-templated) | none* | full | full | none | full |
 | Live Keycloak JWKS integration test | full | none | none | none | none |
 | Per-line log-to-trace correlation | full | none | full | full | full |
 | OTLP span-export redaction | none | none | none | none | none |
