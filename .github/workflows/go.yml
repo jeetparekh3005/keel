@@ -84,19 +84,48 @@ jobs:
           if [ -n "$unformatted" ]; then
             echo "gofmt needs to run on:"; echo "$unformatted"; exit 1
           fi
-      - name: Vet, lint, test, and vuln-scan each module
+      - name: Vet, lint, test (with coverage), and vuln-scan each module
         # The repo is a go.work with nested modules, so run the per-module gate inside
         # each module directory. govulncheck is blocking: it fails the build on any known
-        # vulnerability the code actually reaches.
+        # vulnerability the code actually reaches. Each module emits a coverage profile that
+        # the next step merges into one vertical-wide total and enforces against a floor
+        # (the Go analog of Python's pytest --cov ... fail_under=85). Postgres and Keycloak
+        # above make the integration tests run, so the measured total is the real one, not a
+        # local lower bound where those paths skip.
         run: |
           set -e
+          : > "$RUNNER_TEMP/go-coverage-merged.out"
+          first=1
           for mod in $(find packages services -name go.mod 2>/dev/null | xargs -n1 dirname | sort -u); do
             echo "::group::$mod"
             ( cd "$mod"
               go vet ./...
               go run honnef.co/go/tools/cmd/staticcheck@latest ./...
-              go test ./...
+              go test -coverprofile=cover.out -covermode=atomic ./...
               go run golang.org/x/vuln/cmd/govulncheck@latest ./...
             )
+            # Merge this module's profile into the vertical-wide one, keeping a single
+            # "mode:" header (the first module's) and appending every later module's body.
+            if [ "$first" = 1 ]; then
+              cat "$mod/cover.out" >> "$RUNNER_TEMP/go-coverage-merged.out"
+              first=0
+            else
+              tail -n +2 "$mod/cover.out" >> "$RUNNER_TEMP/go-coverage-merged.out"
+            fi
             echo "::endgroup::"
           done
+      - name: Coverage floor
+        # Enforce a hard, vertical-wide statement-coverage floor across both Go modules
+        # (keel-core-go + reference-service-go), mirroring Python's 85% fail_under. The
+        # floor is the measured actual rounded down: the service module (reference-service-go,
+        # ~50%, with an uncovered cmd/ entrypoint) sits well below core (~79%), so 85% is not
+        # yet reachable here. Raise FLOOR as coverage improves; never above the measured total.
+        run: |
+          set -e
+          FLOOR=71
+          total=$(go tool cover -func="$RUNNER_TEMP/go-coverage-merged.out" | tail -1 | awk '{print $3}' | tr -d '%')
+          echo "Go vertical statement coverage: ${total}% (floor ${FLOOR}%)"
+          awk -v t="$total" -v f="$FLOOR" 'BEGIN { exit !(t + 0 >= f + 0) }' || {
+            echo "::error::Go coverage ${total}% is below the ${FLOOR}% floor"
+            exit 1
+          }
