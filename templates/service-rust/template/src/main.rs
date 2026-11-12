@@ -15,7 +15,7 @@ use @< service_slug_snake >@::{build_app, ServiceConfig};
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = ServiceConfig::from_env()?;
-    let tracer = keel_core::telemetry::init(
+    let telemetry = keel_core::telemetry::init(
         &config.service_name,
         &config.version,
         &config.environment,
@@ -59,9 +59,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     refresh_task.abort();
-    if let Some(provider) = tracer {
-        keel_core::telemetry::shutdown(provider);
-    }
+    keel_core::telemetry::shutdown(telemetry);
     Ok(())
 }
 
