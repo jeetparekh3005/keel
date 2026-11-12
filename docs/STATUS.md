@@ -205,18 +205,21 @@ wired to a sink/gate; `none` = absent.
 | mTLS credentials | full (gRPC) | none | none | none | none |
 | NATS JetStream MessageBus adapter | full | none | none | none | none |
 | gRPC server (deny-by-default auth + mTLS) | full | none | none | none | none |
-| Enforced CI coverage floor | full (85%) | none | none | weak (25/30) | lib-only |
+| Enforced CI coverage floor | full (85%) | full (85%) | partial (71%) | partial (30/65%) | partial (74% lib / 37% svc) |
 | DB pool saturation metric (emitted, not just readable) | full | full | full | full | full |
-| NestJS bootstrap logs as JSON (TS-only) | n/a | n/a | n/a | n/a | none |
+| NestJS bootstrap logs as JSON (TS-only) | n/a | n/a | n/a | n/a | full |
 
-Python's HTTP-request-metrics row is now `full`: the metrics are emitted via explicit
-OpenTelemetry FastAPI instrumentation wired in `create_app`, labelled by route template, method,
-and status, and covered by a reader-backed test (`tests/test_metrics.py`). The four non-Python
-verticals still need this capability, so it remains an open parity item there.
+Closed so far in v0.6 (full across all five): HTTP request metrics, per-line log-to-trace
+correlation, the DB pool saturation metric, the live Keycloak JWKS integration test, and (TS)
+JSON bootstrap logging. A coverage floor is now enforced in every vertical, but only Python and
+Rust are at the 85% parity bar: Go (71%), Java (per-module 30/65%), and TS (74% lib / 37% svc)
+enforce the measured floor today and are marked `partial` until raised to 85% - that needs
+test-writing (Go/TS service layers) and cross-module JaCoCo aggregation (Java), tracked as a v0.6
+follow-up, not a config change.
 
-The scope is large by design (the backend-integration surfaces - `api_key`, mTLS, NATS, gRPC -
-plus metrics and OTLP-span redaction must reach the four non-Python verticals, and Python needs
-HTTP metrics + OTLP-span redaction). Each capability is "one feature, fanned out across the
+Still open: OTLP span-export redaction (none of the five) and the backend-integration surfaces -
+`api_key`, mTLS, NATS JetStream, gRPC - which exist only in Python and must reach the other four
+(the heaviest remaining work, ~16 feature slices). Each is "one capability, fanned out across the
 verticals it is still missing from."
 
 ## Planned - described in the contract/ADRs but NOT yet implemented
