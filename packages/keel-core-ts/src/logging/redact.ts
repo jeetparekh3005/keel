@@ -8,6 +8,10 @@
 
 export const REDACTED = '[REDACTED]';
 
+// Bound recursion so a pathologically deep (or adversarially deep) structure cannot overflow the
+// call stack and crash the logging call. Real log payloads are nowhere near this deep.
+const MAX_DEPTH = 100;
+
 // Fragments that mark a key whose value is redacted wholesale. Matched against a normalized
 // (lowercased, separator-stripped) key, mirroring the other verticals.
 const SECRET_KEY_FRAGMENTS = [
@@ -79,27 +83,126 @@ export function scrubText(text: string): string {
 }
 
 /**
- * Recursively redact a logged value: a secret-family key is redacted wholesale, string
- * values are scrubbed for secret patterns, and nested objects/arrays are descended into.
- * Cyclic references are broken with a marker so logging can never loop.
+ * Recursively redact a logged value: a secret-family key is redacted wholesale, string values
+ * are scrubbed for secret patterns, and nested containers are descended into. Cyclic references
+ * are broken with a marker so logging can never loop.
+ *
+ * Containers are handled by shape rather than by prototype, so this is safe to apply to ANY
+ * value - a plain object, an array, a class instance, a Map/Set, an Error, or a Date. This
+ * matters because a naive object rebuild (Object.entries) is empty for an Error/Date/Map (their
+ * data is in non-enumerable fields or internal slots), which would both destroy an error's
+ * message/stack AND, if such values were instead passed through untouched, leak a secret-family
+ * field that only key-based redaction catches. The branches below preserve diagnostics (Error
+ * message/stack, Date value) while still key-redacting every secret-family entry.
  */
-export function redactValue(value: unknown, seen = new WeakSet<object>()): unknown {
+export function redactValue(value: unknown, seen = new WeakSet<object>(), depth = 0): unknown {
   if (typeof value === 'string') {
     return scrubText(value);
   }
+  if (typeof value === 'function') {
+    // A function can carry own properties (a secret among them); util.format would print them
+    // verbatim. Collapse it to a bare label so no attached secret can leak.
+    return `[Function: ${value.name || 'anonymous'}]`;
+  }
   if (value === null || typeof value !== 'object') {
     return value;
+  }
+  if (depth >= MAX_DEPTH) {
+    // Stop recursing before the stack overflows; the value is elided wholesale, so nothing
+    // under it (secret or not) is emitted.
+    return '[truncated: max depth]';
   }
   if (seen.has(value)) {
     return '[Circular]';
   }
   seen.add(value);
+  const next = depth + 1;
   if (Array.isArray(value)) {
-    return value.map((item) => redactValue(item, seen));
+    return value.map((item) => redactValue(item, seen, next));
   }
+  // Date/RegExp carry no secret-family keys and their data lives in internal slots; pass them
+  // through so util.format renders the real value instead of an empty {}.
+  if (value instanceof Date || value instanceof RegExp) {
+    return value;
+  }
+  if (value instanceof Map) {
+    const out = new Map<unknown, unknown>();
+    for (const [k, v] of value) {
+      // A string key in the secret family redacts its VALUE wholesale. The KEY itself is also
+      // redacted (an OBJECT key can carry a secret-family field, and util.format('%o', map) renders
+      // keys verbatim - leaving it raw leaks the key object's secret in cleartext).
+      const redactedValue =
+        typeof k === 'string' && isSecretKey(k) ? REDACTED : redactValue(v, seen, next);
+      out.set(redactValue(k, seen, next), redactedValue);
+    }
+    return out;
+  }
+  if (value instanceof Set) {
+    return new Set(Array.from(value, (item) => redactValue(item, seen, next)));
+  }
+  if (value instanceof Error) {
+    // Return a rebuilt Error with SCRUBBED message/stack and key-redacted own-props. The merge
+    // object log path (`logger.x({ err }, msg)`) runs only redactValue - NO final scrubText - so
+    // a pattern secret (JWT/AWS/bearer/PEM) in the message or stack must be scrubbed HERE or it
+    // prints in cleartext (returning the raw Error, or copying message/stack verbatim, leaks it).
+    // We rebuild a real Error (not a plain object) so util.format still renders a native stack and
+    // pino's error serializer still sees message/stack - both now scrubbed. A non-pattern secret
+    // embedded in the free-form message text is not caught (no key to match on): a known limit.
+    const rebuilt = new Error(scrubText(value.message));
+    // Keep the original class name without adding an enumerable field to the log output.
+    Object.defineProperty(rebuilt, 'name', {
+      value: value.name,
+      enumerable: false,
+      writable: true,
+      configurable: true,
+    });
+    if (typeof value.stack === 'string') {
+      rebuilt.stack = scrubText(value.stack);
+    }
+    // Enumerable own-props only (Object.keys excludes Symbol keys, so a Symbol-keyed secret is
+    // DROPPED rather than leaked); key-redact and recurse, guarding a throwing getter.
+    for (const [key, val] of Object.entries(_redactOwnProps(value, seen, next))) {
+      (rebuilt as unknown as Record<string, unknown>)[key] = val;
+    }
+    return rebuilt;
+  }
+  // Plain object OR class instance: both keep their data in enumerable own-properties, so the
+  // key-redaction loop handles them identically (a class instance loses its class name in the
+  // log output, an acceptable trade for redacting its secret-family fields).
+  return _redactOwnProps(value, seen, next);
+}
+
+/**
+ * Key-redact the enumerable own string-keyed properties of an object, recursing into values.
+ * Symbol-keyed properties are intentionally skipped (dropped, never emitted). A property whose
+ * getter throws is reported as ``[unreadable]`` rather than crashing the logging call.
+ */
+function _redactOwnProps(
+  value: object,
+  seen: WeakSet<object>,
+  depth: number,
+): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
-    out[key] = isSecretKey(key) ? REDACTED : redactValue(val, seen);
+  let keys: string[];
+  try {
+    // A hostile Proxy can throw from its ownKeys trap; never let that crash the logging call.
+    keys = Object.keys(value);
+  } catch {
+    return { '[unreadable]': true };
+  }
+  for (const key of keys) {
+    if (isSecretKey(key)) {
+      out[key] = REDACTED;
+      continue;
+    }
+    let raw: unknown;
+    try {
+      raw = (value as Record<string, unknown>)[key];
+    } catch {
+      out[key] = '[unreadable]';
+      continue;
+    }
+    out[key] = redactValue(raw, seen, depth);
   }
   return out;
 }

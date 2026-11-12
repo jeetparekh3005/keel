@@ -209,5 +209,45 @@ def test_poetry_style_dependency_declaration_is_recognized(tmp_path: Path) -> No
     assert _result(check_service(svc, CONTRACT), "keel-core-dependency").ok
 
 
+def test_docstring_marker_with_hash_on_closing_line_does_not_false_pass(tmp_path: Path) -> None:
+    # Fail-OPEN regression: with line-comment-first regex stripping, a '#' on a docstring's closing
+    # line consumed the closing triple-quote, so the docstring body survived and a marker that
+    # exists ONLY inside the docstring satisfied a wiring check. The tokenizer drops string tokens
+    # wholesale, so a marker that is not real code must NOT greenlight an unwired service.
+    svc = _write_service(
+        tmp_path,
+        pyproject='[project]\nname = "svc"\ndependencies = ["fastapi"]\n',
+        source=(
+            '"""Wires create_app, BaseServiceConfig and require_scopes.  # noqa """\n'
+            "from fastapi import FastAPI\n"
+            "app = FastAPI()\n"
+        ),
+        answers=True,
+    )
+    report = check_service(svc, CONTRACT)
+    assert not report.ok
+    assert not _result(report, "app-factory").ok
+    assert not _result(report, "typed-config").ok
+    assert not _result(report, "deny-by-default-authz").ok
+
+
+def test_malformed_optional_dependencies_yields_verdict_not_crash(tmp_path: Path) -> None:
+    # A parseable-but-structurally-invalid pyproject (optional-dependencies as a list, and a scalar
+    # dependency group) must not raise out of check_service; it declares no keel-core dep -> fail.
+    bad_manifests = (
+        # optional-dependencies as a list (must be a table of lists)
+        '[project]\nname = "svc"\ndependencies = ["keel-core"]\noptional-dependencies = ["x"]\n',
+        # a group that is a scalar, not a list of requirements
+        '[project]\nname = "svc"\ndependencies = ["fastapi"]\n'
+        "\n[project.optional-dependencies]\ndev = 5\n",
+    )
+    for i, bad in enumerate(bad_manifests):
+        svc = _write_service(
+            tmp_path / f"svc{i}", pyproject=bad, source=CONFORMANT_SOURCE, answers=True
+        )
+        report = check_service(svc, CONTRACT)  # must not raise
+        assert isinstance(report.ok, bool)
+
+
 def _result(report, check_id):  # type: ignore[no-untyped-def]
     return next(r for r in report.results if r.check_id == check_id)

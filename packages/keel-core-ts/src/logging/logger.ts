@@ -40,21 +40,6 @@ function correlationMixin(): Record<string, string> {
 const TRACE_ID_SHAPE = /^[0-9a-f]{32}$/;
 const SPAN_ID_SHAPE = /^[0-9a-f]{16}$/;
 
-// Only plain objects and arrays are safe to rebuild via redactValue (which reads enumerable
-// own-properties). An Error/Date/Map/Set/RegExp/class instance keeps its data in internal slots
-// or non-enumerable fields, so redactValue would flatten it to `{}` - destroying the message and
-// stack of `logger.error('... %o', err)`. Those are handed to util.format untouched instead.
-function isRedactableContainer(value: unknown): boolean {
-  if (Array.isArray(value)) {
-    return true;
-  }
-  if (value === null || typeof value !== 'object') {
-    return false;
-  }
-  const proto = Object.getPrototypeOf(value) as unknown;
-  return proto === Object.prototype || proto === null;
-}
-
 function preserveIfId(value: unknown, shape: RegExp): unknown {
   if (value === undefined) {
     return undefined;
@@ -63,6 +48,32 @@ function preserveIfId(value: unknown, shape: RegExp): unknown {
     return value;
   }
   return redactValue(value);
+}
+
+/**
+ * Redact a user merge object BEFORE pino's internal mixin-merge (an Object.assign) reads it: a
+ * throwing own-enumerable getter on that object would otherwise crash the whole logging call from
+ * inside pino, before any formatter runs. redactValue is getter-safe (it guards each read), so the
+ * object pino then merges is plain data. trace_id/span_id are restored from the original (guarded)
+ * so the id-aware handling in formatters.log still sees their real values.
+ */
+function redactMergeArg(obj: object): unknown {
+  const redacted = redactValue(obj);
+  if (redacted === null || typeof redacted !== 'object' || Array.isArray(redacted)) {
+    return redacted;
+  }
+  const out = redacted as Record<string, unknown>;
+  const src = obj as Record<string, unknown>;
+  for (const key of ['trace_id', 'span_id'] as const) {
+    try {
+      if (key in src) {
+        out[key] = src[key];
+      }
+    } catch {
+      // A throwing getter under these keys keeps its redacted value; correctness over fidelity.
+    }
+  }
+  return out;
 }
 
 /**
@@ -112,22 +123,44 @@ export function createLogger(level: string, destination?: DestinationStream): Lo
           const msgIdx = typeof args[0] === 'object' && args[0] !== null ? 1 : 0;
           const msg = args[msgIdx];
           if (typeof msg === 'string' && args.length > msgIdx + 1) {
-            // Key-redact a plain-object/array interpolation arg (`%o`/`%j`) BEFORE formatting, so a
+            // Key-redact every object interpolation arg (`%o`/`%j`) BEFORE formatting, so a
             // `password`/`token` field becomes [REDACTED] just like a merge field; without it
             // util.format would serialise `{ password: 'x' }` verbatim and scrubText (patterns
-            // only) would miss it. Error/Date/Map/etc. pass through untouched (redactValue would
-            // flatten them to `{}`, losing an error's message + stack); the formatted string is
-            // still pattern-scrubbed, so a secret inside an Error message is caught by scrubText.
+            // only) would miss it. redactValue is shape-aware (see redact.ts): it key-redacts
+            // plain objects, arrays, class instances, Maps and Sets, while preserving an Error's
+            // message/stack and a Date's value - so this is safe to apply to any object without
+            // either flattening diagnostics to `{}` or leaking a secret-family field.
             const redactedArgs = args
               .slice(msgIdx + 1)
-              .map((arg) => (isRedactableContainer(arg) ? redactValue(arg) : arg));
+              .map((arg) =>
+                arg !== null && (typeof arg === 'object' || typeof arg === 'function')
+                  ? redactValue(arg)
+                  : arg,
+              );
             const message = scrubText(format(msg, ...redactedArgs));
-            const next = msgIdx === 1 ? [args[0], message] : [message];
+            // args[0] is the merge object when msgIdx === 1; redact it before pino's mixin-merge.
+            const next = msgIdx === 1 ? [redactMergeArg(args[0] as object), message] : [message];
             method.apply(this, next as Parameters<typeof method>);
             return;
           }
-          // No interpolation args: scrub each string positional directly.
-          const scrubbed = args.map((arg) => (typeof arg === 'string' ? scrubText(arg) : arg));
+          // No interpolation args. Scrub string positionals, and redact an Error or function
+          // positional BEFORE pino sees it: pino lifts a bare Error's `.message` to the top-level
+          // message key (bypassing both this scrub and the merge-field redactValue in formatters.log),
+          // and a function's own props would otherwise print raw. A plain merge object is left for
+          // formatters.log, which redacts it AND preserves a valid trace/span id.
+          const scrubbed = args.map((arg) => {
+            if (typeof arg === 'string') {
+              return scrubText(arg);
+            }
+            if (arg instanceof Error || typeof arg === 'function') {
+              return redactValue(arg);
+            }
+            // A merge object (the first positional): redact before pino's mixin-merge reads it.
+            if (arg !== null && typeof arg === 'object') {
+              return redactMergeArg(arg);
+            }
+            return arg;
+          });
           method.apply(this, scrubbed as Parameters<typeof method>);
         },
       },
