@@ -77,11 +77,11 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   enforces deny-by-default per route. Structured **log redaction** matches the Python
   vertical for the JSON log sink (family-based key redaction + value scrubbing for
   JWT/bearer/AWS-key/PAN, recursive over event and span fields, with reserved-key
-  namespacing). Not yet at Python parity: per-line **log-to-trace correlation**
-  (`trace_id`/`span_id` are not emitted on Rust log lines), **redaction of the OTLP
-  span-export path** (log-sink redaction does not cover span-field export), a live
-  **Keycloak** JWKS integration test, and the messaging/gRPC/`api_key`/`mTLS` surfaces
-  (tracked follow-ups on v0.4). **HTTP server request metrics** are now emitted:
+  namespacing). Per-line **log-to-trace correlation** (`trace_id`/`span_id` on every log
+  line inside a span) and the **DB pool saturation metric** are now at Python parity. Not
+  yet at parity: **redaction of the OTLP span-export path** (log-sink redaction does not
+  cover span-field export), a live **Keycloak** JWKS integration test, and the
+  messaging/gRPC/`api_key`/`mTLS` surfaces (tracked on v0.6, epic #419). **HTTP server request metrics** are now emitted:
   `http.server.request.duration` (histogram, seconds) and `http.server.active_requests`
   (up-down counter), labelled by the route TEMPLATE (`http.route` from axum `MatchedPath`),
   `http.request.method`, and `http.response.status_code`, through a real OpenTelemetry
@@ -198,14 +198,14 @@ wired to a sink/gate; `none` = absent.
 |------------|--------|------|-----|------|------------|
 | HTTP request metrics (`http.server.*`, route-templated) | full | full | full | full | full |
 | Live Keycloak JWKS integration test | full | none | none | none | none |
-| Per-line log-to-trace correlation | full | none | full | full | full |
+| Per-line log-to-trace correlation | full | full | full | full | full |
 | OTLP span-export redaction | none | none | none | none | none |
 | `api_key` authentication (hashed, X-API-Key) | full | none | none | none | none |
 | mTLS credentials | full (gRPC) | none | none | none | none |
 | NATS JetStream MessageBus adapter | full | none | none | none | none |
 | gRPC server (deny-by-default auth + mTLS) | full | none | none | none | none |
 | Enforced CI coverage floor | full (85%) | none | none | weak (25/30) | lib-only |
-| DB pool saturation metric (emitted, not just readable) | full | partial | partial | partial | partial |
+| DB pool saturation metric (emitted, not just readable) | full | full | full | full | full |
 | NestJS bootstrap logs as JSON (TS-only) | n/a | n/a | n/a | n/a | none |
 
 Python's HTTP-request-metrics row is now `full`: the metrics are emitted via explicit
