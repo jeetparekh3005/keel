@@ -104,6 +104,11 @@ export function redactValue(value: unknown, seen = new WeakSet<object>(), depth 
     // verbatim. Collapse it to a bare label so no attached secret can leak.
     return `[Function: ${value.name || 'anonymous'}]`;
   }
+  if (typeof value === 'bigint') {
+    // JSON.stringify (pino's merge path and util.format's %j) throws on a BigInt; emit its decimal
+    // string so logging a BigInt - or an object/record containing one - cannot crash the call.
+    return value.toString();
+  }
   if (value === null || typeof value !== 'object') {
     return value;
   }
@@ -120,10 +125,19 @@ export function redactValue(value: unknown, seen = new WeakSet<object>(), depth 
   if (Array.isArray(value)) {
     return value.map((item) => redactValue(item, seen, next));
   }
-  // Date/RegExp carry no secret-family keys and their data lives in internal slots; pass them
-  // through so util.format renders the real value instead of an empty {}.
-  if (value instanceof Date || value instanceof RegExp) {
+  // A Date's data lives in an internal slot and Date.toJSON emits only the ISO string, so any
+  // property attached to it is dropped on serialization - safe to pass through so util.format and
+  // pino render the real timestamp.
+  if (value instanceof Date) {
     return value;
+  }
+  // A RegExp, unlike a Date, has NO toJSON, so pino/JSON.stringify serialize its OWN-ENUMERABLE
+  // properties verbatim - a secret attached to a RegExp (`r.password = ...`) would leak in
+  // cleartext. Represent the pattern by its (scrubbed) source and key-redact any attached props.
+  if (value instanceof RegExp) {
+    const own = _redactOwnProps(value, seen, next);
+    const source = scrubText(value.toString());
+    return Object.keys(own).length === 0 ? source : { regex: source, ...own };
   }
   if (value instanceof Map) {
     const out = new Map<unknown, unknown>();
