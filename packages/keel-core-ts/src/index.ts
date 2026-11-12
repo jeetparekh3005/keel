@@ -24,7 +24,13 @@ export {
   type Logger,
 } from './logging/index.js';
 
-export { initTelemetry, type TelemetryOptions } from './telemetry/index.js';
+export {
+  initTelemetry,
+  observeDbPool,
+  type ObserveDbPoolOptions,
+  type PoolStatsSource,
+  type TelemetryOptions,
+} from './telemetry/index.js';
 
 export { type Clock, CLOCK, type SecretProvider, SECRET_PROVIDER } from './ports/index.js';
 export { EnvSecretProvider, SystemClock } from './adapters/index.js';
