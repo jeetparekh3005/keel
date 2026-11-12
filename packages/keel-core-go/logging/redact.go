@@ -67,6 +67,20 @@ func luhnOK(digits string) bool {
 	return sum%10 == 0
 }
 
+// Redacted is the placeholder substituted for a secret value. Exported so other sinks
+// (for example the OTLP span-export path) redact to the same marker as the log sink.
+const Redacted = redacted
+
+// IsSecretKey reports whether key belongs to a secret family (case/separator-insensitive),
+// meaning its value is redacted wholesale. Exported so the span-export path reuses the same
+// key classification as the log sink rather than duplicating the fragment list.
+func IsSecretKey(key string) bool { return isSecretKey(key) }
+
+// ScrubText replaces secret patterns and Luhn-valid card numbers in a string value with the
+// redaction marker. Exported so the span-export path scrubs string values with the same
+// patterns as the log sink rather than duplicating them.
+func ScrubText(text string) string { return scrubText(text) }
+
 // scrubText replaces secret patterns and Luhn-valid card numbers in a string value.
 func scrubText(text string) string {
 	for _, pattern := range secretPatterns {

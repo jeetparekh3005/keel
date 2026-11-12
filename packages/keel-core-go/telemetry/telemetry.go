@@ -61,9 +61,11 @@ func Init(ctx context.Context, service, version, environment, level, otlpEndpoin
 	if err != nil {
 		return noop, err
 	}
+	// Wrap the OTLP exporter so span attributes are redacted on the export path with the same
+	// rules as the log sink; otherwise a secret could leak to the collector via a trace.
 	tracerProvider := sdktrace.NewTracerProvider(
 		sdktrace.WithResource(res),
-		sdktrace.WithBatcher(traceExporter),
+		sdktrace.WithBatcher(newRedactingExporter(traceExporter)),
 	)
 	otel.SetTracerProvider(tracerProvider)
 	otel.SetTextMapPropagator(propagation.TraceContext{})
