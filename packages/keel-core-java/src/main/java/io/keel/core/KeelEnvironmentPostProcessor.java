@@ -45,6 +45,12 @@ public class KeelEnvironmentPostProcessor implements EnvironmentPostProcessor {
       // name is deprecated-at-error and no longer bound, so a span exporter is only wired under
       // the new namespace.
       bridges.put("management.opentelemetry.tracing.export.otlp.endpoint", otlpEndpoint);
+      // The metrics exporter is gated the same way as the span exporter: off unless an endpoint
+      // is configured (see the default below), so a service without a collector does not emit a
+      // failing push every step. The Micrometer OTLP registry wants the full metrics-signal URL
+      // (unlike the tracing exporter it does not append the /v1/metrics path itself).
+      bridges.put("management.otlp.metrics.export.enabled", "true");
+      bridges.put("management.otlp.metrics.export.url", otlpMetricsUrl(otlpEndpoint));
     }
     environment.getPropertySources().addFirst(new MapPropertySource("keel-bridges", bridges));
 
@@ -52,7 +58,28 @@ public class KeelEnvironmentPostProcessor implements EnvironmentPostProcessor {
     defaults.put("logging.structured.format.console", "ecs");
     defaults.put("management.tracing.sampling.probability", "1.0");
     defaults.put("spring.threads.virtual.enabled", "true");
+    // No collector configured -> record the HTTP timers in-memory for actuator but export nothing,
+    // matching the trace exporter being wired only when KEEL_OTLP_ENDPOINT is set.
+    defaults.put("management.otlp.metrics.export.enabled", "false");
+    // Export the request-duration histogram in seconds (the OTel http.server.request.duration
+    // unit); Micrometer's OTLP registry defaults to milliseconds otherwise. The name is the
+    // post-rename OTel identity (HttpServerMetricsAutoConfiguration) so the bucket config matches.
+    defaults.put("management.otlp.metrics.export.base-time-unit", "seconds");
+    defaults.put(
+        "management.metrics.distribution.percentiles-histogram.http.server.request.duration",
+        "true");
     environment.getPropertySources().addLast(new MapPropertySource("keel-defaults", defaults));
+  }
+
+  /**
+   * Derives the OTLP metrics-signal URL from the base endpoint. Accepts an endpoint already ending
+   * in {@code /v1/metrics} (idempotent) or a bare collector base (to which the signal path is
+   * appended), so KEEL_OTLP_ENDPOINT can be the same base value the trace exporter consumes.
+   */
+  private static String otlpMetricsUrl(String endpoint) {
+    String trimmed =
+        endpoint.endsWith("/") ? endpoint.substring(0, endpoint.length() - 1) : endpoint;
+    return trimmed.endsWith("/v1/metrics") ? trimmed : trimmed + "/v1/metrics";
   }
 
   private static void bridge(

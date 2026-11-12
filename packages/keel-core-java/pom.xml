@@ -54,6 +54,15 @@
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-opentelemetry</artifactId>
     </dependency>
+    <!-- The metrics counterpart of the OTLP span exporter: a Micrometer MeterRegistry that pushes
+         http.server.requests (and the rest of the actuator meter set) over OTLP. Without a registry
+         on the classpath actuator records the timers in-memory but exports nothing. Boot's OTLP
+         metrics auto-config binds it; export is enabled only when KEEL_OTLP_ENDPOINT is set
+         (KeelEnvironmentPostProcessor), mirroring how the trace exporter is gated. -->
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>micrometer-registry-otlp</artifactId>
+    </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>
