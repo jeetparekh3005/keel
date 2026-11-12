@@ -4,9 +4,9 @@ description: >-
   keel reference service, Rust vertical - hardened Kubernetes deployment
   (ADR-0008, ADR-0017).
 type: application
-version: 0.4.0
-appVersion: 0.4.0
+version: 0.5.1
+appVersion: 0.5.1
 dependencies:
   - name: keel-service-base
-    version: "0.5.0"
-    repository: "file://../keel-service-base"
+    version: 0.5.0
+    repository: file://../keel-service-base

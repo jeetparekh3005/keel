@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.5.1](https://github.com/jeetparekh3005/keel/compare/v0.5.0...v0.5.1) (2026-11-12)
+
+
+### Bug Fixes
+
+* remediate independent-review findings (logger, body-limit, conformance, CI lane) ([#403](https://github.com/jeetparekh3005/keel/issues/403)) ([2db9f51](https://github.com/jeetparekh3005/keel/commit/2db9f51c8862894066f2444c3cd6f8b3e1aa3ca2))
+
+
+### Miscellaneous Chores
+
+* integrate v0.5.1 (dev to main) ([0895023](https://github.com/jeetparekh3005/keel/commit/0895023f5a93974ce07add4b96f8604480d7cecb))
+
+## [0.5.0](https://github.com/jeetparekh3005/keel/compare/v0.4.0...v0.5.0) (2026-11-11)
+
+
+### Features
+
+* **ci:** keel-service-base Helm library chart; service charts depend on it ([#385](https://github.com/jeetparekh3005/keel/issues/385)) ([0f9fdaa](https://github.com/jeetparekh3005/keel/commit/0f9fdaa932af3d07be8e1aa0b40638df94a2ada3))
+* **ci:** reusable workflow_call CI workflows per language; templates ship ci.yml ([#386](https://github.com/jeetparekh3005/keel/issues/386)) ([372c96b](https://github.com/jeetparekh3005/keel/commit/372c96baba5e8d6f488e6d5ab091af9237a9bdef))
+* **go:** Copier template for the Go vertical + byte-identical dogfood ([#380](https://github.com/jeetparekh3005/keel/issues/380)) ([c371ea7](https://github.com/jeetparekh3005/keel/commit/c371ea70803a59fe3104648da6c92c399ae14487))
+* **java:** Copier template for the Java vertical + byte-identical dogfood ([#382](https://github.com/jeetparekh3005/keel/issues/382)) ([d00de41](https://github.com/jeetparekh3005/keel/commit/d00de411595329e5ad3c33f971d5051265368af7))
+* **platform:** Copier template for the Python service (keel new service) ([#373](https://github.com/jeetparekh3005/keel/issues/373)) ([de4361e](https://github.com/jeetparekh3005/keel/commit/de4361ed4a94ddabb1b05632fda7a5a09482c260)), closes [#369](https://github.com/jeetparekh3005/keel/issues/369)
+* **platform:** keel CLI - thin Copier wrapper + platform.yaml conformance check ([#377](https://github.com/jeetparekh3005/keel/issues/377)) ([763f1e3](https://github.com/jeetparekh3005/keel/commit/763f1e36ac939341c42921a2c7d7d8f6aa190b7c)), closes [#371](https://github.com/jeetparekh3005/keel/issues/371)
+* **platform:** prove the keel update round-trip (Tier-2 propagation) ([#378](https://github.com/jeetparekh3005/keel/issues/378)) ([7863a67](https://github.com/jeetparekh3005/keel/commit/7863a67c4b12b9386eb3a17501fc0d5056e2936b)), closes [#372](https://github.com/jeetparekh3005/keel/issues/372)
+* **rust:** Copier template for the Rust vertical + byte-identical dogfood ([#381](https://github.com/jeetparekh3005/keel/issues/381)) ([7691413](https://github.com/jeetparekh3005/keel/commit/7691413c40be5d1f28c0b642b500d97e69a76bb9))
+* **ts:** Copier template for the TypeScript/NestJS vertical + byte-identical dogfood ([#383](https://github.com/jeetparekh3005/keel/issues/383)) ([8a8d553](https://github.com/jeetparekh3005/keel/commit/8a8d55305924192ed4ef3961dfa700cc93bdc329))
+
+
+### Bug Fixes
+
+* **cli:** harden keel check - strip comments, parse manifests, tighten markers ([#398](https://github.com/jeetparekh3005/keel/issues/398)) ([98291f8](https://github.com/jeetparekh3005/keel/commit/98291f8b1be520d579390c634d90047759a1267a))
+* **go:** gofmt the rendered service so a non-item aggregate stays CI-clean ([#396](https://github.com/jeetparekh3005/keel/issues/396)) ([4ab25a6](https://github.com/jeetparekh3005/keel/commit/4ab25a6a6b2d3149b4253a8dc7c04ec88b2b91fd))
+* **ts:** key-redact object log args + streaming body cap for chunked requests ([#397](https://github.com/jeetparekh3005/keel/issues/397)) ([ed8e249](https://github.com/jeetparekh3005/keel/commit/ed8e249ef47342408d3fd6a9802847e5b197b40a))
+* **ts:** scrub post-interpolation log messages + content-type-agnostic body limit ([#390](https://github.com/jeetparekh3005/keel/issues/390)) ([194d6ba](https://github.com/jeetparekh3005/keel/commit/194d6ba986b9a3ab8a503846b7054a220e6bb643))
+
+
+### Miscellaneous Chores
+
+* integrate dev for the v0.5.0 release ([9d2517e](https://github.com/jeetparekh3005/keel/commit/9d2517eb018cb7dbaef32b1d0284acc0166b7ff8))
+
 ## [0.4.0](https://github.com/jeetparekh3005/keel/compare/v0.3.2...v0.4.0) (2026-11-11)
 
 
