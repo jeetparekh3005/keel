@@ -96,7 +96,9 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   go vet, staticcheck, go test (with a Postgres service), and **govulncheck as a blocking
   dependency-CVE gate**. Several Rust follow-ups are built in from the start here (native JWKS
   refresh, `scp`-string, log-trace correlation, ReDoS-immune scrubbers, honest `t.Skip`
-  integration gating). Not yet: HTTP request metrics and a live Keycloak JWKS test.
+  integration gating) plus **route-templated HTTP request metrics** (`http.server.request.duration`,
+  `http.server.active_requests`, via a chi middleware and an OTLP MeterProvider). Not yet: a live
+  Keycloak JWKS test.
 - **TypeScript/NestJS vertical (v0.4)**: a fourth language vertical, same hexagonal
   boundaries, deliberately batteries-included (NestJS + DI) as the contrast to the stdlib-first
   Go/Rust services (ADR-0019). Shared library `packages/keel-core-ts` (`@keel/core`) + thin
@@ -184,7 +186,7 @@ wired to a sink/gate; `none` = absent.
 
 | Capability | Python | Rust | Go | Java | TypeScript |
 |------------|--------|------|-----|------|------------|
-| HTTP request metrics (`http.server.*`, route-templated) | none* | none | none | none | full |
+| HTTP request metrics (`http.server.*`, route-templated) | none* | none | full | none | full |
 | Live Keycloak JWKS integration test | full | none | none | none | none |
 | Per-line log-to-trace correlation | full | none | full | full | full |
 | OTLP span-export redaction | none | none | none | none | none |
