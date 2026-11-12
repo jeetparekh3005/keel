@@ -90,6 +90,40 @@ describe('createLogger redaction', () => {
     expect(out).toContain('[REDACTED]');
   });
 
+  it('redacts a secret-family property attached to a RegExp (no toJSON passthrough leak)', () => {
+    // A RegExp has no toJSON, so pino serializes its own-enumerable props verbatim. A secret
+    // attached to a RegExp must be redacted, while the pattern itself is still shown.
+    const cap = capture();
+    const logger = createLogger('info', cap.stream);
+    const re = /ab+c/i;
+    (re as unknown as Record<string, unknown>).password = 'plaintextregexsecret';
+    logger.info({ field: re }, 'merge');
+    logger.info('interp %o', re);
+    const out = cap
+      .records()
+      .map((r) => JSON.stringify(r))
+      .join('\n');
+    expect(out).not.toContain('plaintextregexsecret');
+    expect(out).toContain('[REDACTED]');
+    expect(out).toContain('/ab+c/i'); // the pattern is preserved
+  });
+
+  it('does not crash when a BigInt is logged via %j or as a merge field', () => {
+    // JSON.stringify throws on a BigInt; the %j interpolation path and the merge path must not let
+    // that escape the logging call.
+    const cap = capture();
+    const logger = createLogger('info', cap.stream);
+    expect(() => logger.info('ctx %j', { amount: 10n })).not.toThrow();
+    expect(() => logger.info('bare %j', 9007199254740993n)).not.toThrow();
+    expect(() => logger.info({ balance: 42n }, 'merge')).not.toThrow();
+    const out = cap
+      .records()
+      .map((r) => JSON.stringify(r))
+      .join('\n');
+    expect(out).toContain('10');
+    expect(out).toContain('42');
+  });
+
   it('redacts a secret inside an OBJECT Map KEY (not just the value)', () => {
     // util.format('%o', map) renders Map keys verbatim; an object key carrying a secret-family
     // field must be redacted too, or it leaks even though the value side is handled.
