@@ -8,6 +8,10 @@
 
 export const REDACTED = '[REDACTED]';
 
+// Bound recursion so a pathologically deep (or adversarially deep) structure cannot overflow the
+// call stack and crash the logging call. Real log payloads are nowhere near this deep.
+const MAX_DEPTH = 100;
+
 // Fragments that mark a key whose value is redacted wholesale. Matched against a normalized
 // (lowercased, separator-stripped) key, mirroring the other verticals.
 const SECRET_KEY_FRAGMENTS = [
@@ -91,7 +95,7 @@ export function scrubText(text: string): string {
  * field that only key-based redaction catches. The branches below preserve diagnostics (Error
  * message/stack, Date value) while still key-redacting every secret-family entry.
  */
-export function redactValue(value: unknown, seen = new WeakSet<object>()): unknown {
+export function redactValue(value: unknown, seen = new WeakSet<object>(), depth = 0): unknown {
   if (typeof value === 'string') {
     return scrubText(value);
   }
@@ -103,12 +107,18 @@ export function redactValue(value: unknown, seen = new WeakSet<object>()): unkno
   if (value === null || typeof value !== 'object') {
     return value;
   }
+  if (depth >= MAX_DEPTH) {
+    // Stop recursing before the stack overflows; the value is elided wholesale, so nothing
+    // under it (secret or not) is emitted.
+    return '[truncated: max depth]';
+  }
   if (seen.has(value)) {
     return '[Circular]';
   }
   seen.add(value);
+  const next = depth + 1;
   if (Array.isArray(value)) {
-    return value.map((item) => redactValue(item, seen));
+    return value.map((item) => redactValue(item, seen, next));
   }
   // Date/RegExp carry no secret-family keys and their data lives in internal slots; pass them
   // through so util.format renders the real value instead of an empty {}.
@@ -118,12 +128,12 @@ export function redactValue(value: unknown, seen = new WeakSet<object>()): unkno
   if (value instanceof Map) {
     const out = new Map<unknown, unknown>();
     for (const [k, v] of value) {
-      out.set(k, typeof k === 'string' && isSecretKey(k) ? REDACTED : redactValue(v, seen));
+      out.set(k, typeof k === 'string' && isSecretKey(k) ? REDACTED : redactValue(v, seen, next));
     }
     return out;
   }
   if (value instanceof Set) {
-    return new Set(Array.from(value, (item) => redactValue(item, seen)));
+    return new Set(Array.from(value, (item) => redactValue(item, seen, next)));
   }
   if (value instanceof Error) {
     // Return a rebuilt Error with SCRUBBED message/stack and key-redacted own-props. The merge
@@ -146,7 +156,7 @@ export function redactValue(value: unknown, seen = new WeakSet<object>()): unkno
     }
     // Enumerable own-props only (Object.keys excludes Symbol keys, so a Symbol-keyed secret is
     // DROPPED rather than leaked); key-redact and recurse, guarding a throwing getter.
-    for (const [key, val] of Object.entries(_redactOwnProps(value, seen))) {
+    for (const [key, val] of Object.entries(_redactOwnProps(value, seen, next))) {
       (rebuilt as unknown as Record<string, unknown>)[key] = val;
     }
     return rebuilt;
@@ -154,7 +164,7 @@ export function redactValue(value: unknown, seen = new WeakSet<object>()): unkno
   // Plain object OR class instance: both keep their data in enumerable own-properties, so the
   // key-redaction loop handles them identically (a class instance loses its class name in the
   // log output, an acceptable trade for redacting its secret-family fields).
-  return _redactOwnProps(value, seen);
+  return _redactOwnProps(value, seen, next);
 }
 
 /**
@@ -162,7 +172,11 @@ export function redactValue(value: unknown, seen = new WeakSet<object>()): unkno
  * Symbol-keyed properties are intentionally skipped (dropped, never emitted). A property whose
  * getter throws is reported as ``[unreadable]`` rather than crashing the logging call.
  */
-function _redactOwnProps(value: object, seen: WeakSet<object>): Record<string, unknown> {
+function _redactOwnProps(
+  value: object,
+  seen: WeakSet<object>,
+  depth: number,
+): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   let keys: string[];
   try {
@@ -183,7 +197,7 @@ function _redactOwnProps(value: object, seen: WeakSet<object>): Record<string, u
       out[key] = '[unreadable]';
       continue;
     }
-    out[key] = redactValue(raw, seen);
+    out[key] = redactValue(raw, seen, depth);
   }
   return out;
 }

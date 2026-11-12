@@ -205,6 +205,44 @@ describe('createLogger redaction', () => {
     expect(out).not.toContain('plaintextproxysecret');
   });
 
+  it('does not crash when a MERGE object has an own-enumerable getter that throws', () => {
+    // pino's internal mixin-merge (Object.assign) reads the merge object's getters before any
+    // formatter runs, so a throwing getter there crashed the call unless the merge object is
+    // redacted first in the logMethod hook.
+    const cap = capture();
+    const logger = createLogger('info', cap.stream);
+    const hostile: Record<string, unknown> = { password: 'plaintextmergegetter' };
+    Object.defineProperty(hostile, 'boom', {
+      enumerable: true,
+      get() {
+        throw new Error('getter fail');
+      },
+    });
+    expect(() => logger.info(hostile, 'thrown getter on merge')).not.toThrow();
+    const line = cap
+      .records()
+      .map((r) => JSON.stringify(r))
+      .join('\n');
+    expect(line).toContain('thrown getter on merge'); // the line was emitted
+    expect(line).not.toContain('plaintextmergegetter');
+  });
+
+  it('does not overflow the stack on a pathologically deep nested object', () => {
+    const cap = capture();
+    const logger = createLogger('info', cap.stream);
+    let deep: Record<string, unknown> = { password: 'plaintextdeepsecret' };
+    for (let i = 0; i < 5000; i++) {
+      deep = { child: deep };
+    }
+    expect(() => logger.info({ root: deep }, 'very deep')).not.toThrow();
+    const line = cap
+      .records()
+      .map((r) => JSON.stringify(r))
+      .join('\n');
+    expect(line).toContain('truncated: max depth');
+    expect(line).not.toContain('plaintextdeepsecret');
+  });
+
   it('key-redacts secret-family fields inside an object interpolation arg (%o / %j)', () => {
     // util.format serialises the object verbatim, so pattern-only scrubbing would miss a secret
     // under a secret-family KEY. The interpolation path must apply the same key-based redaction

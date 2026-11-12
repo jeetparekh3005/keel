@@ -51,6 +51,32 @@ function preserveIfId(value: unknown, shape: RegExp): unknown {
 }
 
 /**
+ * Redact a user merge object BEFORE pino's internal mixin-merge (an Object.assign) reads it: a
+ * throwing own-enumerable getter on that object would otherwise crash the whole logging call from
+ * inside pino, before any formatter runs. redactValue is getter-safe (it guards each read), so the
+ * object pino then merges is plain data. trace_id/span_id are restored from the original (guarded)
+ * so the id-aware handling in formatters.log still sees their real values.
+ */
+function redactMergeArg(obj: object): unknown {
+  const redacted = redactValue(obj);
+  if (redacted === null || typeof redacted !== 'object' || Array.isArray(redacted)) {
+    return redacted;
+  }
+  const out = redacted as Record<string, unknown>;
+  const src = obj as Record<string, unknown>;
+  for (const key of ['trace_id', 'span_id'] as const) {
+    try {
+      if (key in src) {
+        out[key] = src[key];
+      }
+    } catch {
+      // A throwing getter under these keys keeps its redacted value; correctness over fidelity.
+    }
+  }
+  return out;
+}
+
+/**
  * Build the redacting JSON logger used by this vertical: structured JSON at the given level,
  * with the cross-vertical schema (timestamp/level/message), secret redaction, and trace
  * correlation. Unknown levels fall back to info. An optional destination stream is accepted
@@ -112,7 +138,8 @@ export function createLogger(level: string, destination?: DestinationStream): Lo
                   : arg,
               );
             const message = scrubText(format(msg, ...redactedArgs));
-            const next = msgIdx === 1 ? [args[0], message] : [message];
+            // args[0] is the merge object when msgIdx === 1; redact it before pino's mixin-merge.
+            const next = msgIdx === 1 ? [redactMergeArg(args[0] as object), message] : [message];
             method.apply(this, next as Parameters<typeof method>);
             return;
           }
@@ -127,6 +154,10 @@ export function createLogger(level: string, destination?: DestinationStream): Lo
             }
             if (arg instanceof Error || typeof arg === 'function') {
               return redactValue(arg);
+            }
+            // A merge object (the first positional): redact before pino's mixin-merge reads it.
+            if (arg !== null && typeof arg === 'object') {
+              return redactMergeArg(arg);
             }
             return arg;
           });
