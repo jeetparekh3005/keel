@@ -10,13 +10,24 @@ problem+json errors, metrics, and health endpoints.
 from __future__ import annotations
 
 import contextlib
+import os
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
+
+# Opt in to the STABLE OpenTelemetry HTTP semantic conventions process-wide, so the
+# ASGI instrumentation emits ``http.server.request.duration`` (seconds) with
+# ``http.request.method`` / ``http.response.status_code`` attributes rather than the
+# legacy ``http.server.duration`` (milliseconds). The opt-in is read once, lazily, the
+# first time any instrumentation initializes; setting it at import (before create_app
+# runs) is what makes the metric names deterministic. ``setdefault`` lets a deployment
+# override it (e.g. ``http/dup`` during a migration) via the real environment.
+os.environ.setdefault("OTEL_SEMCONV_STABILITY_OPT_IN", "http")
 
 from keel_core.adapters.inbound.http.conformance import assert_routes_require_auth
 from keel_core.adapters.inbound.http.edge import BodyLimitMiddleware, SecurityHeadersMiddleware
@@ -122,12 +133,6 @@ def create_app(
             redoc_url=None,
             openapi_url=None,
         )
-    # FastAPI/Starlette emit OTel spans AND http.server.* metrics natively once a
-    # provider is configured (see keel_core.adapters.outbound.telemetry); the native
-    # ASGI instrumentation wraps the whole app, so it already records our
-    # RateLimit/BodyLimit rejections (429/413) and the logger reads the active span.
-    # We add no duplicate duration histogram of our own.
-    #
     # add_middleware makes the LAST-added the OUTERMOST. Add inner-to-outer so the
     # final stack is (outer -> inner): CORS, RequestId, SecurityHeaders, RateLimit,
     # BodyLimit, app. Rejections carry the request-id and security headers - they are
@@ -162,4 +167,15 @@ def create_app(
     # the bound authn-only dependency for routers that don't need scope checks.
     app.state.authenticator = authenticator
     app.state.require_principal = principal_dependency(authenticator)
+    # Instrument explicitly so the OTel server metrics/spans are owned at the composition
+    # point rather than left to FastAPI's implicit native telemetry: the OTel ASGI
+    # middleware wraps the whole app and records the duration/active-request metrics and
+    # the server span for every request, including RateLimit/BodyLimit rejections
+    # (429/413). It reads the global tracer/meter providers configured by the composition
+    # root and labels the duration histogram by route TEMPLATE (``http.route``), not the
+    # raw path, so cardinality stays bounded. Metrics: ``http.server.request.duration``
+    # (histogram, seconds) and ``http.server.active_requests`` (up-down counter). FastAPI's
+    # built-in telemetry detects this middleware and defers (no double-emission), so these
+    # are recorded exactly once.
+    FastAPIInstrumentor.instrument_app(app)
     return app
