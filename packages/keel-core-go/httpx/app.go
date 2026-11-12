@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"go.opentelemetry.io/otel"
 )
 
 // DefaultMaxBodyBytes caps request bodies at 1 MiB, bounding the large-payload DoS vector.
@@ -36,9 +37,18 @@ func NewRouter(cfg AppConfig, ready ReadinessCheck, mount func(r chi.Router)) ht
 	r := chi.NewRouter()
 
 	// Middleware must be registered before routes. Order is outer-to-inner: security
-	// headers (outermost) decorate every response, then request-id, CORS, body limit.
+	// headers (outermost) decorate every response, then request-id, metrics, CORS, body
+	// limit. Metrics sit outside CORS and the body limit so a short-circuited response (e.g.
+	// a 413) is still counted with its real status code.
 	r.Use(securityHeaders)
 	r.Use(requestID)
+	// Metrics read the global MeterProvider; when telemetry export is off this is the no-op
+	// provider, so the instruments are no-ops and the middleware adds negligible overhead.
+	// Instrument construction only errors on an invalid definition, so a failure here is a
+	// programming error rather than a runtime condition; skip the middleware if it occurs.
+	if hm, err := newHTTPMetrics(otel.GetMeterProvider()); err == nil {
+		r.Use(hm.middleware(r))
+	}
 	if len(cfg.CORSAllowOrigins) > 0 {
 		r.Use(cors(cfg.CORSAllowOrigins))
 	}
