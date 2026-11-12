@@ -9,14 +9,23 @@ from keel_core.testkit.fakes import StubAuthenticator
 _READER = InMemoryMetricReader()
 configure_metrics(service="t", version="0", reader=_READER)
 
+# The scope the OpenTelemetry FastAPI instrumentation records under. We assert on it so
+# the test is tied to the instrumentation ``create_app`` wires in: FastAPI 0.162.2 also
+# ships built-in telemetry that would emit the same metric under the "fastapi" scope, so
+# a name-only check would still pass if ``FastAPIInstrumentor.instrument_app`` were
+# removed. Pinning the scope makes this test fail when that explicit wiring is dropped.
+_INSTRUMENTATION_SCOPE = "opentelemetry.instrumentation.fastapi"
 
-def _metrics_by_name():
+
+def _metrics_by_name(scope: str | None = None):
     data = _READER.get_metrics_data()
     out = {}
     if data is None:
         return out
     for resource_metric in data.resource_metrics:
         for scope_metric in resource_metric.scope_metrics:
+            if scope is not None and scope_metric.scope.name != scope:
+                continue
             for metric in scope_metric.metrics:
                 out[metric.name] = metric
     return out
@@ -25,9 +34,14 @@ def _metrics_by_name():
 def test_http_request_metrics_are_recorded():
     app = create_app(service="t", version="0", authenticator=StubAuthenticator({}))
     TestClient(app).get("/healthz")
-    metrics = _metrics_by_name()
-    # Stable OTel HTTP semconv: a duration histogram (its count is the request volume).
+    # Scope-filtered: only metrics produced by the instrumentation create_app wires in.
+    metrics = _metrics_by_name(scope=_INSTRUMENTATION_SCOPE)
+    # Stable OTel HTTP semconv: a duration histogram (its count is the request volume)
+    # plus the active-requests up-down counter. Recording stops if the instrumentation
+    # is removed, so these asserts fail rather than silently passing on a shape.
     assert "http.server.request.duration" in metrics
+    assert "http.server.active_requests" in metrics
+    # Legacy/pre-stable names must NOT appear (we opt in to the stable semconv, not dup).
     assert "http.server.requests" not in metrics
     assert "http.server.duration" not in metrics
 
@@ -35,7 +49,7 @@ def test_http_request_metrics_are_recorded():
 def test_duration_carries_semconv_attributes_with_bounded_cardinality():
     app = create_app(service="t", version="0", authenticator=StubAuthenticator({}))
     TestClient(app).get("/healthz")
-    metric = _metrics_by_name()["http.server.request.duration"]
+    metric = _metrics_by_name(scope=_INSTRUMENTATION_SCOPE)["http.server.request.duration"]
     # The global reader accumulates points from every test's app, so select the
     # point for THIS request by its route template rather than taking the first.
     points = [p for p in metric.data.data_points if p.attributes.get("http.route") == "/healthz"]

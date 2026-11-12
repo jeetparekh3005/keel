@@ -11,6 +11,7 @@ dependencies = [
     "pyjwt[crypto]>=2.15.1",
     "starlette>=0.37",            # ASGI middleware types/utilities (fastapi pins a compatible version)
     "opentelemetry-sdk>=1.27",    # OTLP exporter added at deployment time
+    "opentelemetry-instrumentation-fastapi>=0.48b0",  # route-templated http.server.* spans + metrics
 ]
 
 [project.optional-dependencies]

@@ -42,10 +42,12 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   off the event loop (threadpool) with a bounded JWKS timeout.
 - **Metrics**: a DB connection-pool saturation gauge (`db.client.connection.count`/`.max`) and
   a dropped-log counter (`log.records.dropped`) are emitted (`telemetry/saturation.py`). **HTTP
-  request metrics (`http.server.request.duration`, `http.server.active_requests`) are NOT yet
-  emitted** - no ASGI/FastAPI OpenTelemetry instrumentation is installed, and `tests/test_metrics.py`
-  is a placeholder that asserts the instrument's shape without anything producing it. This is a
-  v0.6 parity item across all five verticals (see the parity matrix below).
+  request metrics (`http.server.request.duration`, `http.server.active_requests`) are emitted**,
+  route-templated (`http.route`) and labelled by method (`http.request.method`) and status
+  (`http.response.status_code`), via OpenTelemetry FastAPI instrumentation wired in `create_app`.
+  `tests/test_metrics.py` records them through an in-memory metric reader and asserts the route
+  template, so it fails if the instrumentation is removed. Bringing this to the four non-Python
+  verticals is a v0.6 parity item (see the parity matrix below).
 - **Port-coverage conformance check**: every driven port in `platform.yaml` must have a
   registered adapter (fails CI otherwise).
 - **Postgres integration test** (CI service container) + an 85% coverage floor.
@@ -181,7 +183,7 @@ wired to a sink/gate; `none` = absent.
 
 | Capability | Python | Rust | Go | Java | TypeScript |
 |------------|--------|------|-----|------|------------|
-| HTTP request metrics (`http.server.*`, route-templated) | none* | none | none | none | none |
+| HTTP request metrics (`http.server.*`, route-templated) | full | none | none | none | none |
 | Live Keycloak JWKS integration test | full | none | none | none | none |
 | Per-line log-to-trace correlation | full | none | full | full | full |
 | OTLP span-export redaction | none | none | none | none | none |
@@ -193,9 +195,10 @@ wired to a sink/gate; `none` = absent.
 | DB pool saturation metric (emitted, not just readable) | full | partial | partial | partial | partial |
 | NestJS bootstrap logs as JSON (TS-only) | n/a | n/a | n/a | n/a | none |
 
-`*` Python's HTTP-request-metrics row was previously described as "done" via FastAPI's native
-instrumentation; a code audit found that instrumentation is not installed and the test is a
-placeholder, so no vertical emits these today. It is a genuine parity gap, not a regression.
+Python's HTTP-request-metrics row is now `full`: the metrics are emitted via explicit
+OpenTelemetry FastAPI instrumentation wired in `create_app`, labelled by route template, method,
+and status, and covered by a reader-backed test (`tests/test_metrics.py`). The four non-Python
+verticals still need this capability, so it remains an open parity item there.
 
 The scope is large by design (the backend-integration surfaces - `api_key`, mTLS, NATS, gRPC -
 plus metrics and OTLP-span redaction must reach the four non-Python verticals, and Python needs
