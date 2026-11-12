@@ -106,14 +106,30 @@ export function createLogger(level: string, destination?: DestinationStream): Lo
             // either flattening diagnostics to `{}` or leaking a secret-family field.
             const redactedArgs = args
               .slice(msgIdx + 1)
-              .map((arg) => (arg !== null && typeof arg === 'object' ? redactValue(arg) : arg));
+              .map((arg) =>
+                arg !== null && (typeof arg === 'object' || typeof arg === 'function')
+                  ? redactValue(arg)
+                  : arg,
+              );
             const message = scrubText(format(msg, ...redactedArgs));
             const next = msgIdx === 1 ? [args[0], message] : [message];
             method.apply(this, next as Parameters<typeof method>);
             return;
           }
-          // No interpolation args: scrub each string positional directly.
-          const scrubbed = args.map((arg) => (typeof arg === 'string' ? scrubText(arg) : arg));
+          // No interpolation args. Scrub string positionals, and redact an Error or function
+          // positional BEFORE pino sees it: pino lifts a bare Error's `.message` to the top-level
+          // message key (bypassing both this scrub and the merge-field redactValue in formatters.log),
+          // and a function's own props would otherwise print raw. A plain merge object is left for
+          // formatters.log, which redacts it AND preserves a valid trace/span id.
+          const scrubbed = args.map((arg) => {
+            if (typeof arg === 'string') {
+              return scrubText(arg);
+            }
+            if (arg instanceof Error || typeof arg === 'function') {
+              return redactValue(arg);
+            }
+            return arg;
+          });
           method.apply(this, scrubbed as Parameters<typeof method>);
         },
       },

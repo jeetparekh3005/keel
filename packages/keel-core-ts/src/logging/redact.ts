@@ -95,6 +95,11 @@ export function redactValue(value: unknown, seen = new WeakSet<object>()): unkno
   if (typeof value === 'string') {
     return scrubText(value);
   }
+  if (typeof value === 'function') {
+    // A function can carry own properties (a secret among them); util.format would print them
+    // verbatim. Collapse it to a bare label so no attached secret can leak.
+    return `[Function: ${value.name || 'anonymous'}]`;
+  }
   if (value === null || typeof value !== 'object') {
     return value;
   }
@@ -159,7 +164,14 @@ export function redactValue(value: unknown, seen = new WeakSet<object>()): unkno
  */
 function _redactOwnProps(value: object, seen: WeakSet<object>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const key of Object.keys(value)) {
+  let keys: string[];
+  try {
+    // A hostile Proxy can throw from its ownKeys trap; never let that crash the logging call.
+    keys = Object.keys(value);
+  } catch {
+    return { '[unreadable]': true };
+  }
+  for (const key of keys) {
     if (isSecretKey(key)) {
       out[key] = REDACTED;
       continue;
