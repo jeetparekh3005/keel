@@ -41,6 +41,27 @@ class KeelEnvironmentPostProcessorTest {
   }
 
   @Test
+  void enablesOtlpMetricsExportWithTheSignalUrlWhenEndpointSet() {
+    StandardEnvironment environment =
+        environmentWith(Map.of("KEEL_OTLP_ENDPOINT", "http://collector:4318"));
+    assertEquals("true", environment.getProperty("management.otlp.metrics.export.enabled"));
+    // The registry wants the full metrics-signal URL; the base endpoint has the path appended.
+    assertEquals(
+        "http://collector:4318/v1/metrics",
+        environment.getProperty("management.otlp.metrics.export.url"));
+    // The duration histogram is exported in seconds (the OTel unit), not Micrometer's default ms.
+    assertEquals(
+        "seconds", environment.getProperty("management.otlp.metrics.export.base-time-unit"));
+  }
+
+  @Test
+  void leavesOtlpMetricsExportDisabledWhenEndpointUnset() {
+    StandardEnvironment environment = environmentWith(Map.of());
+    assertEquals("false", environment.getProperty("management.otlp.metrics.export.enabled"));
+    assertNull(environment.getProperty("management.otlp.metrics.export.url"));
+  }
+
+  @Test
   void bridgesPortAndLogLevelAndServiceName() {
     StandardEnvironment environment =
         environmentWith(

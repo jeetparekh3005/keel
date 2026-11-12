@@ -141,7 +141,11 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   through Spring Boot's structured-logging value processor, and **per-line trace correlation**
   (Micrometer Tracing populates `traceId`/`spanId`); OpenTelemetry/OTLP tracing; edge hardening
   as servlet filters (security headers outermost, body limit -> 413, request-id, deny-by-default
-  CORS) and health probes with a real readiness check; **OIDC/JWT auth via Spring Security
+  CORS) and health probes with a real readiness check; **HTTP server request metrics** exported
+  over OTLP (a `micrometer-registry-otlp` registry pushes Boot's `http.server.requests` timer,
+  renamed to the OTel `http.server.request.duration` histogram in seconds plus
+  `http.server.active_requests`, keyed by the route-template `uri`/`method`/`status` tags; export
+  gated on `KEEL_OTLP_ENDPOINT` like the span exporter); **OIDC/JWT auth via Spring Security
   resource server**, whose `NimbusJwtDecoder` refreshes the JWKS natively (and a custom
   converter accepts the Entra `scp`-as-string form), **structurally deny-by-default**
   (`anyRequest().authenticated()`) with per-route `@PreAuthorize` scopes; `JdbcClient`
@@ -153,8 +157,8 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   lane (`java.yml`): **Spotless (google-java-format)**, JUnit + the Spring Boot conformance test
   (with a Postgres service), an **ArchUnit** hexagonal-layering test, JaCoCo, and **Trivy as the
   blocking dependency-CVE gate**. Java is pinned to **25 LTS** (not the non-LTS 27). Not yet:
-  HTTP request metrics beyond Micrometer's defaults, a live Keycloak JWKS test, and a hard
-  JaCoCo coverage floor (needs cross-module report-aggregation).
+  a live Keycloak JWKS test and a hard JaCoCo coverage floor (needs cross-module
+  report-aggregation).
 
 - **Service generator (v0.5, all five verticals; ADR-0021).** A **Copier** template per language
   (`templates/service-<lang>` for python, go, rust, java, ts) scaffolds a new thin service (the
@@ -190,7 +194,7 @@ wired to a sink/gate; `none` = absent.
 
 | Capability | Python | Rust | Go | Java | TypeScript |
 |------------|--------|------|-----|------|------------|
-| HTTP request metrics (`http.server.*`, route-templated) | none* | full | full | none | full |
+| HTTP request metrics (`http.server.*`, route-templated) | none* | full | full | full | full |
 | Live Keycloak JWKS integration test | full | none | none | none | none |
 | Per-line log-to-trace correlation | full | none | full | full | full |
 | OTLP span-export redaction | none | none | none | none | none |
