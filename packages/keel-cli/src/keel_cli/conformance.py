@@ -284,7 +284,7 @@ def _declares_dependency(manifest: Path, module: str) -> bool:
         TypeError,
         AttributeError,
     ):
-        # Unparseable, or parseable-but-structurally-malformed (a scalar where a table/list was
+        # Not parseable, or parseable-but-structurally-malformed (a scalar where a table/list was
         # expected, e.g. `dependencies = 5`): it declares no dependency, so fail closed to False.
         return False
     return module in text
