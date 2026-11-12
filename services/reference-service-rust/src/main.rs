@@ -27,6 +27,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Dev convenience; production applies versioned migrations instead.
     SqlItemRepository::new(&database).ensure_schema().await?;
 
+    // Register the DB connection-pool saturation gauges against the global meter installed
+    // above. Held until shutdown so OpenTelemetry can poll the live pool at each collection.
+    let _db_pool_gauges = keel_core::telemetry::observe_db_pool(&database, "default");
+
     // Verify tokens against the issuer's JWKS (https unless a dev-like environment).
     let jwks = Arc::new(JwksCache::new(&config.oidc_jwks_uri, config.is_dev_like())?);
     jwks.refresh().await?;

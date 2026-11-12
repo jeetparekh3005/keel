@@ -20,6 +20,8 @@ pub struct PoolStats {
     pub size: u32,
     /// Connections open and idle (not checked out).
     pub idle: u32,
+    /// Maximum connections the pool allows (the saturation denominator).
+    pub max: u32,
 }
 
 /// A database connection pool over sqlx's `Any` backend.
@@ -76,6 +78,7 @@ impl Database {
         PoolStats {
             size: self.pool.size(),
             idle: u32::try_from(self.pool.num_idle()).unwrap_or(u32::MAX),
+            max: self.pool.options().get_max_connections(),
         }
     }
 

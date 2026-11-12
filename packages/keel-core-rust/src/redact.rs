@@ -11,6 +11,7 @@
 use std::io::Write;
 use std::sync::OnceLock;
 
+use opentelemetry::trace::TraceContextExt;
 use regex::Regex;
 use serde_json::{Map, Value};
 use time::format_description::well_known::Rfc3339;
@@ -28,7 +29,17 @@ const MAX_FIELD_LEN: usize = 8192;
 
 /// Canonical top-level keys this layer emits; a colliding user field is `x_`-namespaced so
 /// it cannot overwrite the real value (mirrors the Python vertical's reserved-field set).
-const RESERVED_KEYS: &[&str] = &["timestamp", "level", "target", "spans"];
+/// `trace_id`/`span_id` are reserved too: the real correlation ids are injected by this
+/// layer and must survive both a user-field collision and redaction (a valid hex id is not
+/// a secret).
+const RESERVED_KEYS: &[&str] = &[
+    "timestamp",
+    "level",
+    "target",
+    "spans",
+    "trace_id",
+    "span_id",
+];
 
 /// Key fragments (matched against a normalized, lowercased, separator-stripped key) that
 /// mark a field as secret; its value is redacted wholesale. Mirrors the Python families.
@@ -271,6 +282,28 @@ where
             "target".to_string(),
             Value::String(meta.target().to_string()),
         );
+        // Per-line log-to-trace correlation: stamp the enclosing span's OpenTelemetry
+        // trace/span id onto every record emitted inside an active span, so a log line can
+        // be joined to its trace (parity with the Python/Go/Java/TS verticals). The
+        // tracing-opentelemetry layer activates each span's OTel context on entry, so the
+        // current context carries the active span; when no OpenTelemetry layer is installed
+        // (OTLP export off) the context is empty and the span context is invalid, so nothing
+        // is emitted. These are injected directly (not via `record_to_object`), so a valid
+        // hex id survives redaction, and they are reserved keys so a user field of the same
+        // name cannot clobber them.
+        let span_context = opentelemetry::Context::current();
+        let span_context = span_context.span();
+        let span_context = span_context.span_context();
+        if span_context.is_valid() {
+            object.insert(
+                "trace_id".to_string(),
+                Value::String(span_context.trace_id().to_string()),
+            );
+            object.insert(
+                "span_id".to_string(),
+                Value::String(span_context.span_id().to_string()),
+            );
+        }
         // Event fields (already redacted), flattened to the top level; "message" included.
         // A user field that collides with a canonical key this layer injects is namespaced
         // with an `x_` prefix (mirroring the Python vertical's reserved-field protection),
@@ -310,8 +343,13 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{is_secret_key, redact_value, scrub_text};
+    use super::{is_secret_key, redact_value, scrub_text, RedactingJsonLayer};
     use serde_json::json;
+    use std::io;
+    use std::sync::{Arc, Mutex};
+    use tracing_subscriber::fmt::MakeWriter;
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::Registry;
 
     #[test]
     fn secret_key_families_match_across_separators_and_case() {
@@ -357,5 +395,97 @@ mod tests {
         assert_eq!(redacted["inner"]["api_key"], "[REDACTED]");
         assert_eq!(redacted["inner"]["ok"], 1);
         assert_eq!(redacted["note"], "[REDACTED] here");
+    }
+
+    /// A `MakeWriter` that captures every emitted line into a shared buffer, so a test can
+    /// read back exactly what the layer wrote.
+    #[derive(Clone)]
+    struct BufferWriter(Arc<Mutex<Vec<u8>>>);
+
+    impl io::Write for BufferWriter {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.0.lock().expect("buffer lock").extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl<'a> MakeWriter<'a> for BufferWriter {
+        type Writer = BufferWriter;
+
+        fn make_writer(&'a self) -> Self::Writer {
+            self.clone()
+        }
+    }
+
+    #[test]
+    fn log_event_inside_a_span_carries_trace_and_span_ids() {
+        use opentelemetry::trace::TracerProvider as _;
+        use opentelemetry_sdk::trace::SdkTracerProvider;
+
+        // A real tracer provider + the tracing-opentelemetry layer so entering a span
+        // activates a valid OTel context; the redacting layer then stamps the ids. No
+        // exporter is needed: ids are generated regardless of export.
+        let provider = SdkTracerProvider::builder().build();
+        let tracer = provider.tracer("test");
+        let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+
+        let buffer = Arc::new(Mutex::new(Vec::new()));
+        let subscriber = Registry::default()
+            .with(otel_layer)
+            .with(RedactingJsonLayer::new(BufferWriter(buffer.clone())));
+
+        tracing::subscriber::with_default(subscriber, || {
+            let span = tracing::info_span!("unit-of-work");
+            let _entered = span.enter();
+            tracing::info!("inside the span");
+        });
+
+        let bytes = buffer.lock().expect("buffer lock").clone();
+        let text = String::from_utf8(bytes).expect("utf8 log output");
+        let line = text.lines().next().expect("a log line was emitted");
+        let value: serde_json::Value = serde_json::from_str(line).expect("valid json log line");
+
+        let trace_id = value["trace_id"]
+            .as_str()
+            .expect("trace_id must be present on a log emitted inside a span");
+        let span_id = value["span_id"]
+            .as_str()
+            .expect("span_id must be present on a log emitted inside a span");
+        // A W3C trace id is 32 hex chars; a span id is 16; neither may be the all-zero
+        // (invalid) id, which would mean the correlation did not actually resolve.
+        assert_eq!(
+            trace_id.len(),
+            32,
+            "trace_id must be 32 hex chars: {trace_id}"
+        );
+        assert!(trace_id.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_ne!(trace_id, "0".repeat(32));
+        assert_eq!(span_id.len(), 16, "span_id must be 16 hex chars: {span_id}");
+        assert!(span_id.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_ne!(span_id, "0".repeat(16));
+    }
+
+    #[test]
+    fn log_event_without_a_span_has_no_correlation_ids() {
+        // No OpenTelemetry layer and no active span: the current context is empty, so the
+        // correlation ids are absent rather than emitted as the all-zero invalid id.
+        let buffer = Arc::new(Mutex::new(Vec::new()));
+        let subscriber =
+            Registry::default().with(RedactingJsonLayer::new(BufferWriter(buffer.clone())));
+
+        tracing::subscriber::with_default(subscriber, || {
+            tracing::info!("no span here");
+        });
+
+        let bytes = buffer.lock().expect("buffer lock").clone();
+        let text = String::from_utf8(bytes).expect("utf8 log output");
+        let line = text.lines().next().expect("a log line was emitted");
+        let value: serde_json::Value = serde_json::from_str(line).expect("valid json log line");
+        assert!(value.get("trace_id").is_none());
+        assert!(value.get("span_id").is_none());
     }
 }
