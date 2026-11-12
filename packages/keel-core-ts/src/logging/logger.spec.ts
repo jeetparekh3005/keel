@@ -152,6 +152,59 @@ describe('createLogger redaction', () => {
     expect(String(cap.records()[0].message)).toContain('[unreadable]');
   });
 
+  it('scrubs a bare ERROR positional - pino lifts its message to the top-level message key', () => {
+    // logger.error(err) with no string message: pino copies err.message into the top-level message
+    // key. That derived message bypasses the merge-field redactValue, so a pattern secret in the
+    // error message must be scrubbed before pino sees the Error, or it leaks at message.
+    const cap = capture();
+    const logger = createLogger('info', cap.stream);
+    const token = 'abcdef0123456789secrettoken';
+    const err = Object.assign(new Error(`boom Bearer ${token}`), {
+      authorization: 'plaintextbarekey',
+    });
+    logger.error(err);
+    const line = cap
+      .records()
+      .map((r) => JSON.stringify(r))
+      .join('\n');
+    expect(line).not.toContain(token);
+    expect(line).not.toContain('plaintextbarekey');
+    expect(line).toContain('[REDACTED]');
+  });
+
+  it('redacts a secret-family property attached to a FUNCTION interpolation arg', () => {
+    // redactValue short-circuits on non-objects; a function (typeof 'function') carrying a secret
+    // own-prop would otherwise be printed verbatim by util.format %o.
+    const cap = capture();
+    const logger = createLogger('info', cap.stream);
+    const fn = function handler(): void {};
+    (fn as unknown as Record<string, unknown>).password = 'plaintextfnsecret';
+    logger.info('handler %o', fn);
+    const message = String(cap.records()[0].message);
+    expect(message).not.toContain('plaintextfnsecret');
+  });
+
+  it('does not crash when a Proxy with a throwing ownKeys trap is logged (merge and interp)', () => {
+    const cap = capture();
+    const logger = createLogger('info', cap.stream);
+    const hostile = (): unknown =>
+      new Proxy(
+        { password: 'plaintextproxysecret' },
+        {
+          ownKeys() {
+            throw new Error('trap');
+          },
+        },
+      );
+    expect(() => logger.info({ data: hostile() }, 'merge')).not.toThrow();
+    expect(() => logger.info('interp %o', hostile())).not.toThrow();
+    const out = cap
+      .records()
+      .map((r) => JSON.stringify(r))
+      .join('\n');
+    expect(out).not.toContain('plaintextproxysecret');
+  });
+
   it('key-redacts secret-family fields inside an object interpolation arg (%o / %j)', () => {
     // util.format serialises the object verbatim, so pattern-only scrubbing would miss a secret
     // under a secret-family KEY. The interpolation path must apply the same key-based redaction
