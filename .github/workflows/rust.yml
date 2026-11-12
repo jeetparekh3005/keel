@@ -65,10 +65,31 @@ jobs:
         run: cargo fmt --all --check
       - name: Clippy (warnings are errors)
         run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Start Keycloak (import realm)
+        # Keycloak imports the shared realm on boot, so it can't run as a service
+        # container (those can't pass `--import-realm`); run it as a step like python.yml.
+        # The imported realm has the service-account client keel-api / secret test-secret.
+        run: |
+          docker run -d --name keycloak -p 8080:8080 \
+            -e KEYCLOAK_ADMIN=admin -e KEYCLOAK_ADMIN_PASSWORD=admin \
+            -v "$PWD/deploy/keycloak/realm.json:/opt/keycloak/data/import/realm.json:ro" \
+            quay.io/keycloak/keycloak:25.0 start-dev --import-realm
+          echo "waiting for the keel realm to be ready..."
+          for _ in $(seq 1 60); do
+            curl -sf http://localhost:8080/realms/keel/.well-known/openid-configuration >/dev/null 2>&1 && break
+            sleep 3
+          done
       - name: Test
-        # --include-ignored runs the #[ignore]'d Postgres integration test too; the
-        # Postgres service above and KEEL_TEST_DATABASE_URL make it a real round-trip
-        # (it fails loudly, not silently, if the DB is missing).
+        # --include-ignored runs the #[ignore]'d integration tests too: the Postgres CRUD
+        # round-trip (Postgres service above + KEEL_TEST_DATABASE_URL) and the live
+        # Keycloak JWKS verification (the container above + KEEL_KEYCLOAK_* below). Both
+        # fail loudly, not silently, if their backing service is missing.
+        env:
+          KEEL_KEYCLOAK_URL: http://localhost:8080
+          KEEL_KEYCLOAK_REALM: keel
+          KEEL_KEYCLOAK_CLIENT_ID: keel-api
+          KEEL_KEYCLOAK_CLIENT_SECRET: test-secret
+          KEEL_OIDC_AUDIENCE: keel-api
         run: cargo test --all --locked -- --include-ignored
       - name: Install cargo-audit
         uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
