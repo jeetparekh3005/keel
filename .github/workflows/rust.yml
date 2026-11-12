@@ -56,11 +56,17 @@ jobs:
         with:
           persist-credentials: false
       # Installs the toolchain declared in rust-toolchain.toml (stable + rustfmt/clippy).
+      # llvm-tools-preview ships llvm-cov/llvm-profdata, which cargo-llvm-cov drives to
+      # instrument the build and render the coverage report for the floor below.
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # stable
         with:
           toolchain: stable
-          components: rustfmt, clippy
+          components: rustfmt, clippy, llvm-tools-preview
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        with:
+          tool: cargo-llvm-cov
       - name: Format check
         run: cargo fmt --all --check
       - name: Clippy (warnings are errors)
@@ -79,18 +85,24 @@ jobs:
             curl -sf http://localhost:8080/realms/keel/.well-known/openid-configuration >/dev/null 2>&1 && break
             sleep 3
           done
-      - name: Test
+      - name: Test with coverage floor (85% lines)
+        # Runs the full suite under cargo-llvm-cov and fails the job if line coverage
+        # drops below 85%, matching the Python vertical's `fail_under = 85` gate so the
+        # Rust vertical cannot silently regress below parity (epic #419, v0.6).
+        #
         # --include-ignored runs the #[ignore]'d integration tests too: the Postgres CRUD
         # round-trip (Postgres service above + KEEL_TEST_DATABASE_URL) and the live
         # Keycloak JWKS verification (the container above + KEEL_KEYCLOAK_* below). Both
-        # fail loudly, not silently, if their backing service is missing.
+        # fail loudly, not silently, if their backing service is missing -- and they are
+        # the paths that carry the service's composition/http/repository layers over the
+        # floor, so the coverage number is only honest with them in.
         env:
           KEEL_KEYCLOAK_URL: http://localhost:8080
           KEEL_KEYCLOAK_REALM: keel
           KEEL_KEYCLOAK_CLIENT_ID: keel-api
           KEEL_KEYCLOAK_CLIENT_SECRET: test-secret
           KEEL_OIDC_AUDIENCE: keel-api
-        run: cargo test --all --locked -- --include-ignored
+        run: cargo llvm-cov --all --locked --fail-under-lines 85 -- --include-ignored
       - name: Install cargo-audit
         uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
