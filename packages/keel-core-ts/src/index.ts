@@ -17,7 +17,9 @@ export { csvList, loadConfig } from './config/index.js';
 
 export {
   createLogger,
+  createNestLogger,
   isSecretKey,
+  NestLoggerAdapter,
   redactValue,
   scrubText,
   REDACTED,

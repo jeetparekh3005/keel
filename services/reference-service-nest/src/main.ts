@@ -4,7 +4,7 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
-import { initTelemetry } from '@keel/core';
+import { createNestLogger, initTelemetry } from '@keel/core';
 
 import { AppModule } from './app.module.js';
 import { loadServiceConfig } from './config.js';
@@ -20,8 +20,14 @@ async function bootstrap(): Promise<void> {
   });
 
   // Disable Nest's default body parser so we can set an explicit size limit; an over-limit
-  // body then raises a 413 that the core exception filter renders as problem+json.
-  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
+  // body then raises a 413 that the core exception filter renders as problem+json. Buffer the
+  // framework's own startup logs until useLogger swaps in the redacting pino logger, so every
+  // bootstrap line is emitted as redacted JSON (consistent with app/error logging).
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bodyParser: false,
+    bufferLogs: true,
+  });
+  app.useLogger(createNestLogger(config.LOG_LEVEL));
   app.useBodyParser('json', { limit: config.MAX_BODY_BYTES });
   app.enableShutdownHooks();
 
