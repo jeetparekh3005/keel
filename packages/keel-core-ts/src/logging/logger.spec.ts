@@ -90,6 +90,17 @@ describe('createLogger redaction', () => {
     expect(out).toContain('[REDACTED]');
   });
 
+  it('redacts a secret inside an OBJECT Map KEY (not just the value)', () => {
+    // util.format('%o', map) renders Map keys verbatim; an object key carrying a secret-family
+    // field must be redacted too, or it leaks even though the value side is handled.
+    const cap = capture();
+    const logger = createLogger('info', cap.stream);
+    logger.info('m %o', new Map([[{ password: 'plaintextkeysecret' }, 'v']]));
+    const message = String(cap.records()[0].message);
+    expect(message).not.toContain('plaintextkeysecret');
+    expect(message).toContain('[REDACTED]');
+  });
+
   it('redacts an error own-property secret while keeping its message/stack', () => {
     // An AxiosError-shaped error: diagnostics on the prototype/non-enumerable fields must survive,
     // but an enumerable own-prop carrying a secret-family value must be redacted.

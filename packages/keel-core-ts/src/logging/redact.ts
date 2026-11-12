@@ -128,7 +128,12 @@ export function redactValue(value: unknown, seen = new WeakSet<object>(), depth 
   if (value instanceof Map) {
     const out = new Map<unknown, unknown>();
     for (const [k, v] of value) {
-      out.set(k, typeof k === 'string' && isSecretKey(k) ? REDACTED : redactValue(v, seen, next));
+      // A string key in the secret family redacts its VALUE wholesale. The KEY itself is also
+      // redacted (an OBJECT key can carry a secret-family field, and util.format('%o', map) renders
+      // keys verbatim - leaving it raw leaks the key object's secret in cleartext).
+      const redactedValue =
+        typeof k === 'string' && isSecretKey(k) ? REDACTED : redactValue(v, seen, next);
+      out.set(redactValue(k, seen, next), redactedValue);
     }
     return out;
   }
