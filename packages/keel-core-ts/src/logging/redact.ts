@@ -121,34 +121,57 @@ export function redactValue(value: unknown, seen = new WeakSet<object>()): unkno
     return new Set(Array.from(value, (item) => redactValue(item, seen)));
   }
   if (value instanceof Error) {
-    // Preserve the error's diagnostics (name/message/stack are non-enumerable, so an
-    // Object.entries rebuild would drop them). When the error carries NO enumerable own-props
-    // there is nothing key-based to redact, so return it as-is and let util.format print the
-    // stack. When it does (e.g. an AxiosError's `config` with an auth header, a DB error's
-    // connection detail), rebuild a redacted view that keeps the diagnostics and key-redacts
-    // those own-props. The message/stack strings are still pattern-scrubbed by the final
-    // scrubText pass over the formatted line; a non-pattern secret embedded in the message text
-    // itself is not caught (no key to match on) - a known limit, not a container-shape bug.
-    const ownEntries = Object.entries(value as unknown as Record<string, unknown>);
-    if (ownEntries.length === 0) {
-      return value;
+    // Return a rebuilt Error with SCRUBBED message/stack and key-redacted own-props. The merge
+    // object log path (`logger.x({ err }, msg)`) runs only redactValue - NO final scrubText - so
+    // a pattern secret (JWT/AWS/bearer/PEM) in the message or stack must be scrubbed HERE or it
+    // prints in cleartext (returning the raw Error, or copying message/stack verbatim, leaks it).
+    // We rebuild a real Error (not a plain object) so util.format still renders a native stack and
+    // pino's error serializer still sees message/stack - both now scrubbed. A non-pattern secret
+    // embedded in the free-form message text is not caught (no key to match on): a known limit.
+    const rebuilt = new Error(scrubText(value.message));
+    // Keep the original class name without adding an enumerable field to the log output.
+    Object.defineProperty(rebuilt, 'name', {
+      value: value.name,
+      enumerable: false,
+      writable: true,
+      configurable: true,
+    });
+    if (typeof value.stack === 'string') {
+      rebuilt.stack = scrubText(value.stack);
     }
-    const out: Record<string, unknown> = {
-      name: value.name,
-      message: value.message,
-      stack: value.stack,
-    };
-    for (const [key, val] of ownEntries) {
-      out[key] = isSecretKey(key) ? REDACTED : redactValue(val, seen);
+    // Enumerable own-props only (Object.keys excludes Symbol keys, so a Symbol-keyed secret is
+    // DROPPED rather than leaked); key-redact and recurse, guarding a throwing getter.
+    for (const [key, val] of Object.entries(_redactOwnProps(value, seen))) {
+      (rebuilt as unknown as Record<string, unknown>)[key] = val;
     }
-    return out;
+    return rebuilt;
   }
   // Plain object OR class instance: both keep their data in enumerable own-properties, so the
   // key-redaction loop handles them identically (a class instance loses its class name in the
   // log output, an acceptable trade for redacting its secret-family fields).
+  return _redactOwnProps(value, seen);
+}
+
+/**
+ * Key-redact the enumerable own string-keyed properties of an object, recursing into values.
+ * Symbol-keyed properties are intentionally skipped (dropped, never emitted). A property whose
+ * getter throws is reported as ``[unreadable]`` rather than crashing the logging call.
+ */
+function _redactOwnProps(value: object, seen: WeakSet<object>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
-    out[key] = isSecretKey(key) ? REDACTED : redactValue(val, seen);
+  for (const key of Object.keys(value)) {
+    if (isSecretKey(key)) {
+      out[key] = REDACTED;
+      continue;
+    }
+    let raw: unknown;
+    try {
+      raw = (value as Record<string, unknown>)[key];
+    } catch {
+      out[key] = '[unreadable]';
+      continue;
+    }
+    out[key] = redactValue(raw, seen);
   }
   return out;
 }

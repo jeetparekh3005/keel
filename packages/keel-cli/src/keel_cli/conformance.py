@@ -176,9 +176,15 @@ def _strip_python(text: str) -> str:
     back to the regex heuristic if the source will not tokenize (e.g. a truncated concatenation).
     """
     try:
+        # Row/col from tokenize are relative to lines split on "\n" ONLY (StringIO.readline). Build
+        # line_starts the same way - NOT via str.splitlines(), which also breaks on \r, \v, \f,
+        # U+2028 etc.; those would desync the offsets and blank the wrong characters (leaving a
+        # secret-bearing string un-masked, a false pass, or clobbering real code, a false fail).
         line_starts = [0]
-        for line in text.splitlines(keepends=True):
-            line_starts.append(line_starts[-1] + len(line))
+        idx = text.find("\n")
+        while idx != -1:
+            line_starts.append(idx + 1)
+            idx = text.find("\n", idx + 1)
 
         def _offset(pos: tuple[int, int]) -> int:
             row, col = pos  # row is 1-based
