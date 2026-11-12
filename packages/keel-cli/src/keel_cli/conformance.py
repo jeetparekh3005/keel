@@ -14,8 +14,10 @@ It is deliberately not a replacement for the service's behavioural conformance s
 
 from __future__ import annotations
 
+import io
 import json
 import re
+import tokenize
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -154,20 +156,59 @@ _PY_LINE = re.compile(r"#[^\n]*")
 _PY_TRIPLE = re.compile(r"('{3}|\"{3}).*?\1", re.DOTALL)
 
 
-def _strip_comments(text: str, style: str) -> str:
-    """Remove comments/docstrings so a marker only in a comment cannot satisfy a wiring check.
+# Token types whose text must be dropped before a marker check: comments and every string/
+# docstring token (an f-string's literal segments included). A real wiring marker is an import
+# or a call - NAME/OP code tokens - never a string literal, so dropping all strings can never
+# remove a genuine marker, while it reliably removes one that appears only in a comment/docstring.
+_PY_DROP_TOKENS = {tokenize.COMMENT, tokenize.STRING}
+for _fstr_name in ("FSTRING_START", "FSTRING_MIDDLE", "FSTRING_END"):
+    _fstr_type = getattr(tokenize, _fstr_name, None)
+    if _fstr_type is not None:
+        _PY_DROP_TOKENS.add(_fstr_type)
 
-    Line comments are stripped BEFORE block/triple-quote comments. The block and triple-quote
-    regexes are DOTALL (they span newlines), so a stray ``/*`` or ``'''`` sitting inside a
-    single-line comment would otherwise match forward to the next delimiter many lines down and
-    delete the real marker code in between (a false "missing" verdict). Removing line comments
-    first strips those stray delimiters, bounding the damage. This is a heuristic, not a lexer:
-    a ``//`` or ``#`` inside a string literal is still treated as a comment, so a marker sharing
-    a line with such a literal can be lost - acceptable because markers recur across the source.
+
+def _strip_python(text: str) -> str:
+    """Blank comment/string tokens via the tokenizer, leaving all other characters verbatim.
+
+    Each dropped token's character span is overwritten with spaces (newlines preserved), rather
+    than joining kept tokens, which would split ``require_scopes(`` into ``require_scopes (`` and
+    break the substring marker check; multi-token markers (a dotted import path) stay intact. Falls
+    back to the regex heuristic if the source will not tokenize (e.g. a truncated concatenation).
     """
-    if style == "python":
+    try:
+        line_starts = [0]
+        for line in text.splitlines(keepends=True):
+            line_starts.append(line_starts[-1] + len(line))
+
+        def _offset(pos: tuple[int, int]) -> int:
+            row, col = pos  # row is 1-based
+            return line_starts[row - 1] + col
+
+        chars = list(text)
+        for tok in tokenize.generate_tokens(io.StringIO(text).readline):
+            if tok.type not in _PY_DROP_TOKENS:
+                continue
+            for i in range(_offset(tok.start), _offset(tok.end)):
+                if chars[i] != "\n":
+                    chars[i] = " "
+        return "".join(chars)
+    except (tokenize.TokenError, IndentationError, SyntaxError):
         text = _PY_LINE.sub("", text)
         return _PY_TRIPLE.sub(" ", text)
+
+
+def _strip_comments(text: str, style: str) -> str:
+    """Remove comments/strings so a marker only in a comment or string cannot satisfy a check.
+
+    Python is handled by the real tokenizer (exact): comment and string tokens are blanked, which
+    a regex cannot do correctly - a ``#`` on a docstring's closing line, or a ``'''`` inside a line
+    comment, defeats either ordering of the two DOTALL regexes (one way false-passes, the other
+    false-fails). C-family sources use the regex (line comments first, then block): a stray ``/*``
+    inside a line comment cannot then span and delete real code; a ``//`` inside a string literal
+    sharing a marker's line is the residual heuristic limit, acceptable as markers recur.
+    """
+    if style == "python":
+        return _strip_python(text)
     text = _C_LINE.sub("", text)
     return _C_BLOCK.sub(" ", text)
 
@@ -194,17 +235,31 @@ def _declares_dependency(manifest: Path, module: str) -> bool:
     try:
         if name == "pyproject.toml":
             data = tomllib.loads(text)
-            project = data.get("project", {})
+            project = data.get("project")
+            project = project if isinstance(project, dict) else {}
             # PEP 621 core + optional-dependency groups (each group is a list of requirements).
-            reqs = list(project.get("dependencies", []))
-            for group in project.get("optional-dependencies", {}).values():
-                reqs.extend(group)
+            # Type-guard every shape: a parseable-but-malformed pyproject (a scalar where a list
+            # or table is expected) must yield a verdict, not crash the whole check.
+            reqs: list[str] = []
+            core = project.get("dependencies")
+            if isinstance(core, list):
+                reqs.extend(dep for dep in core if isinstance(dep, str))
+            optional = project.get("optional-dependencies")
+            if isinstance(optional, dict):
+                for group in optional.values():
+                    if isinstance(group, list):
+                        reqs.extend(dep for dep in group if isinstance(dep, str))
             if any(_dep_base(dep) == module for dep in reqs):
                 return True
             # Poetry fallback: [tool.poetry.dependencies] is a table keyed by the package name.
-            poetry = data.get("tool", {}).get("poetry", {})
-            poetry_tables = ("dependencies", "dev-dependencies")
-            return any(module in poetry.get(table, {}) for table in poetry_tables)
+            tool = data.get("tool")
+            poetry = tool.get("poetry") if isinstance(tool, dict) else None
+            poetry = poetry if isinstance(poetry, dict) else {}
+            for poetry_table in ("dependencies", "dev-dependencies"):
+                table = poetry.get(poetry_table)
+                if isinstance(table, dict) and module in table:
+                    return True
+            return False
         if name == "Cargo.toml":
             data = tomllib.loads(text)
             tables = ("dependencies", "dev-dependencies", "build-dependencies")
@@ -222,7 +277,15 @@ def _declares_dependency(manifest: Path, module: str) -> bool:
                 (el.tag.endswith("artifactId")) and (el.text or "").strip() == module
                 for el in root.iter()
             )
-    except (tomllib.TOMLDecodeError, json.JSONDecodeError, ElementTree.ParseError):
+    except (
+        tomllib.TOMLDecodeError,
+        json.JSONDecodeError,
+        ElementTree.ParseError,
+        TypeError,
+        AttributeError,
+    ):
+        # Not parseable, or parseable-but-structurally-malformed (a scalar where a table/list was
+        # expected, e.g. `dependencies = 5`): it declares no dependency, so fail closed to False.
         return False
     return module in text
 

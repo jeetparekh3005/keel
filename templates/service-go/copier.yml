@@ -15,9 +15,12 @@ _templates_suffix: ""
 # the generated service would fail its own `gofmt -l` CI gate. When the Go toolchain is absent we
 # do NOT fail generation (the byte-identical dogfood runs without Go, and the committed reference
 # is already gofmt-clean), but we WARN loudly so a user who generated with a non-item aggregate
-# knows the output is unformatted and will trip the gofmt gate until they run `gofmt -w .`.
+# knows the output is unformatted. An explicit if/else keeps the "gofmt missing" warning distinct
+# from a gofmt that is present but FAILS (e.g. rendered Go that will not parse): a flat
+# `A && B || C` would misreport a real gofmt failure as "not found". A present-but-failing gofmt
+# is surfaced, not masked; absent gofmt only warns (soft, exit 0).
 _tasks:
-  - "command -v gofmt >/dev/null 2>&1 && gofmt -w . || echo 'keel: gofmt not found on PATH - generated Go sources were NOT reformatted; run `gofmt -w .` before committing or the gofmt CI gate will fail.' >&2"
+  - "if command -v gofmt >/dev/null 2>&1; then gofmt -w . || echo 'keel: gofmt failed on the generated Go sources (see the error above); fix them or the gofmt CI gate will fail.' >&2; else echo 'keel: gofmt not found on PATH - generated Go sources were NOT reformatted; run `gofmt -w .` before committing or the gofmt CI gate will fail.' >&2; fi"
 
 # Custom Jinja delimiters so Go's own braces never collide with templating. Variables are << >>,
 # blocks <% %>, comments <# #>.
