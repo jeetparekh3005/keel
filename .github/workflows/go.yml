@@ -49,6 +49,11 @@ jobs:
           --health-retries 10
     env:
       KEEL_TEST_DATABASE_URL: postgres://keel:keel@localhost:5432/reference
+      KEEL_KEYCLOAK_URL: http://localhost:8080
+      KEEL_KEYCLOAK_REALM: keel
+      KEEL_KEYCLOAK_CLIENT_ID: keel-api
+      KEEL_KEYCLOAK_CLIENT_SECRET: test-secret
+      KEEL_OIDC_AUDIENCE: keel-api
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -57,6 +62,20 @@ jobs:
         with:
           go-version: stable
           cache-dependency-path: "**/go.sum"
+      - name: Start Keycloak (import realm)
+        # A service container can't mount the realm file or pass --import-realm, so run it as a
+        # step. The OIDC integration test (auth package) mints a client_credentials token and
+        # verifies it against this instance's live JWKS; it skips when KEEL_KEYCLOAK_URL is unset.
+        run: |
+          docker run -d --name keycloak -p 8080:8080 \
+            -e KEYCLOAK_ADMIN=admin -e KEYCLOAK_ADMIN_PASSWORD=admin \
+            -v "$PWD/deploy/keycloak/realm.json:/opt/keycloak/data/import/realm.json:ro" \
+            quay.io/keycloak/keycloak:25.0 start-dev --import-realm
+          echo "waiting for the keel realm to be ready..."
+          for _ in $(seq 1 60); do
+            curl -sf http://localhost:8080/realms/keel/.well-known/openid-configuration >/dev/null 2>&1 && break
+            sleep 3
+          done
       - name: Format check
         run: |
           # templates/ holds Copier templates (<< >> placeholders), not valid Go, so exclude them
