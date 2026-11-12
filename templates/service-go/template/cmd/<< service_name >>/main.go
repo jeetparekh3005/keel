@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"time"
 
+	"go.opentelemetry.io/otel"
+
 	"github.com/jeetparekh3005/keel/packages/keel-core-go/auth"
 	"github.com/jeetparekh3005/keel/packages/keel-core-go/httpx"
 	"github.com/jeetparekh3005/keel/packages/keel-core-go/persistence"
@@ -47,6 +49,12 @@ func run() error {
 		return err
 	}
 	defer db.Close()
+
+	// Emit DB pool saturation gauges (the fourth golden signal) against the installed
+	// MeterProvider; the callback reads live pool stats on each collection.
+	if err := db.ObservePoolMetrics(otel.GetMeterProvider(), "default"); err != nil {
+		return err
+	}
 
 	repo := app.NewSql<< aggregate_pascal >>Repository(db)
 	if err := repo.EnsureSchema(ctx); err != nil {
