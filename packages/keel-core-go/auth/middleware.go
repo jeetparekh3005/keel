@@ -70,6 +70,14 @@ func selectCredential(r *http.Request, bearer, apiKeys Authenticator) (Authentic
 	return nil, "", false
 }
 
+// ContextWithPrincipal returns a copy of ctx carrying the authenticated principal. A
+// non-HTTP transport (e.g. the gRPC auth interceptor) publishes the Principal through this
+// so PrincipalFrom and RequireScopes read it identically regardless of transport, keeping a
+// single principal context key across the HTTP middleware and the gRPC server factory.
+func ContextWithPrincipal(ctx context.Context, p *Principal) context.Context {
+	return context.WithValue(ctx, principalKey, p)
+}
+
 // PrincipalFrom returns the authenticated principal stored on the context.
 func PrincipalFrom(ctx context.Context) (*Principal, bool) {
 	p, ok := ctx.Value(principalKey).(*Principal)
