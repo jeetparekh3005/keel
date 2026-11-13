@@ -209,10 +209,17 @@ var echoStreamDesc = grpclib.ServiceDesc{
 	}},
 }
 
-func serveStream(t *testing.T) (*grpclib.ClientConn, func()) {
+// streamOpenScopes declares the echo stream method as explicitly open (empty scope slice):
+// under deny-by-default authorization an authenticated caller may invoke it, but a method
+// absent from the map stays closed.
+func streamOpenScopes() keelgrpc.Option {
+	return keelgrpc.WithRequiredScopes(keelgrpc.MethodScopes{streamMethod: {}})
+}
+
+func serveStream(t *testing.T, opts ...keelgrpc.Option) (*grpclib.ClientConn, func()) {
 	t.Helper()
 	lis := bufconn.Listen(1 << 20)
-	srv := keelgrpc.NewServer(stubAuth())
+	srv := keelgrpc.NewServer(stubAuth(), opts...)
 	srv.RegisterService(&echoStreamDesc, struct{}{})
 	go func() { _ = srv.Serve(lis) }()
 
@@ -245,7 +252,7 @@ func TestStream_NoToken_Unauthenticated(t *testing.T) {
 }
 
 func TestStream_ValidToken_StreamsMessages(t *testing.T) {
-	conn, stop := serveStream(t)
+	conn, stop := serveStream(t, streamOpenScopes())
 	defer stop()
 
 	cs, err := conn.NewStream(withToken(context.Background(), readerToken),
@@ -268,4 +275,23 @@ func TestStream_ValidToken_StreamsMessages(t *testing.T) {
 	if count != 2 {
 		t.Fatalf("want 2 streamed messages, got %d", count)
 	}
+}
+
+// TestStream_UnmappedMethod_PermissionDenied is the deny-by-default authorization regression:
+// an authenticated caller invoking a method that is NOT present in the scope map must be
+// rejected with PermissionDenied, not fall through fail-open. Here the scope map is the
+// ItemService map, which does not list the echo stream method, so a valid token is still
+// denied. Before the deny-by-default fix the absent method had no required scopes and the
+// stream ran, so this assertion failed.
+func TestStream_UnmappedMethod_PermissionDenied(t *testing.T) {
+	conn, stop := serveStream(t, keelgrpc.WithRequiredScopes(keelgrpc.ItemServiceScopes()))
+	defer stop()
+
+	cs, err := conn.NewStream(withToken(context.Background(), readerToken),
+		&echoStreamDesc.Streams[0], streamMethod)
+	if err != nil {
+		t.Fatalf("NewStream: %v", err)
+	}
+	err = cs.RecvMsg(&referencev1.Item{})
+	requireCode(t, err, codes.PermissionDenied)
 }

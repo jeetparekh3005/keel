@@ -30,9 +30,11 @@ import (
 const bearerPrefix = "bearer "
 
 // MethodScopes maps a full gRPC method path (e.g. "/keel.reference.v1.ItemService/GetItem")
-// to the scopes a caller must hold for that method. A method absent from the map still
-// requires a valid Bearer token: authentication is mandatory for every method
-// (deny-by-default), authorization is per-method.
+// to the scopes a caller must hold for that method. Authorization is deny-by-default: a method
+// absent from the map is closed and rejected with PermissionDenied even for an authenticated
+// caller. An explicit entry opts the method into the gate; an empty slice means "any
+// authenticated caller may call this" (explicit open). A method that must run without
+// authentication at all belongs on the exempt path (WithExemptMethods), not missing from here.
 type MethodScopes map[string][]string
 
 // serverConfig is the resolved factory configuration built from the functional options.
@@ -101,7 +103,15 @@ func (c *serverConfig) authorize(ctx context.Context, authenticator auth.Authent
 	if err != nil {
 		return nil, authError(err)
 	}
-	if required := c.requiredScopes[fullMethod]; len(required) > 0 && !principal.HasScopes(required...) {
+	required, ok := c.requiredScopes[fullMethod]
+	if !ok {
+		// Deny-by-default authorization: a method absent from the scope map is closed, not
+		// fail-open. An explicit entry (even an empty one) opts the method into the gate; an
+		// empty entry means "any authenticated caller". A method that must run without auth
+		// entirely belongs on the exempt path above, not missing from the map.
+		return nil, status.Error(codes.PermissionDenied, "method not authorized")
+	}
+	if len(required) > 0 && !principal.HasScopes(required...) {
 		return nil, status.Error(codes.PermissionDenied, "insufficient scope")
 	}
 	return auth.ContextWithPrincipal(ctx, principal), nil

@@ -2,12 +2,18 @@ package telemetry
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 )
+
+// eventSecretVal is the cleartext secret placed on a span event's secret-family attribute; it
+// must never reach the exporter.
+const eventSecretVal = "Bearer eventsupersecret9876"
 
 // secretKeyAttr carries a secret-family attribute key; its value must be redacted wholesale.
 const secretKeyAttr = "authorization"
@@ -80,5 +86,55 @@ func TestSpanExportWithoutRedactorLeaksSecrets(t *testing.T) {
 	}
 	if got[patternAttr] != patternRawVal {
 		t.Errorf("expected raw value %q without the redactor, got %q", patternRawVal, got[patternAttr])
+	}
+}
+
+// TestSpanExportRedactsEventAttributes asserts the redacting exporter also scrubs span EVENTS,
+// not just top-level attributes: an event (as added by span.AddEvent or span.RecordError)
+// carrying a secret-family attribute and a scrubbable string value must reach the exporter
+// with the secret replaced by the marker and the pattern scrubbed. Without the Events()
+// override the promoted event attributes leak in cleartext.
+func TestSpanExportRedactsEventAttributes(t *testing.T) {
+	inmem := tracetest.NewInMemoryExporter()
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+		sdktrace.WithSyncer(newRedactingExporter(inmem)),
+	)
+	_, span := tp.Tracer("test").Start(context.Background(), "op")
+	span.AddEvent("exception", trace.WithAttributes(
+		attribute.String(secretKeyAttr, eventSecretVal),
+		attribute.String(patternAttr, patternRawVal),
+	))
+	span.End()
+
+	stubs := inmem.GetSpans()
+	if len(stubs) != 1 {
+		t.Fatalf("expected 1 exported span, got %d", len(stubs))
+	}
+	events := stubs[0].Events
+	if len(events) != 1 {
+		t.Fatalf("expected 1 exported event, got %d", len(events))
+	}
+	ev := events[0]
+	if ev.Name != "exception" {
+		t.Errorf("event name not preserved: got %q", ev.Name)
+	}
+	got := map[string]string{}
+	for _, kv := range ev.Attributes {
+		if kv.Value.Type() == attribute.STRING {
+			got[string(kv.Key)] = kv.Value.AsString()
+		}
+	}
+	if got[secretKeyAttr] != "[REDACTED]" {
+		t.Errorf("event secret-family attribute not redacted: %q = %q", secretKeyAttr, got[secretKeyAttr])
+	}
+	if got[patternAttr] != patternWantVal {
+		t.Errorf("event secret pattern not scrubbed: %q = %q, want %q", patternAttr, got[patternAttr], patternWantVal)
+	}
+	// Belt and suspenders: the cleartext secret must not survive anywhere in the event.
+	for _, kv := range ev.Attributes {
+		if kv.Value.Type() == attribute.STRING && strings.Contains(kv.Value.AsString(), "eventsupersecret9876") {
+			t.Errorf("cleartext secret leaked in event attribute %q = %q", kv.Key, kv.Value.AsString())
+		}
 	}
 }
