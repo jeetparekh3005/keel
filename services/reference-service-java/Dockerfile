@@ -9,6 +9,9 @@ WORKDIR /build
 COPY pom.xml ./
 COPY packages/keel-core-java/pom.xml packages/keel-core-java/pom.xml
 COPY services/reference-service-java/pom.xml services/reference-service-java/pom.xml
+# The root reactor lists the build-only coverage-aggregate module; Maven must read its pom to
+# construct the reactor even though -pl ... -am never builds it here. Copy the pom only (no sources).
+COPY coverage-aggregate/pom.xml coverage-aggregate/pom.xml
 RUN mvn -B -q -pl services/reference-service-java -am dependency:go-offline -DskipTests || true
 COPY packages/keel-core-java packages/keel-core-java
 COPY services/reference-service-java services/reference-service-java

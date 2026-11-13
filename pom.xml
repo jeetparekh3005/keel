@@ -26,6 +26,10 @@
   <modules>
     <module>packages/keel-core-java</module>
     <module>services/reference-service-java</module>
+    <!-- Build-only cross-module coverage gate (epic #419). Ships no artifact, not templated. It
+         depends on the two modules above so the reactor builds it last, after their exec data
+         exists, and its jacoco:report-aggregate + check enforce the 85% aggregate line floor. -->
+    <module>coverage-aggregate</module>
   </modules>
 
   <properties>

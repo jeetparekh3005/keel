@@ -11,6 +11,7 @@ on:
     paths:
       - "packages/keel-core-java/**"
       - "services/reference-service-java/**"
+      - "coverage-aggregate/**"
       - "pom.xml"
       - ".mvn/**"
       - "mvnw"
@@ -20,6 +21,7 @@ on:
     paths:
       - "packages/keel-core-java/**"
       - "services/reference-service-java/**"
+      - "coverage-aggregate/**"
       - "pom.xml"
       - ".mvn/**"
       - "mvnw"
