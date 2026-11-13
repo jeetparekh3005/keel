@@ -15,6 +15,11 @@ pub mod domain;
 /// default build needs neither prost nor tonic.
 #[cfg(feature = "grpc")]
 pub mod genproto;
+/// gRPC server factory (deny-by-default auth + per-method scope authz + OTel) and mTLS
+/// credential builders for the `keel.reference.v1` contract (ADR-0022). Opt-in behind the
+/// `grpc` feature, alongside the generated stubs in [`genproto`].
+#[cfg(feature = "grpc")]
+pub mod grpc;
 pub mod http;
 pub mod jwks;
 pub mod logging;
