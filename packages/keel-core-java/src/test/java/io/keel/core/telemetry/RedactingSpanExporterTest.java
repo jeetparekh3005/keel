@@ -11,6 +11,7 @@ import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter;
 import io.opentelemetry.sdk.trace.SdkTracerProvider;
+import io.opentelemetry.sdk.trace.data.EventData;
 import io.opentelemetry.sdk.trace.data.SpanData;
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
 import io.opentelemetry.sdk.trace.export.SpanExporter;
@@ -59,6 +60,53 @@ class RedactingSpanExporterTest {
     // intact (not stringified by the rewrite).
     assertEquals(200L, attributes.get(STATUS));
     assertEquals(Boolean.TRUE, attributes.get(CACHE_HIT));
+  }
+
+  @Test
+  void redactsEventAttributesOnExport() {
+    // A secret on a span event (a manually-recorded event and a recorded-exception event) must be
+    // scrubbed the same as a span attribute; events used to delegate to the raw span and leak.
+    InMemorySpanExporter collected = InMemorySpanExporter.create();
+    SdkTracerProvider provider =
+        SdkTracerProvider.builder()
+            .addSpanProcessor(SimpleSpanProcessor.create(new RedactingSpanExporter(collected)))
+            .build();
+    try {
+      Tracer tracer = provider.get("redaction-test");
+      Span span = tracer.spanBuilder("operation").startSpan();
+      span.addEvent("auth-check", Attributes.of(PASSWORD, "hunter2", NOTE, "token=" + BEARER));
+      // recordException lands an "exception" event whose exception.message/stacktrace carry the
+      // thrown text; a secret in a thrown message must not reach the collector in the clear.
+      span.recordException(new IllegalStateException("upstream rejected " + BEARER));
+      span.end();
+
+      List<SpanData> spans = collected.getFinishedSpanItems();
+      assertEquals(1, spans.size(), "exactly one span should be exported");
+      List<EventData> events = spans.get(0).getEvents();
+
+      EventData authEvent =
+          events.stream()
+              .filter(e -> e.getName().equals("auth-check"))
+              .findFirst()
+              .orElseThrow(() -> new AssertionError("auth-check event missing"));
+      // Secret-family event-attribute key redacted wholesale.
+      assertEquals(Redactor.REDACTED, authEvent.getAttributes().get(PASSWORD));
+      // Pattern secret inside a non-secret-keyed event attribute scrubbed in place.
+      assertEquals("token=" + Redactor.REDACTED, authEvent.getAttributes().get(NOTE));
+      // Event name and timestamp are preserved; only attributes are rewritten.
+      assertFalse(authEvent.getName().isBlank(), "event name must survive redaction");
+
+      // No cleartext bearer token survives in ANY exported event attribute (manual or exception).
+      String allEventText =
+          events.stream()
+              .flatMap(e -> e.getAttributes().asMap().values().stream())
+              .map(String::valueOf)
+              .reduce("", (a, b) -> a + "\n" + b);
+      assertFalse(allEventText.contains(BEARER), "BEARER leaked via an exported event attribute");
+      assertTrue(allEventText.contains(Redactor.REDACTED), "redaction marker absent from events");
+    } finally {
+      provider.close();
+    }
   }
 
   @Test

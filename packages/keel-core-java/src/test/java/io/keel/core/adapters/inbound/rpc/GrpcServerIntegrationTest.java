@@ -23,7 +23,6 @@ import io.keel.reference.v1.ListItemsRequest;
 import io.keel.reference.v1.ListItemsResponse;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.instrumentation.grpc.v1_6.GrpcTelemetry;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -61,10 +60,9 @@ class GrpcServerIntegrationTest {
         new GrpcAuthInterceptor(
             GrpcTestSupport.stubDecoder(),
             new ScopeAuthoritiesConverter(),
-            Map.of(
-                ItemServiceGrpc.getGetItemMethod().getFullMethodName(), Set.of("items:read"),
-                ItemServiceGrpc.getListItemsMethod().getFullMethodName(), Set.of("items:read"),
-                ItemServiceGrpc.getCreateItemMethod().getFullMethodName(), Set.of("items:write")),
+            // Use the production canonical scope policy so this end-to-end test and the
+            // auto-configured bean cannot drift apart.
+            GrpcServerAutoConfiguration.requiredScopesByMethod(),
             Set.of());
     ServerInterceptor tracing =
         GrpcTelemetry.create(OpenTelemetry.noop()).createServerInterceptor();
@@ -158,6 +156,17 @@ class GrpcServerIntegrationTest {
         stub(GrpcTestSupport.bearer(GrpcTestSupport.READ_TOKEN))
             .listItems(ListItemsRequest.newBuilder().build());
     assertThat(listed.getItemsList()).extracting(Item::getId).contains(id);
+  }
+
+  @Test
+  void createWithBlankNameIsInvalidArgument() {
+    // A blank name is a client error, rejected with INVALID_ARGUMENT, matching the other verticals.
+    assertThatThrownBy(() ->
+            stub(GrpcTestSupport.bearer(GrpcTestSupport.WRITE_TOKEN))
+                .createItem(CreateItemRequest.newBuilder().setName("   ").build()))
+        .isInstanceOf(StatusRuntimeException.class)
+        .extracting(e -> ((StatusRuntimeException) e).getStatus().getCode())
+        .isEqualTo(Status.Code.INVALID_ARGUMENT);
   }
 
   @Test

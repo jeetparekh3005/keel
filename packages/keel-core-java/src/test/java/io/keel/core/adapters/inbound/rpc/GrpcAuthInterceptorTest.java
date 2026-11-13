@@ -59,10 +59,15 @@ class GrpcAuthInterceptorTest {
   }
 
   @Test
-  void authenticatedCallWithNoRequiredScopesProceedsAndPublishesPrincipal() {
+  void authenticatedCallWithExplicitEmptyScopesProceedsAndPublishesPrincipal() {
+    // An explicit empty-set entry means "any authenticated caller may call this" (explicit open),
+    // distinct from an unmapped method, which is denied.
     GrpcAuthInterceptor interceptor =
         new GrpcAuthInterceptor(
-            GrpcTestSupport.stubDecoder(), new ScopeAuthoritiesConverter(), Map.of(), Set.of());
+            GrpcTestSupport.stubDecoder(),
+            new ScopeAuthoritiesConverter(),
+            Map.of(METHOD, Set.of()),
+            Set.of());
     ServerCall<GetItemRequest, GetItemResponse> call = mockCall();
     @SuppressWarnings("unchecked")
     ServerCallHandler<GetItemRequest, GetItemResponse> next = mock(ServerCallHandler.class);
@@ -78,6 +83,25 @@ class GrpcAuthInterceptorTest {
     verify(next).startCall(any(), any());
     assertThat(seen.get()).isNotNull();
     assertThat(seen.get().getName()).isEqualTo("svc-read");
+  }
+
+  @Test
+  void authenticatedCallToUnmappedMethodIsPermissionDenied() {
+    // Deny-by-default: a verified caller to a method with no entry in the scope map is closed with
+    // PERMISSION_DENIED, not allowed through. (Pre-fix the absent entry fell through to "allow".)
+    GrpcAuthInterceptor interceptor =
+        new GrpcAuthInterceptor(
+            GrpcTestSupport.stubDecoder(), new ScopeAuthoritiesConverter(), Map.of(), Set.of());
+    ServerCall<GetItemRequest, GetItemResponse> call = mockCall();
+    @SuppressWarnings("unchecked")
+    ServerCallHandler<GetItemRequest, GetItemResponse> next = mock(ServerCallHandler.class);
+
+    interceptor.interceptCall(call, GrpcTestSupport.bearer(GrpcTestSupport.READ_TOKEN), next);
+
+    ArgumentCaptor<Status> status = ArgumentCaptor.forClass(Status.class);
+    verify(call).close(status.capture(), any());
+    assertThat(status.getValue().getCode()).isEqualTo(Status.Code.PERMISSION_DENIED);
+    verify(next, never()).startCall(any(), any());
   }
 
   @Test
