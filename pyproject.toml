@@ -93,7 +93,10 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["keel_core", "keel_cli", "reference_service"]
+# `keel` is the vendored keel.reference.v1 stub tree (ADR-0022), imported first-party so its
+# import sorts into the first-party group after the `import keel_core.genproto` path shim that
+# must precede it (keel_core/genproto/__init__.py puts the stubs on sys.path).
+known-first-party = ["keel_core", "keel_cli", "reference_service", "keel"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
@@ -134,6 +137,12 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = ["keel_core.genproto.*"]
 ignore_errors = true
+ignore_missing_imports = true
+
+# keel.reference.v1 is the vendored buf stub tree reached via the genproto path shim; it lives
+# outside mypy discovery (excluded above), so treat its imports as untyped (ADR-0022).
+[[tool.mypy.overrides]]
+module = ["keel.*"]
 ignore_missing_imports = true
 
 # ---------------------------------------------------------------------------

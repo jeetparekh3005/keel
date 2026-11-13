@@ -37,3 +37,8 @@ packages = ["src/keel_core"]
 # imports (google.protobuf, the on-path `keel` package) are an artifact of codegen, not real
 # project dependencies; the regeneration dogfood (proto.yml) is its gate, not deptry.
 extend_exclude = ["src/keel_core/genproto"]
+
+[tool.deptry.per_rule_ignores]
+# `keel` is not a distribution: it is the vendored keel.reference.v1 stub tree reached via the
+# genproto sys.path shim (ADR-0022), imported by the ItemService adapter. Not a missing dep.
+DEP001 = ["keel"]
