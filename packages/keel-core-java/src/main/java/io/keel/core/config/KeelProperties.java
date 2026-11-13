@@ -18,6 +18,14 @@ import org.springframework.validation.annotation.Validated;
  * KEEL_NATS_URL} ({@code keel.nats-url}) is set, so a service without a broker is unaffected.
  * {@code KEEL_NATS_STREAM} and {@code KEEL_NATS_SUBJECTS} (comma-separated) name the stream and the
  * subjects it captures.
+ *
+ * <p>The gRPC fields gate the inbound gRPC server (ADR-0022): it is wired only when {@code
+ * KEEL_GRPC_PORT} ({@code keel.grpc-port}) is set, so a service without gRPC is unaffected. The TLS
+ * PEM fields ({@code KEEL_GRPC_TLS_CERT_PEM}, {@code KEEL_GRPC_TLS_KEY_PEM}, {@code
+ * KEEL_GRPC_TLS_CA_PEM}) carry the server leaf cert/key and the client-auth trust anchor; when all
+ * three are present the server serves mTLS and requires a client certificate, otherwise it serves
+ * plaintext (local/dev). A {@link io.keel.core.ports.SecretProvider} entry under the same key wins
+ * over the configured value, so the PEM can come from a secret store rather than the environment.
  */
 @ConfigurationProperties(prefix = "keel")
 @Validated
@@ -31,7 +39,11 @@ public record KeelProperties(
     @DefaultValue List<ApiKeyEntry> apiKeys,
     @DefaultValue("") String natsUrl,
     @DefaultValue("keel") String natsStream,
-    @DefaultValue({"keel.>"}) List<String> natsSubjects) {
+    @DefaultValue({"keel.>"}) List<String> natsSubjects,
+    @DefaultValue("0") int grpcPort,
+    @DefaultValue("") String grpcTlsCertPem,
+    @DefaultValue("") String grpcTlsKeyPem,
+    @DefaultValue("") String grpcTlsCaPem) {
 
   /**
    * One configured API-key credential (platform.yaml auth: api_key). The key is stored only as its
