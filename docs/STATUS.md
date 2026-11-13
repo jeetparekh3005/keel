@@ -201,9 +201,9 @@ wired to a sink/gate; `none` = absent.
 | Per-line log-to-trace correlation | full | full | full | full | full |
 | OTLP span-export redaction | full | full | full | full | full |
 | `api_key` authentication (hashed, X-API-Key) | full | full | full | full | full |
-| mTLS credentials | full (gRPC) | none | none | none | none |
+| mTLS credentials | full (gRPC) | full | full | full | full |
 | NATS JetStream MessageBus adapter | full | full | full | full | full |
-| gRPC server (deny-by-default auth + mTLS) | full | none | none | none | none |
+| gRPC server (deny-by-default auth + mTLS) | full | full | full | full | full |
 | Enforced CI coverage floor | full (85%) | full (85%) | full (85%) | full (85% aggregate) | full (lib + service) |
 | DB pool saturation metric (emitted, not just readable) | full | full | full | full | full |
 | NestJS bootstrap logs as JSON (TS-only) | n/a | n/a | n/a | n/a | full |
@@ -221,10 +221,15 @@ scrub secret-family attribute keys and secret-pattern values (and span names/eve
 same redactor the log sink uses, so secrets no longer reach the collector in cleartext.
 
 `api_key` authentication and the NATS JetStream MessageBus adapter (with trace-context
-propagation and poison handling) are now full across all five. The only capabilities still open in
-v0.6 are **mTLS** and the **gRPC** server, which exist only in Python and couple with the v0.7
-buf/protobuf IDL, so they are sequenced to land with it. Every other capability in the matrix is now
-full across all five verticals.
+propagation and poison handling) are full across all five. The **gRPC server + mTLS** are now too:
+a single `keel.reference.v1` protobuf contract with buf codegen (committed stubs, byte-identical
+regeneration dogfood; ADR-0022) drives a deny-by-default gRPC server factory per language (the auth
+interceptor is installed by construction, re-verifies the Bearer token, enforces per-method scopes,
+UNAUTHENTICATED / PERMISSION_DENIED) with mutual-TLS server + client credentials proven over a real
+loopback handshake (trusted succeeds, untrusted-CA rejected).
+
+**v0.6 cross-vertical parity is complete:** every capability in the matrix is full across all five
+verticals. The remaining backend-integration work (Kafka/RabbitMQ brokers, AsyncAPI) is v0.7.
 
 ## Planned - described in the contract/ADRs but NOT yet implemented
 
@@ -235,7 +240,7 @@ full across all five verticals.
 | **Keycloak / NATS integration tests** | ADR-0010 | **Implemented** - CI integration job runs Postgres, a NATS JetStream container (MessageBus roundtrip), and Keycloak with an imported realm (OIDC authenticate against a real JWKS via client_credentials) |
 | **Kubernetes/Helm** + runtime `securityContext`, NetworkPolicy | ADR-0004/0008 | **Implemented** - Helm chart at `deploy/charts/reference-service` (non-root, read-only rootfs, drop-all caps, seccomp RuntimeDefault, no SA token, default-deny NetworkPolicy, liveness/readiness probes); lint + kubeconform in CI |
 | Base-image **digest pinning** | platform.yaml image; ADR-0008 | **Deliberately not pinned.** Chainguard bases are rolling/continuously-rebuilt, so every build is Trivy-scanned instead; a static digest pin would freeze stale CVEs. The published image is cosign-signed and attested by its built digest. (No Renovate in this repo; Dependabot covers the github-actions, uv, and npm ecosystems.) |
-| **gRPC IDL/buf**, **Kafka/RabbitMQ** broker adapters | platform.yaml interservice; ADR-0012 | **Partial.** NATS JetStream adapter (`keel-core[nats]`) implemented with trace propagation, held to a shared MessageBus contract; Kafka/RabbitMQ and buf/protobuf IDL still planned. gRPC application auth (deny-by-default) and mTLS credentials are implemented. |
+| **gRPC IDL/buf**, **Kafka/RabbitMQ** broker adapters | platform.yaml interservice; ADR-0012 | **Mostly implemented.** The buf/protobuf IDL (`keel.reference.v1`, ADR-0022) + a gRPC server with deny-by-default auth + mTLS are implemented in all five verticals; the NATS JetStream `MessageBus` adapter too. **Kafka/RabbitMQ** broker adapters + AsyncAPI are the remaining planned items (v0.7). |
 | Production **secret backends** (Vault, AWS/GCP secret managers) | platform.yaml `secrets.prod_adapters` | **Not implemented.** The `SecretProvider` port exists with an env-backed adapter (dev). The `vault` / `aws_secrets_manager` / `gcp_secret_manager` production adapters named in the contract are not yet built; deployments inject secrets via env (Kubernetes Secret) today. |
 
 This table shrinks as the gaps close. v0.1 delivered the Python vertical and its review
