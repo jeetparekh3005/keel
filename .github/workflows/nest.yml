@@ -72,6 +72,15 @@ jobs:
         run: pnpm --filter @keel/core --filter reference-service-nest run typecheck
       - name: Format check
         run: pnpm --filter @keel/core --filter reference-service-nest run format:check
+      - name: Start NATS (JetStream)
+        # A service container can't pass the `-js` arg, so run it as a step. The NATS JetStream
+        # MessageBus integration test (@keel/core) is gated on KEEL_NATS_URL below.
+        run: |
+          docker run -d --name nats -p 4222:4222 nats:2.10 -js
+          for _ in $(seq 1 30); do
+            (echo > /dev/tcp/127.0.0.1/4222) >/dev/null 2>&1 && break
+            sleep 1
+          done
       - name: Start Keycloak (import realm)
         # A service container cannot pass `start-dev --import-realm`, so run it as a step. The
         # live-JWKS auth integration test (@keel/core) is gated on KEEL_KEYCLOAK_URL below.
@@ -85,8 +94,9 @@ jobs:
             curl -sf http://localhost:8080/realms/keel/.well-known/openid-configuration >/dev/null 2>&1 && break
             sleep 3
           done
-      - name: Test (with Postgres + Keycloak)
+      - name: Test (with Postgres + NATS + Keycloak)
         env:
+          KEEL_NATS_URL: nats://localhost:4222
           KEEL_KEYCLOAK_URL: http://localhost:8080
           KEEL_KEYCLOAK_REALM: keel
           KEEL_KEYCLOAK_CLIENT_ID: keel-api
