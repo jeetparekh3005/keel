@@ -38,9 +38,20 @@ def _generic():
     return grpc.method_handlers_generic_handler("keel.Echo", handlers)
 
 
-async def _serve(**kwargs):
+# Echo's methods are explicitly open (empty scope set): any authenticated caller may
+# call them. Under deny-by-default an UNmapped method is closed, so methods a test
+# expects to succeed with only authentication must be listed here.
+_OPEN_SCOPES = {
+    "/keel.Echo/Ping": frozenset(),
+    "/keel.Echo/WhoAmI": frozenset(),
+    "/keel.Echo/PingStream": frozenset(),
+}
+
+
+async def _serve(*, required_scopes=None, **kwargs):
     stub = StubAuthenticator({"tok": Principal(subject="svc-1", scopes=frozenset({"read"}))})
-    server = create_server(stub, **kwargs)
+    scopes = _OPEN_SCOPES if required_scopes is None else required_scopes
+    server = create_server(stub, required_scopes=scopes, **kwargs)
     server.add_generic_rpc_handlers((_generic(),))
     port = server.add_insecure_port("127.0.0.1:0")
     await server.start()
@@ -76,6 +87,23 @@ async def test_insufficient_scope_is_permission_denied():
             with pytest.raises(grpc.aio.AioRpcError) as exc:
                 await channel.unary_unary("/keel.Echo/Ping")(b"x", metadata=_AUTH)
             assert exc.value.code() == grpc.StatusCode.PERMISSION_DENIED
+    finally:
+        await server.stop(grace=None)
+
+
+async def test_authenticated_call_to_unmapped_method_is_permission_denied():
+    # Deny-by-default: a method absent from the scope map is closed even to an
+    # authenticated caller, while an explicit empty-set entry stays open. Here WhoAmI
+    # is mapped open and Ping is absent, so the same authenticated caller is allowed on
+    # WhoAmI but denied on Ping. This fails on a fail-open .get(method, frozenset()).
+    server, port = await _serve(required_scopes={"/keel.Echo/WhoAmI": frozenset()})
+    try:
+        async with create_channel(f"127.0.0.1:{port}") as channel:
+            with pytest.raises(grpc.aio.AioRpcError) as exc:
+                await channel.unary_unary("/keel.Echo/Ping")(b"x", metadata=_AUTH)
+            assert exc.value.code() == grpc.StatusCode.PERMISSION_DENIED
+            # The explicitly-open method still succeeds (absent != present-but-empty).
+            assert await channel.unary_unary("/keel.Echo/WhoAmI")(b"", metadata=_AUTH) == b"svc-1"
     finally:
         await server.stop(grace=None)
 

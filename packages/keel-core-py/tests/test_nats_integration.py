@@ -28,3 +28,16 @@ async def test_nats_bus_satisfies_the_contract():
         await assert_pubsub_roundtrip(bus, subject="keel.test.events")
     finally:
         await bus.close()
+
+
+async def test_nats_bus_propagates_trace_context_end_to_end():
+    # Proves traceparent continuity over a real broker: the consumer handler must run
+    # under a context whose trace_id matches the producer's active span. The subject root is
+    # deliberately disjoint from the other test's "keel.test.>" stream: JetStream rejects a new
+    # stream whose subjects overlap an existing one, and both tests share the CI broker.
+    bus = NatsMessageBus(_NATS_URL, stream="keel-trace", subjects=["keeltrace.>"])
+    await bus.connect()
+    try:
+        await assert_pubsub_roundtrip(bus, subject="keeltrace.events", check_trace=True)
+    finally:
+        await bus.close()
