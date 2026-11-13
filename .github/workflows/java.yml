@@ -65,6 +65,14 @@ jobs:
       # Live Keycloak for the keel-core-java JWKS integration test (epic #419). Reuses the shared
       # realm import (client keel-api / secret test-secret / realm keel). Started as a docker run
       # step rather than a `services:` entry because the realm file is only on disk after checkout.
+      - name: Start NATS (JetStream)
+        # A service container can't pass the `-js` arg, so run it as a step (as the Python lane does).
+        run: |
+          docker run -d --name nats -p 4222:4222 nats:2.10 -js
+          for _ in $(seq 1 30); do
+            (echo > /dev/tcp/127.0.0.1/4222) >/dev/null 2>&1 && break
+            sleep 1
+          done
       - name: Start Keycloak (import realm)
         run: |
           docker run -d --name keycloak -p 8080:8080 \
@@ -78,6 +86,7 @@ jobs:
           done
       - name: Verify (spotless, tests, archunit, jacoco)
         env:
+          KEEL_NATS_URL: nats://localhost:4222
           KEEL_KEYCLOAK_URL: http://localhost:8080
           KEEL_KEYCLOAK_REALM: keel
           KEEL_KEYCLOAK_CLIENT_ID: keel-api

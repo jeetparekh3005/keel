@@ -2,3 +2,4 @@ io.keel.core.KeelCoreAutoConfiguration
 io.keel.core.telemetry.HttpServerMetricsAutoConfiguration
 io.keel.core.telemetry.DbPoolMetricsAutoConfiguration
 io.keel.core.telemetry.SpanRedactionAutoConfiguration
+io.keel.core.messaging.MessagingAutoConfiguration
