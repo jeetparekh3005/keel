@@ -200,7 +200,7 @@ wired to a sink/gate; `none` = absent.
 | Live Keycloak JWKS integration test | full | full | full | full | full |
 | Per-line log-to-trace correlation | full | full | full | full | full |
 | OTLP span-export redaction | full | full | full | full | full |
-| `api_key` authentication (hashed, X-API-Key) | full | none | none | none | none |
+| `api_key` authentication (hashed, X-API-Key) | full | full | full | full | full |
 | mTLS credentials | full (gRPC) | none | none | none | none |
 | NATS JetStream MessageBus adapter | full | none | none | none | none |
 | gRPC server (deny-by-default auth + mTLS) | full | none | none | none | none |
