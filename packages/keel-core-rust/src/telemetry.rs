@@ -12,9 +12,11 @@
 //! [`crate::http`]) and any other instrumentation can resolve a real meter through
 //! `opentelemetry::global::meter`, whether or not OTLP export is configured.
 //!
-//! Redaction (see [`crate::redact`]) covers the JSON log sink. It does NOT cover the OTLP
-//! span-export path: values recorded as span fields or in-span event fields are exported
-//! to the collector as-is, so secrets must not be put in span fields when export is on.
+//! Redaction (see [`crate::redact`]) covers the JSON log sink via [`RedactingJsonLayer`]
+//! and the OTLP span-export path via [`RedactingSpanExporter`], which wraps the OTLP span
+//! exporter below: secret-family attribute keys and secret-valued string attributes on an
+//! exported span (and its events/links) are redacted before they reach the collector, the
+//! same policy the log sink applies.
 
 use opentelemetry::metrics::{Meter, ObservableGauge};
 use opentelemetry::trace::TracerProvider as _;
@@ -27,7 +29,7 @@ use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
 
 use crate::persistence::Database;
-use crate::redact::RedactingJsonLayer;
+use crate::redact::{RedactingJsonLayer, RedactingSpanExporter};
 
 /// OpenTelemetry DB-semconv metric names and attribute keys for the connection-pool
 /// saturation signal (shared with the Python vertical's `observe_db_pool`).
@@ -95,7 +97,7 @@ pub fn init(
                 .expect("build OTLP span exporter");
             let provider = SdkTracerProvider::builder()
                 .with_resource(resource(service, version, environment))
-                .with_batch_exporter(exporter)
+                .with_batch_exporter(RedactingSpanExporter::new(exporter))
                 .build();
             let tracer = provider.tracer("keel");
             (
