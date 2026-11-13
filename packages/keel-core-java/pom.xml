@@ -63,6 +63,16 @@
       <groupId>io.micrometer</groupId>
       <artifactId>micrometer-registry-otlp</artifactId>
     </dependency>
+    <!-- Official NATS client for the JetStream MessageBus adapter (ADR-0012, platform.yaml
+         interservice.async default_adapter: nats_jetstream). Not managed by the Spring Boot BOM, so
+         the version is pinned here. The adapter is wired only when KEEL_NATS_URL is set
+         (MessagingAutoConfiguration); a service without a broker still carries the jar but never
+         opens a connection. -->
+    <dependency>
+      <groupId>io.nats</groupId>
+      <artifactId>jnats</artifactId>
+      <version>2.26.4</version>
+    </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>

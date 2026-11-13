@@ -13,6 +13,11 @@ import org.springframework.validation.annotation.Validated;
  *
  * <p>Port, log level, service identity, and the OTLP endpoint are bridged to Spring's own
  * properties in application.yml; this record holds what Spring does not model natively.
+ *
+ * <p>The NATS fields gate the JetStream {@code MessageBus} adapter: it is wired only when {@code
+ * KEEL_NATS_URL} ({@code keel.nats-url}) is set, so a service without a broker is unaffected.
+ * {@code KEEL_NATS_STREAM} and {@code KEEL_NATS_SUBJECTS} (comma-separated) name the stream and the
+ * subjects it captures.
  */
 @ConfigurationProperties(prefix = "keel")
 @Validated
@@ -23,7 +28,10 @@ public record KeelProperties(
     @DefaultValue("postgres://localhost/keel") String databaseUrl,
     @DefaultValue("1048576") long maxBodyBytes,
     @DefaultValue List<String> corsAllowOrigins,
-    @DefaultValue List<ApiKeyEntry> apiKeys) {
+    @DefaultValue List<ApiKeyEntry> apiKeys,
+    @DefaultValue("") String natsUrl,
+    @DefaultValue("keel") String natsStream,
+    @DefaultValue({"keel.>"}) List<String> natsSubjects) {
 
   /**
    * One configured API-key credential (platform.yaml auth: api_key). The key is stored only as its
