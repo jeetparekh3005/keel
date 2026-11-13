@@ -71,6 +71,15 @@ jobs:
         run: cargo fmt --all --check
       - name: Clippy (warnings are errors)
         run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Start NATS (JetStream)
+        # A service container can't pass the `-js` arg, so run it as a step (like python.yml).
+        # Backs the NatsMessageBus round-trip integration test gated on KEEL_NATS_URL below.
+        run: |
+          docker run -d --name nats -p 4222:4222 nats:2.10 -js
+          for _ in $(seq 1 30); do
+            (echo > /dev/tcp/127.0.0.1/4222) >/dev/null 2>&1 && break
+            sleep 1
+          done
       - name: Start Keycloak (import realm)
         # Keycloak imports the shared realm on boot, so it can't run as a service
         # container (those can't pass `--import-realm`); run it as a step like python.yml.
@@ -91,18 +100,22 @@ jobs:
         # Rust vertical cannot silently regress below parity (epic #419, v0.6).
         #
         # --include-ignored runs the #[ignore]'d integration tests too: the Postgres CRUD
-        # round-trip (Postgres service above + KEEL_TEST_DATABASE_URL) and the live
-        # Keycloak JWKS verification (the container above + KEEL_KEYCLOAK_* below). Both
-        # fail loudly, not silently, if their backing service is missing -- and they are
-        # the paths that carry the service's composition/http/repository layers over the
-        # floor, so the coverage number is only honest with them in.
+        # round-trip (Postgres service above + KEEL_TEST_DATABASE_URL), the live Keycloak
+        # JWKS verification (the container above + KEEL_KEYCLOAK_* below), and the NATS
+        # JetStream publish->subscribe round-trip (the NATS container above + KEEL_NATS_URL).
+        # Each fails loudly, not silently, if its backing service is missing -- and they are
+        # the paths that carry the service's composition/http/repository and the broker
+        # adapter's connect/publish/subscribe/dispatch lines over the floor, so the coverage
+        # number is only honest with them in. --features nats builds the opt-in NatsMessageBus
+        # adapter (and its integration test) so it is exercised and counted here.
         env:
           KEEL_KEYCLOAK_URL: http://localhost:8080
           KEEL_KEYCLOAK_REALM: keel
           KEEL_KEYCLOAK_CLIENT_ID: keel-api
           KEEL_KEYCLOAK_CLIENT_SECRET: test-secret
           KEEL_OIDC_AUDIENCE: keel-api
-        run: cargo llvm-cov --all --locked --fail-under-lines 85 -- --include-ignored
+          KEEL_NATS_URL: nats://localhost:4222
+        run: cargo llvm-cov --all --locked --features nats --fail-under-lines 85 -- --include-ignored
       - name: Install cargo-audit
         uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
