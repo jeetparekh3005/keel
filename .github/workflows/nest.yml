@@ -37,7 +37,7 @@ jobs:
     # Postgres for the reference-service CRUD integration test (gated on the URL below).
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18
         env:
           POSTGRES_USER: keel
           POSTGRES_PASSWORD: keel
@@ -76,7 +76,7 @@ jobs:
         # A service container can't pass the `-js` arg, so run it as a step. The NATS JetStream
         # MessageBus integration test (@keel/core) is gated on KEEL_NATS_URL below.
         run: |
-          docker run -d --name nats -p 4222:4222 nats:2.10 -js
+          docker run -d --name nats -p 4222:4222 nats:2.15 -js
           for _ in $(seq 1 30); do
             (echo > /dev/tcp/127.0.0.1/4222) >/dev/null 2>&1 && break
             sleep 1
@@ -88,7 +88,7 @@ jobs:
           docker run -d --name keycloak -p 8080:8080 \
             -e KEYCLOAK_ADMIN=admin -e KEYCLOAK_ADMIN_PASSWORD=admin \
             -v "$PWD/deploy/keycloak/realm.json:/opt/keycloak/data/import/realm.json:ro" \
-            quay.io/keycloak/keycloak:25.0 start-dev --import-realm
+            quay.io/keycloak/keycloak:26.8 start-dev --import-realm
           echo "waiting for the keel realm to be ready..."
           for _ in $(seq 1 60); do
             curl -sf http://localhost:8080/realms/keel/.well-known/openid-configuration >/dev/null 2>&1 && break

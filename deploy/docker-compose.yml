@@ -4,7 +4,7 @@
 
 services:
   postgres:
-    image: postgres:16
+    image: postgres:18
     environment:
       POSTGRES_USER: keel
       POSTGRES_PASSWORD: keel
@@ -17,7 +17,7 @@ services:
       retries: 10
 
   keycloak:
-    image: quay.io/keycloak/keycloak:25.0
+    image: quay.io/keycloak/keycloak:26.8
     command: ["start-dev"]
     environment:
       KEYCLOAK_ADMIN: admin
@@ -32,7 +32,7 @@ services:
     ports: ["4317:4317"]
 
   nats:
-    image: nats:2.10
+    image: nats:2.15
     command: ["--jetstream"]
     ports: ["4222:4222"]
 
