@@ -202,7 +202,7 @@ wired to a sink/gate; `none` = absent.
 | OTLP span-export redaction | full | full | full | full | full |
 | `api_key` authentication (hashed, X-API-Key) | full | full | full | full | full |
 | mTLS credentials | full (gRPC) | none | none | none | none |
-| NATS JetStream MessageBus adapter | full | none | none | none | none |
+| NATS JetStream MessageBus adapter | full | full | full | full | full |
 | gRPC server (deny-by-default auth + mTLS) | full | none | none | none | none |
 | Enforced CI coverage floor | full (85%) | full (85%) | partial (71%) | partial (30/65%) | partial (74% lib / 37% svc) |
 | DB pool saturation metric (emitted, not just readable) | full | full | full | full | full |
@@ -220,10 +220,11 @@ OTLP span-export redaction is now full across all five: each vertical wraps its 
 scrub secret-family attribute keys and secret-pattern values (and span names/events) through the
 same redactor the log sink uses, so secrets no longer reach the collector in cleartext.
 
-Still open: the backend-integration surfaces - `api_key`, mTLS, NATS JetStream, gRPC - which exist
-only in Python and must reach the other four (the heaviest remaining work, ~16 feature slices).
-`api_key` and NATS are being fanned out next; gRPC + mTLS follow with the v0.7 buf/protobuf IDL.
-Each is "one capability, fanned out across the verticals it is still missing from."
+`api_key` authentication and the NATS JetStream MessageBus adapter (with trace-context
+propagation and poison handling) are now full across all five. Still open in v0.6: **mTLS** and
+the **gRPC** server, which exist only in Python and couple with the v0.7 buf/protobuf IDL (so
+they are sequenced to land with it); and raising the Go/Java/TS coverage floors to the 85% parity
+bar (a test-writing + JaCoCo-aggregation follow-up).
 
 ## Planned - described in the contract/ADRs but NOT yet implemented
 
