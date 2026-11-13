@@ -1,6 +1,6 @@
 # 0022. gRPC service contract, buf codegen, and cross-vertical mTLS
 
-- **Status:** proposed <!-- proposed | accepted | rejected | deprecated | superseded by ADR-XXXX -->
+- **Status:** accepted <!-- proposed | accepted | rejected | deprecated | superseded by ADR-XXXX -->
 - **Date:** 2026-11-13
 - **Deciders:** keel maintainers
 
@@ -48,7 +48,7 @@ cross-language implementation is consistent rather than improvised per vertical.
 
 Chosen: **A1 + B1 + C1 + D.**
 
-1. **Contract (A1):** one protobuf package `keel.reference.v1` with an `ItemService` exposing `GetItem`, `ListItems` (require `items:read`) and `CreateItem` (require `items:write`), mapping to the same domain the REST aggregate serves. Scope requirements are declared per method (a method option or a central map, see below) so the deny-by-default interceptor can enforce them uniformly across languages. *(Package/service names are proposed here for review; they are not yet implemented.)*
+1. **Contract (A1):** one protobuf package `keel.reference.v1` with an `ItemService` exposing `GetItem`, `ListItems` (require `items:read`) and `CreateItem` (require `items:write`), mapping to the same domain the REST aggregate serves. Scope requirements are declared per method (a method option or a central map, see below) so the deny-by-default interceptor can enforce them uniformly across languages.
 2. **Codegen (B1):** a root `proto/` buf module; `buf generate` emits committed stubs into each `keel-core-<lang>`; a `generator.yml`-style dogfood asserts regeneration is byte-identical (the same discipline as the template dogfood). Extracted repos ship the committed stubs and need no buf toolchain.
 3. **Pipeline (C1):** `buf lint` and `buf breaking` (vs `main`) gate every PR touching `proto/`; the published contract is a versioned artifact (`keel.reference.v1`), breaking changes require a new version package.
 4. **Server + authZ:** each `keel-core-<lang>` ships a gRPC server factory that installs the deny-by-default auth interceptor by construction (a servicer cannot be exposed unauthenticated), re-verifies the Bearer token via the existing `Authenticator`, enforces per-method scopes (`UNAUTHENTICATED` / `PERMISSION_DENIED`), and is OTel-instrumented - matching the Python factory.
@@ -59,6 +59,13 @@ Chosen: **A1 + B1 + C1 + D.**
 - Good: one IDL is the single source of truth; five languages cannot drift; the contract joins `platform.yaml` as a versioned artifact; deny-by-default + mTLS parity is demonstrable end to end.
 - Bad: adds a codegen pipeline and the discipline of regenerating + committing stubs on every proto change; the committed generated code adds review noise (mitigated by the byte-identical dogfood making drift a hard CI failure).
 - Neutral: closes the v0.6 `mTLS` and `gRPC server` parity rows; sets up the v0.7 Kafka/RabbitMQ + AsyncAPI work (the same contract-artifact discipline) and the v0.9 publishing (the generated stubs ship inside each `keel-core-<lang>`).
+
+### Future (not now)
+
+A **Buf Schema Registry (BSR)** for publishing versioned, generated SDKs is the natural
+enterprise next step, and pairs with the v0.9 publishing milestone (where `keel-core-<lang>` is
+published per ecosystem). It is deliberately out of scope here: committed stubs + `buf breaking`
+give the contract discipline today without standing up registry infrastructure pre-1.0.
 
 ## More information
 
