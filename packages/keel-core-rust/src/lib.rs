@@ -10,6 +10,11 @@ pub mod api_key;
 pub mod auth;
 pub mod config;
 pub mod domain;
+/// Generated gRPC stubs for the `keel.reference.v1` contract (ADR-0022). Opt-in:
+/// enable the `grpc` feature (mirrors the Python `keel-core[grpc]` extra) so the
+/// default build needs neither prost nor tonic.
+#[cfg(feature = "grpc")]
+pub mod genproto;
 pub mod http;
 pub mod jwks;
 pub mod logging;

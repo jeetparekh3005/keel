@@ -64,6 +64,12 @@
         <version>3.11.0</version>
         <configuration>
           <java>
+            <!-- Generated gRPC stubs (ADR-0022, keel.reference.v1) are committed under
+                 io.keel.reference.v1 but owned by buf's protoc/grpc plugins, not held to
+                 google-java-format; the buf regeneration dogfood (proto.yml) is their gate. -->
+            <excludes>
+              <exclude>**/io/keel/reference/**/*.java</exclude>
+            </excludes>
             <googleJavaFormat>
               <version>2.0.0</version>
             </googleJavaFormat>

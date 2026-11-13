@@ -1,0 +1,55 @@
+# buf code generation for the keel.reference.v1 contract (ADR-0022).
+#
+# One contract, five languages: buf generate fans the committed stubs into each
+# keel-core-<lang>. Plugin versions are pinned for reproducibility; the CI
+# regeneration dogfood asserts `buf generate` reproduces these stubs byte for byte.
+#
+# Run from the repo root: `buf generate proto`.
+version: v2
+managed:
+  enabled: true
+  override:
+    # Go import path: the generated package lives in the keel-core-go module.
+    - file_option: go_package_prefix
+      value: github.com/jeetparekh3005/keel/packages/keel-core-go/genproto
+    # Java package: match the repo's io.keel namespace (buf's default prefix is com).
+    - file_option: java_package_prefix
+      value: io
+plugins:
+  # --- Go: messages + gRPC ---
+  - remote: buf.build/protocolbuffers/go:v1.36.12
+    out: packages/keel-core-go/genproto
+    opt: paths=source_relative
+  - remote: buf.build/grpc/go:v1.6.2
+    out: packages/keel-core-go/genproto
+    opt: paths=source_relative
+
+  # --- Python: messages (+ type stubs) + gRPC ---
+  # Absolute imports (from keel.reference.v1 import ...) resolve via the
+  # genproto/__init__.py sys.path shim; the tree is vendored under keel_core so
+  # the wheel (which packages only src/keel_core) ships it.
+  - remote: buf.build/protocolbuffers/python:v36.2
+    out: packages/keel-core-py/src/keel_core/genproto
+  - remote: buf.build/protocolbuffers/pyi:v36.2
+    out: packages/keel-core-py/src/keel_core/genproto
+  - remote: buf.build/grpc/python:v1.85.1
+    out: packages/keel-core-py/src/keel_core/genproto
+
+  # --- Rust: prost messages + tonic gRPC ---
+  # Output is a single file per package (keel.reference.v1.rs); src/genproto.rs
+  # includes it behind the opt-in `grpc` feature (mirrors keel-core[grpc]).
+  - remote: buf.build/community/neoeinstein-prost:v0.5.0
+    out: packages/keel-core-rust/src/genproto
+  - remote: buf.build/community/neoeinstein-tonic:v0.5.0
+    out: packages/keel-core-rust/src/genproto
+
+  # --- Java: messages + gRPC ---
+  - remote: buf.build/protocolbuffers/java:v36.2
+    out: packages/keel-core-java/src/main/java
+  - remote: buf.build/grpc/java:v1.85.1
+    out: packages/keel-core-java/src/main/java
+
+  # --- TypeScript: protobuf-es v2 (messages + service descriptors) ---
+  - remote: buf.build/bufbuild/es:v2.17.0
+    out: packages/keel-core-ts/src/genproto
+    opt: target=ts
