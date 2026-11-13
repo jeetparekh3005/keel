@@ -15,6 +15,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ErrorCategory, isDomainError } from '../domain/errors.js';
 import { ItemService } from '../genproto/keel/reference/v1/item_pb.js';
 import { InMemorySecretProvider, principal, StubAuthenticator } from '../testkit/index.js';
+import { grpcMethodPath } from './auth-interceptor.js';
 import { PRINCIPAL } from './context.js';
 import { InMemoryItemStore, ITEM_SERVICE_SCOPES, registerItemService } from './item-service.js';
 import { createGrpcHandler, createMutualTlsGrpcServer, type GrpcHandler } from './server.js';
@@ -344,5 +345,63 @@ describe('mTLS credential builders', () => {
     const cli = clientTlsOptions(pem);
     expect(cli.cert).toBe('c');
     expect(cli.rejectUnauthorized).toBe(true);
+  });
+});
+
+describe('gRPC server: authorization is deny-by-default for methods absent from the scope map', () => {
+  let server: ReturnType<typeof createMutualTlsGrpcServer>;
+  let port: number;
+  let pem: MutualTlsPem;
+
+  beforeAll(async () => {
+    const ca = makeCa();
+    const serverLeaf = makeLeaf(ca, 'localhost', '06', true);
+    pem = { rootCa: ca.certPem, cert: serverLeaf.certPem, key: serverLeaf.keyPem };
+
+    // reader is fully authenticated AND holds items:read; noscope is authenticated with no scopes.
+    const authenticator = new StubAuthenticator({
+      reader: principal('svc-reader', 'items:read'),
+      noscope: principal('svc-noscope'),
+    });
+    // A deliberately PARTIAL scope map: GetItem is mapped (items:read), CreateItem is mapped to an
+    // explicit EMPTY list (opt-in open to any authenticated caller), and ListItems is ABSENT
+    // (closed by default - the regression this guards).
+    const partialScopes: Record<string, readonly string[]> = {
+      [grpcMethodPath(ItemService, ItemService.method.getItem)]: ['items:read'],
+      [grpcMethodPath(ItemService, ItemService.method.createItem)]: [],
+    };
+    const store = new InMemoryItemStore();
+    const handler = createGrpcHandler({
+      authenticator,
+      requiredScopes: partialScopes,
+      routes: (router: ConnectRouter) => registerItemService(router, store),
+    });
+    ({ server, port } = await listen(handler, pem));
+  }, 60_000);
+
+  afterAll(async () => {
+    await close(server);
+  });
+
+  it('denies an authenticated caller invoking a method absent from the scope map', async () => {
+    const client = clientFor(port, pem);
+    // ListItems is not in the map. Before deny-by-default this returned data to any authenticated
+    // caller (fail-open); now it is PERMISSION_DENIED even though reader holds items:read.
+    expect(await codeOf(client.listItems({}, bearer('reader')))).toBe(Code.PermissionDenied);
+  });
+
+  it('allows any authenticated caller on a method mapped to an explicit empty scope list', async () => {
+    const client = clientFor(port, pem);
+    // CreateItem is explicitly opened (empty scope list), so even the scope-less principal passes.
+    const created = await client.createItem({ name: 'open' }, bearer('noscope'));
+    expect(created.item?.name).toBe('open');
+  });
+
+  it('still enforces the declared scope on a mapped method', async () => {
+    const client = clientFor(port, pem);
+    // GetItem requires items:read; noscope lacks it -> PERMISSION_DENIED (not fail-open).
+    expect(await codeOf(client.getItem({ id: 'x' }, bearer('noscope')))).toBe(
+      Code.PermissionDenied,
+    );
   });
 });

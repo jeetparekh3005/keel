@@ -3,9 +3,10 @@
 // header stamped onto a span, or the span name itself) bypass that sink entirely and would reach
 // the collector in cleartext. This decorator closes that gap: it wraps the real SpanExporter and,
 // on the export call (after span end, before the bytes leave the process), rewrites each span's
-// attributes with the SAME rules the log sink uses - a secret-family attribute KEY is redacted
-// wholesale (isSecretKey) and every string value is scrubbed for secret patterns (scrubText). The
-// patterns live in one place (../logging/redact); this file never restates them.
+// attributes, event attributes, and link attributes (and the span/event names) with the SAME
+// rules the log sink uses - a secret-family attribute KEY is redacted wholesale (isSecretKey) and
+// every string value is scrubbed for secret patterns (scrubText). The patterns live in one place
+// (../logging/redact); this file never restates them.
 import type { Attributes } from '@opentelemetry/api';
 import type { ReadableSpan, SpanExporter } from '@opentelemetry/sdk-trace-base';
 
@@ -46,17 +47,62 @@ function redactAttributes(attributes: Attributes): Attributes {
 }
 
 /**
- * Return a shallow clone of the span with redacted attributes and a pattern-scrubbed name. The
- * clone is a plain object spread of the ReadableSpan; `spanContext` is an own arrow-function field
- * on the span (not a prototype method), so the spread carries it and downstream exporters keep
- * working. The original span is never mutated.
+ * Rewrite a span's recorded EVENTS, redacting each event's attribute bag and scrubbing its name.
+ * Events are plain data records (no prototype behaviour), so a per-event spread is safe. A secret
+ * stamped via `span.addEvent('auth', { authorization: ... })` or `span.recordException(e)` lives
+ * here, not in `span.attributes`, and would otherwise reach the collector in cleartext.
+ */
+function redactEvents(events: ReadableSpan['events']): ReadableSpan['events'] {
+  return events.map((event) => ({
+    ...event,
+    name: scrubText(event.name),
+    attributes:
+      event.attributes === undefined ? event.attributes : redactAttributes(event.attributes),
+  }));
+}
+
+/**
+ * Rewrite a span's LINKS, redacting each link's attribute bag. The link's SpanContext (trace/span
+ * ids) carries no secret and is left intact; only the attached attributes can.
+ */
+function redactLinks(links: ReadableSpan['links']): ReadableSpan['links'] {
+  return links.map((link) => ({
+    ...link,
+    attributes: link.attributes === undefined ? link.attributes : redactAttributes(link.attributes),
+  }));
+}
+
+/**
+ * Return a redacted view of the span with a scrubbed name and redacted attributes, event
+ * attributes, and link attributes. The view is a Proxy over the real ReadableSpan: every property
+ * and METHOD not overridden forwards to the original span, so the span's PROTOTYPE methods -
+ * crucially `spanContext()`, which the OTLP transformer calls - keep working. A plain-object
+ * spread would drop those prototype methods (they are not own fields), making the OTLP transform
+ * throw and the processor silently drop every span. Methods are bound to the real span so `this`
+ * resolves correctly. The original span is never mutated.
  */
 function redactSpan(span: ReadableSpan): ReadableSpan {
-  return {
-    ...span,
+  const overrides: Partial<ReadableSpan> = {
     name: scrubText(span.name),
     attributes: redactAttributes(span.attributes),
+    events: redactEvents(span.events),
+    links: redactLinks(span.links),
   };
+  return new Proxy(span, {
+    get(target, property) {
+      if (Object.hasOwn(overrides, property)) {
+        return (overrides as Record<string | symbol, unknown>)[property as string];
+      }
+      // Read with the real span as receiver so any getter (and `this` inside it) resolves against
+      // the span, never the Proxy.
+      const value: unknown = Reflect.get(target, property, target);
+      // Bind methods to the real span so prototype methods (e.g. spanContext) see the span's own
+      // internal fields, not the Proxy, when the exporter invokes them.
+      return typeof value === 'function'
+        ? (value as (...args: unknown[]) => unknown).bind(target)
+        : value;
+    },
+  });
 }
 
 /**

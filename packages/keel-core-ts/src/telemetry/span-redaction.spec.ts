@@ -45,6 +45,28 @@ function exportSpan(wrap: boolean): ReadableSpan {
   return finished[0];
 }
 
+// Mimic the OTLP transformer's critical access pattern: it calls span.spanContext() (a PROTOTYPE
+// method on the real span) and then reads the readable fields. A redacted span that dropped that
+// prototype method (as a plain-object spread would) makes this throw - exactly the failure that
+// silently drops every span in the BatchSpanProcessor.
+function simulateOtlpTransform(span: ReadableSpan): {
+  traceId: string;
+  spanId: string;
+  name: string;
+} {
+  const ctx = span.spanContext();
+  // Touch the other fields the transformer reads so the redacted view must honor the full contract.
+  void span.kind;
+  void span.attributes;
+  void span.events;
+  void span.links;
+  void span.startTime;
+  void span.endTime;
+  void span.status;
+  void span.droppedAttributesCount;
+  return { traceId: ctx.traceId, spanId: ctx.spanId, name: span.name };
+}
+
 describe('RedactingSpanExporter', () => {
   const providers: BasicTracerProvider[] = [];
   afterEach(async () => {
@@ -76,6 +98,79 @@ describe('RedactingSpanExporter', () => {
     expect(span.attributes['url.path']).toBe(`/download?key=${AWS_EXAMPLE_KEY}&name=report`);
     expect(span.attributes['db.statement.params']).toEqual([AWS_EXAMPLE_KEY, 'ok']);
     expect(span.name).toBe(`GET /download?key=${AWS_EXAMPLE_KEY}`);
+  });
+
+  it('keeps the spanContext() prototype method so the OTLP transform survives', () => {
+    const memory = new InMemorySpanExporter();
+    const provider = new BasicTracerProvider({
+      spanProcessors: [new SimpleSpanProcessor(new RedactingSpanExporter(memory))],
+    });
+    providers.push(provider);
+
+    const span = provider.getTracer('span-redaction-ctx').startSpan('op');
+    // Capture the real context before end; the redacted view must return this exact context.
+    const originalCtx = span.spanContext();
+    span.end();
+
+    const redacted = memory.getFinishedSpans();
+    expect(redacted).toHaveLength(1);
+    // A plain-object spread drops `spanContext` (a prototype method, not an own field), so this
+    // assertion fails on a spread-regression before calling it even throws.
+    expect(typeof redacted[0].spanContext).toBe('function');
+    expect(redacted[0].spanContext()).toEqual(originalCtx);
+    expect(redacted[0].spanContext().traceId).toBe(originalCtx.traceId);
+    expect(redacted[0].spanContext().spanId).toBe(originalCtx.spanId);
+
+    // Drive the transformer-shaped access path end to end; a spread clone throws here.
+    const transformed = simulateOtlpTransform(redacted[0]);
+    expect(transformed.traceId).toBe(originalCtx.traceId);
+    expect(transformed.spanId).toBe(originalCtx.spanId);
+    expect(transformed.name).toBe('op');
+  });
+
+  it('redacts event attributes and link attributes on the export path', () => {
+    const memory = new InMemorySpanExporter();
+    const provider = new BasicTracerProvider({
+      spanProcessors: [new SimpleSpanProcessor(new RedactingSpanExporter(memory))],
+    });
+    providers.push(provider);
+    const tracer = provider.getTracer('span-redaction-events');
+
+    // A separate span to link to; the LINK carries a secret-family attribute.
+    const upstream = tracer.startSpan('upstream');
+    const span = tracer.startSpan('op', {
+      links: [{ context: upstream.spanContext(), attributes: { 'db.user.password': 'hunter2' } }],
+    });
+    // An EVENT whose attributes carry both a secret-family KEY (redacted wholesale) and a benign
+    // key whose VALUE embeds a pattern secret (scrubbed in place). This is the recordException /
+    // addEvent('auth', ...) leak path that bypasses span.attributes entirely.
+    span.addEvent('auth-check', {
+      authorization: 'Bearer sk-live-abcdefgh12345678',
+      'url.path': `/download?key=${AWS_EXAMPLE_KEY}&name=report`,
+    });
+    span.end();
+    upstream.end();
+
+    const redacted = memory.getFinishedSpans().find((s) => s.name === 'op');
+    expect(redacted, 'the op span was not exported').toBeDefined();
+
+    const event = redacted?.events[0];
+    expect(event?.name).toBe('auth-check');
+    // Secret-family KEY -> value redacted wholesale.
+    expect(event?.attributes?.['authorization']).toBe('[REDACTED]');
+    // Pattern secret inside a benign VALUE -> only the secret run is replaced.
+    expect(event?.attributes?.['url.path']).toBe('/download?key=[REDACTED]&name=report');
+    // The known cleartext secrets must be wholly ABSENT from the exported event, and the marker
+    // present - a byte-level guard against a regression that forwards event attributes raw.
+    const eventJson = JSON.stringify(event?.attributes);
+    expect(eventJson).not.toContain(AWS_EXAMPLE_KEY);
+    expect(eventJson).not.toContain('sk-live-abcdefgh12345678');
+    expect(eventJson).toContain('[REDACTED]');
+
+    // LINK attributes are redacted too; the link's SpanContext is left intact.
+    const link = redacted?.links[0];
+    expect(link?.attributes?.['db.user.password']).toBe('[REDACTED]');
+    expect(link?.context.traceId).toBe(upstream.spanContext().traceId);
   });
 
   it('delegates shutdown and forceFlush to the wrapped exporter', async () => {
