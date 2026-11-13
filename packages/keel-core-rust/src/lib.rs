@@ -38,6 +38,13 @@ pub mod webauth;
 /// `metadata.contractVersion`). A generated project records the version it targets.
 pub const CONTRACT_VERSION: &str = "0.2.0";
 
+/// Serializes the tests that install the process-global OpenTelemetry MeterProvider, so a
+/// concurrent install cannot clobber the global between a test's `set_meter_provider` and
+/// the point it reads its instruments back. The guard protects ordering, not shared data,
+/// so a poisoned lock is recovered rather than propagated.
+#[cfg(test)]
+pub(crate) static OTEL_GLOBAL_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[cfg(test)]
 mod tests {
     use super::CONTRACT_VERSION;

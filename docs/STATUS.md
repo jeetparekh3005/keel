@@ -216,17 +216,29 @@ Python and Rust already were; Go reached it with meaningful handler/repository/b
 (38 to 94%), and Java enforces 85% on an honest cross-module JaCoCo report-aggregate (the per-module
 number undercounted because the reference service's conformance tests exercise keel-core's classes).
 
-OTLP span-export redaction is now full across all five: each vertical wraps its span exporter to
-scrub secret-family attribute keys and secret-pattern values (and span names/events) through the
-same redactor the log sink uses, so secrets no longer reach the collector in cleartext.
+OTLP span-export redaction is now full across all five: each vertical wraps its span exporter (in
+the active export pipeline, not just registered) to scrub secret-family attribute keys and
+secret-pattern values through the same redactor the log sink uses, across span attributes, span
+name, **event attributes, and link attributes** (so a secret on a recorded-exception event or a
+manual `addEvent` cannot leak), with a test asserting the known cleartext is byte-absent from the
+exported span. The TypeScript exporter preserves the span's `spanContext()` method on the redacted
+view, so redaction does not break the OTLP transform. Secrets no longer reach the collector in
+cleartext.
 
 `api_key` authentication and the NATS JetStream MessageBus adapter (with trace-context
-propagation and poison handling) are full across all five. The **gRPC server + mTLS** are now too:
-a single `keel.reference.v1` protobuf contract with buf codegen (committed stubs, byte-identical
-regeneration dogfood; ADR-0022) drives a deny-by-default gRPC server factory per language (the auth
-interceptor is installed by construction, re-verifies the Bearer token, enforces per-method scopes,
-UNAUTHENTICATED / PERMISSION_DENIED) with mutual-TLS server + client credentials proven over a real
-loopback handshake (trusted succeeds, untrusted-CA rejected).
+propagation and poison handling) are full across all five. Trace continuity (consumer span inherits
+the producer's trace id) is asserted in all five; poison handling (nak until `max_deliver`, then
+term) is unit-tested at the dispatch level in all five and additionally proven end-to-end against a
+real broker in Rust (a broker-level exhaustion test for the other four is a tracked low-priority
+parity item). The **gRPC server + mTLS** are now too: a single `keel.reference.v1` protobuf contract
+with buf codegen (committed stubs, byte-identical regeneration dogfood; ADR-0022) drives a
+deny-by-default gRPC server factory per language. The auth interceptor is installed by construction,
+re-verifies the Bearer token, and enforces per-method scopes: authorization is **closed by default**,
+so a method absent from the scope map is rejected with PERMISSION_DENIED (an explicit empty-scope
+entry is the only way to open a method to any authenticated caller), and unauthenticated calls are
+UNAUTHENTICATED. Mutual-TLS server + client credentials are proven over a real loopback handshake in
+all five (trusted succeeds, untrusted-CA rejected); the Java edge fails startup rather than silently
+serving plaintext when TLS material is incomplete unless plaintext is explicitly opted into.
 
 **v0.6 cross-vertical parity is complete:** every capability in the matrix is full across all five
 verticals. The remaining backend-integration work (Kafka/RabbitMQ brokers, AsyncAPI) is v0.7.

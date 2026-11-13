@@ -69,7 +69,10 @@ jobs:
         run: buf generate proto
       - name: Assert byte-identical to the committed stubs (no drift)
         run: |
-          if ! git diff --exit-code; then
+          # Stage everything first so a NEWLY generated (untracked) stub counts as drift:
+          # a bare 'git diff' only sees tracked files and would silently pass a new file.
+          git add -A
+          if ! git diff --cached --exit-code; then
             echo "::error::committed gRPC stubs drifted from the contract."
             echo "Run 'buf generate proto' locally and commit the delta. See ADR-0022."
             exit 1
@@ -92,6 +95,10 @@ jobs:
         # module, this becomes an enforcing gate (a breaking change requires a new vN package).
         run: |
           if git cat-file -e origin/main:proto/buf.yaml 2>/dev/null; then
+            # buf resolves '.git#branch=main' against a LOCAL ref; the checkout only fetches
+            # origin/main (a remote-tracking ref), so without this buf fails with
+            # "couldn't find remote ref main". Create the local branch pointer first.
+            git branch -f main origin/main
             buf breaking proto --against '.git#branch=main,subdir=proto'
           else
             echo "No proto/ module on main yet; buf breaking is a no-op for this PR."

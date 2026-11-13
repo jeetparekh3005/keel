@@ -11,6 +11,12 @@ async def test_in_memory_bus_satisfies_the_contract():
     await assert_pubsub_roundtrip(InMemoryMessageBus())
 
 
+async def test_in_memory_bus_satisfies_the_contract_with_trace_continuity():
+    # The trace-continuity variant of the contract: the consumer must observe the
+    # producer's trace_id. The NATS integration test runs the same check over a broker.
+    await assert_pubsub_roundtrip(InMemoryMessageBus(), check_trace=True)
+
+
 async def test_publish_delivers_to_subscribers():
     bus = InMemoryMessageBus()
     received: list[InboundMessage] = []

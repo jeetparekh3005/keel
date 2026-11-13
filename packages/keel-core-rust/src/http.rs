@@ -505,4 +505,68 @@ mod tests {
             "{HTTP_SERVER_ACTIVE_REQUESTS} must carry http.route=/widgets/{{id}}; got {active_routes:?}"
         );
     }
+
+    // Covers the PRODUCTION wiring: create_app installs record_http_metrics against the
+    // process-global MeterProvider (HttpMetrics::from_global). Install a readable global,
+    // drive a request through the router create_app returns (not a hand-built one), and
+    // assert the duration metric was recorded with the route template. Removing the layer
+    // from create_app makes this fail. Serialized against other global-provider installs.
+    // The guard is intentionally held across the request await to keep the installed global
+    // MeterProvider from being clobbered mid-test; this test runs on tokio's current-thread
+    // runtime, so no other task can contend for the lock, and the only cross-thread contender
+    // (the telemetry init test) simply blocks on it, which is the serialization we want.
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test]
+    async fn create_app_records_request_metrics_through_the_global_provider() {
+        use opentelemetry::KeyValue;
+        use opentelemetry_sdk::metrics::data::{AggregatedMetrics, MetricData};
+        use opentelemetry_sdk::metrics::{InMemoryMetricExporter, SdkMeterProvider};
+
+        let _guard = crate::OTEL_GLOBAL_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+        let exporter = InMemoryMetricExporter::default();
+        let provider = SdkMeterProvider::builder()
+            .with_periodic_exporter(exporter.clone())
+            .build();
+        // Install BEFORE create_app so from_global's meter binds to this provider.
+        opentelemetry::global::set_meter_provider(provider.clone());
+
+        let response = create_app()
+            .oneshot(Request::get("/healthz").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        provider.force_flush().unwrap();
+        let resource_metrics = exporter.get_finished_metrics().unwrap();
+
+        let mut saw_healthz_duration = false;
+        for rm in &resource_metrics {
+            for scope in rm.scope_metrics() {
+                for metric in scope.metrics() {
+                    if metric.name() != HTTP_SERVER_REQUEST_DURATION {
+                        continue;
+                    }
+                    if let AggregatedMetrics::F64(MetricData::Histogram(hist)) = metric.data() {
+                        for point in hist.data_points() {
+                            let is_healthz = point.attributes().any(|kv: &KeyValue| {
+                                kv.key.as_str() == "http.route"
+                                    && kv.value.to_string() == "/healthz"
+                            });
+                            if is_healthz {
+                                saw_healthz_duration = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(
+            saw_healthz_duration,
+            "create_app must record {HTTP_SERVER_REQUEST_DURATION} with http.route=/healthz \
+             (the record_http_metrics layer must be wired into create_app)"
+        );
+    }
 }

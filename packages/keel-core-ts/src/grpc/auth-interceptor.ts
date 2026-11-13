@@ -15,9 +15,12 @@ export interface AuthInterceptorOptions {
    */
   exempt?: Iterable<string>;
   /**
-   * Per-method required scopes, keyed by full method path. A method absent from this map still
-   * requires a valid Bearer token (deny-by-default); it simply has no extra scope gate. A method
-   * present here additionally requires the listed scopes or the call is PERMISSION_DENIED.
+   * Per-method required scopes, keyed by full method path. Authorization is deny-by-default: a
+   * non-exempt method ABSENT from this map is closed to every caller (PERMISSION_DENIED), so a
+   * newly added method cannot be reached until its scope policy is declared. A method present with
+   * a non-empty list additionally requires those scopes. A method present with an EMPTY list is an
+   * explicit opt-in to "any authenticated caller may call this" - the only way to open a method
+   * without a scope gate, kept distinct from the closed-by-absence default.
    */
   requiredScopes?: Record<string, readonly string[]>;
 }
@@ -53,7 +56,9 @@ export function createAuthInterceptor(
       const principal = await authenticateAndAuthorize(
         authenticator,
         req.header,
-        required.get(path) ?? [],
+        // Pass the raw lookup: `undefined` (method absent from the map) is deny-by-default below,
+        // kept distinct from a present empty-scope entry (explicit open).
+        required.get(path),
       );
       // The handler reads this via ctx.values.get(PRINCIPAL); contextValues is the same object
       // the HandlerContext exposes, so the set here reaches the handler.
@@ -67,7 +72,7 @@ export function createAuthInterceptor(
 async function authenticateAndAuthorize(
   authenticator: Authenticator,
   header: Headers,
-  requiredScopes: readonly string[],
+  requiredScopes: readonly string[] | undefined,
 ): Promise<Principal> {
   const token = bearerToken(header.get('authorization'));
   if (token === null) {
@@ -78,6 +83,12 @@ async function authenticateAndAuthorize(
     principal = await authenticator.authenticate(token);
   } catch (err) {
     throw toConnectError(err);
+  }
+  if (requiredScopes === undefined) {
+    // Deny-by-default: the method is non-exempt yet declares no scope policy, so it is closed to
+    // every caller (even a fully authenticated one). Declaring an explicit empty-scope entry is
+    // the only way to open it without a scope gate.
+    throw new ConnectError('method not authorized', Code.PermissionDenied);
   }
   if (requiredScopes.length > 0 && !principal.hasScopes(...requiredScopes)) {
     throw new ConnectError('insufficient scope', Code.PermissionDenied);

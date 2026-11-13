@@ -57,7 +57,9 @@ export function serverTlsOptions(pem: MutualTlsPem): SecureServerOptions {
     rejectUnauthorized: true,
     // gRPC is HTTP/2 only; disable the HTTP/1 fallback so a plaintext/h1 client cannot bypass it.
     allowHTTP1: false,
-    minVersion: 'TLSv1.2',
+    // Internal service-to-service mTLS: floor the handshake at TLS 1.3, dropping the legacy 1.2
+    // cipher suites and the renegotiation surface entirely.
+    minVersion: 'TLSv1.3',
   };
 }
 
@@ -71,6 +73,7 @@ export function clientTlsOptions(pem: MutualTlsPem): SecureClientSessionOptions 
     cert: pem.cert,
     ca: pem.rootCa,
     rejectUnauthorized: true,
-    minVersion: 'TLSv1.2',
+    // Match the server floor (TLS 1.3); a 1.2-only peer cannot complete the mTLS handshake.
+    minVersion: 'TLSv1.3',
   };
 }

@@ -15,7 +15,12 @@ async def _echo(request, context):
 async def test_roundtrip_over_instrumented_channel():
     handler = grpc.unary_unary_rpc_method_handler(_echo)
     generic = grpc.method_handlers_generic_handler("keel.Echo", {"Ping": handler})
-    server = create_server(StubAuthenticator({"tok": Principal(subject="svc")}))
+    # Ping is explicitly open (empty scope set): authenticated callers may call it.
+    # Deny-by-default closes UNmapped methods, so this roundtrip test must map it.
+    server = create_server(
+        StubAuthenticator({"tok": Principal(subject="svc")}),
+        required_scopes={"/keel.Echo/Ping": frozenset()},
+    )
     server.add_generic_rpc_handlers((generic,))
     port = server.add_insecure_port("127.0.0.1:0")
     await server.start()
