@@ -22,4 +22,20 @@ public record KeelProperties(
     @DefaultValue("") String oidcJwksUri,
     @DefaultValue("postgres://localhost/keel") String databaseUrl,
     @DefaultValue("1048576") long maxBodyBytes,
-    @DefaultValue List<String> corsAllowOrigins) {}
+    @DefaultValue List<String> corsAllowOrigins,
+    @DefaultValue List<ApiKeyEntry> apiKeys) {
+
+  /**
+   * One configured API-key credential (platform.yaml auth: api_key). The key is stored only as its
+   * SHA-256 hex digest ({@code keyHash}) so plaintext never lands in config or memory; the
+   * presented key is hashed and compared. {@code subject} identifies the caller and {@code
+   * scopes}/{@code roles} become the {@code SCOPE_*}/{@code ROLE_*} authorities enforced per route.
+   * Bound from {@code KEEL_APIKEYS_0_KEYHASH}, {@code KEEL_APIKEYS_0_SUBJECT}, {@code
+   * KEEL_APIKEYS_0_SCOPES}, etc.
+   */
+  public record ApiKeyEntry(
+      @DefaultValue("") String keyHash,
+      @DefaultValue("") String subject,
+      @DefaultValue List<String> scopes,
+      @DefaultValue List<String> roles) {}
+}

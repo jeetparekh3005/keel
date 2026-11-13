@@ -20,6 +20,7 @@ import org.springframework.security.oauth2.jwt.JwtIssuerValidator;
 import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 
 /**
@@ -36,7 +37,8 @@ import org.springframework.security.web.SecurityFilterChain;
 public class SecurityConfig {
 
   @Bean
-  public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtDecoder jwtDecoder)
+  public SecurityFilterChain securityFilterChain(
+      HttpSecurity http, JwtDecoder jwtDecoder, ApiKeyAuthenticator apiKeyAuthenticator)
       throws Exception {
     http.csrf(csrf -> csrf.disable())
         .cors(cors -> cors.disable())
@@ -51,6 +53,13 @@ public class SecurityConfig {
                 .authenticated())
         .oauth2ResourceServer(oauth2 ->
             oauth2.jwt(jwt -> jwt.decoder(jwtDecoder).jwtAuthenticationConverter(authConverter())))
+        // The X-API-Key filter runs before the bearer-token filter: when the header is present it
+        // verifies the key and sets the authentication (with scope authorities), otherwise the JWT
+        // resource server runs unchanged. Deny-by-default and per-route @PreAuthorize scopes apply
+        // to the api-key principal exactly as they do to a JWT caller.
+        .addFilterBefore(
+            new ApiKeyAuthenticationFilter(apiKeyAuthenticator),
+            BearerTokenAuthenticationFilter.class)
         .exceptionHandling(handling ->
             handling
                 .authenticationEntryPoint((request, response, ex) ->
@@ -84,6 +93,18 @@ public class SecurityConfig {
     validators.add(audienceValidator(properties.oidcAudience()));
     decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(validators));
     return decoder;
+  }
+
+  /**
+   * The API-key authenticator, built from the hashed keys in {@link KeelProperties}. Conditional so
+   * a test (or a service) can supply its own set of keys without this one overriding it. With no
+   * keys configured it rejects every {@code X-API-Key}, leaving the JWT path as the sole
+   * credential.
+   */
+  @Bean
+  @ConditionalOnMissingBean(ApiKeyAuthenticator.class)
+  public ApiKeyAuthenticator apiKeyAuthenticator(KeelProperties properties) {
+    return ApiKeyAuthenticator.fromProperties(properties.apiKeys());
   }
 
   private static void requireConfigured(String envVar, String value) {
