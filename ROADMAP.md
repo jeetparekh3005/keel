@@ -10,7 +10,7 @@ This file is a human-readable mirror; the issues are the source of truth.
 | **v0.3** | Rust vertical (the contract stress-test) | **released** ([v0.3.0](https://github.com/jeetparekh3005/keel/releases/tag/v0.3.0)) |
 | **v0.4** | Go, Java, and TypeScript (NestJS) backend verticals | **released** ([v0.4.0](https://github.com/jeetparekh3005/keel/releases/tag/v0.4.0)) |
 | **v0.5** | Copier generator (`keel new service`) + `keel update` propagation + reusable workflows + base Helm chart | **released** ([v0.5.3](https://github.com/jeetparekh3005/keel/releases/tag/v0.5.3)) |
-| **v0.6** | Cross-vertical **parity closure** | planned |
+| **v0.6** | Cross-vertical **parity closure** | **released** ([v0.6.0](https://github.com/jeetparekh3005/keel/releases/tag/v0.6.0)) |
 | **v0.7** | Production **secret backends** + **messaging** breadth | planned |
 | **v0.8** | **Supply-chain + deploy** completion | planned |
 | **v0.9** | **Publishing** + generator hardening | planned |
