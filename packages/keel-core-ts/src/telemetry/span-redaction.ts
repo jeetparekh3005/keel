@@ -5,14 +5,14 @@
 // on the export call (after span end, before the bytes leave the process), rewrites each span's
 // attributes with the SAME rules the log sink uses - a secret-family attribute KEY is redacted
 // wholesale (isSecretKey) and every string value is scrubbed for secret patterns (scrubText). The
-// patterns live in one place (../logging/redact); this file never re-declares them.
+// patterns live in one place (../logging/redact); this file never restates them.
 import type { Attributes } from '@opentelemetry/api';
 import type { ReadableSpan, SpanExporter } from '@opentelemetry/sdk-trace-base';
 
 import { isSecretKey, REDACTED, scrubText } from '../logging/redact.js';
 
 // The second argument of SpanExporter.export is a result callback; derive its type from the
-// interface so we neither re-declare ExportResult nor import it from a transitive-only package.
+// interface so we neither restate ExportResult nor import it from a transitive-only package.
 type ExportResultCallback = Parameters<SpanExporter['export']>[1];
 
 /**
