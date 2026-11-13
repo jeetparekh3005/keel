@@ -18,6 +18,10 @@
     "./testkit": {
       "types": "./dist/testkit/index.d.ts",
       "default": "./dist/testkit/index.js"
+    },
+    "./messaging/nats": {
+      "types": "./dist/messaging/nats.d.ts",
+      "default": "./dist/messaging/nats.js"
     }
   },
   "files": [
@@ -42,6 +46,7 @@
     "@opentelemetry/sdk-trace-base": "2.12.0",
     "@opentelemetry/semantic-conventions": "1.45.0",
     "jose": "6.2.17",
+    "nats": "2.29.3",
     "pg": "8.23.1",
     "pino": "10.4.0",
     "reflect-metadata": "0.2.2",
@@ -53,6 +58,7 @@
     "@nestjs/platform-express": "12.4.2",
     "@nestjs/testing": "12.4.2",
     "@opentelemetry/context-async-hooks": "3.1.1",
+    "@opentelemetry/core": "2.12.0",
     "@swc/core": "1.16.22",
     "@types/node": "26.6.6",
     "@types/pg": "8.23.1",

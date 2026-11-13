@@ -40,6 +40,14 @@ export { EnvSecretProvider, SystemClock } from './adapters/index.js';
 export { Database, DATABASE, type PoolStats, UnitOfWork } from './persistence/index.js';
 
 export {
+  type InboundMessage,
+  MESSAGE_BUS,
+  type MessageBus,
+  type MessageHandler,
+  type MessagePublisher,
+} from './messaging/index.js';
+
+export {
   API_KEY_AUTHENTICATOR,
   ApiKeyAuthenticator,
   type Authenticator,
