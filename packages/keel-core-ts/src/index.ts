@@ -64,6 +64,26 @@ export {
 } from './auth/index.js';
 
 export {
+  type AuthInterceptorOptions,
+  clientTlsOptions,
+  createAuthInterceptor,
+  createGrpcHandler,
+  createMutualTlsGrpcServer,
+  createTelemetryInterceptor,
+  type GrpcHandler,
+  type GrpcServerOptions,
+  grpcMethodPath,
+  InMemoryItemStore,
+  ITEM_SERVICE_SCOPES,
+  loadMutualTlsPem,
+  type MutualTlsPem,
+  type MutualTlsSecretKeys,
+  PRINCIPAL,
+  registerItemService,
+  serverTlsOptions,
+} from './grpc/index.js';
+
+export {
   BodyLimitMiddleware,
   CORS_ALLOW_ORIGINS,
   CorsMiddleware,
