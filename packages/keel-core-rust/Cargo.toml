@@ -39,10 +39,32 @@ sqlx = { version = "0.9", default-features = false, features = [
     "sqlite",
     "postgres",
 ] }
+# Optional NATS JetStream MessageBus adapter (the `nats` feature). Mirrors the Python
+# `keel-core[nats]` extra: the broker client is pulled in only when the feature is
+# enabled, so the default core build needs no broker and no NATS crates.
+async-nats = { version = "0.52", optional = true }
+futures = { version = "0.3", optional = true }
+async-trait = { version = "0.1", optional = true }
+bytes = { version = "1", optional = true }
+
+[features]
+# Opt-in NATS JetStream adapter. Off by default so `cargo build` stays broker-free,
+# the same way `pip install keel-core` omits nats-py until you ask for the `nats` extra.
+# `opentelemetry_sdk/trace` makes `propagation::TraceContextPropagator` available for the
+# W3C trace-context inject/extract over message headers.
+nats = [
+    "dep:async-nats",
+    "dep:futures",
+    "dep:async-trait",
+    "dep:bytes",
+    "opentelemetry_sdk/trace",
+]
 
 [dev-dependencies]
 figment = { version = "0.10", features = ["env", "toml", "test"] }
-tokio = { version = "1", features = ["macros", "rt"] }
+# sync + time back the NATS integration test (mpsc handoff from the consumer task and a
+# receive timeout so a missed delivery fails fast instead of hanging).
+tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
 # InMemoryMetricExporter (gated behind the `testing` feature) backs the HTTP metrics test.

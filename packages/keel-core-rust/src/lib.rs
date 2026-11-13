@@ -13,6 +13,10 @@ pub mod domain;
 pub mod http;
 pub mod jwks;
 pub mod logging;
+/// NATS JetStream `MessageBus` adapter. Opt-in: enable the `nats` feature (mirrors the
+/// Python `keel-core[nats]` extra) so the default build needs no broker.
+#[cfg(feature = "nats")]
+pub mod messaging;
 pub mod persistence;
 pub mod ports;
 pub mod redact;
