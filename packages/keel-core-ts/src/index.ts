@@ -40,10 +40,13 @@ export { EnvSecretProvider, SystemClock } from './adapters/index.js';
 export { Database, DATABASE, type PoolStats, UnitOfWork } from './persistence/index.js';
 
 export {
+  API_KEY_AUTHENTICATOR,
+  ApiKeyAuthenticator,
   type Authenticator,
   AUTHENTICATOR,
   AuthGuard,
   CurrentPrincipal,
+  hashApiKey,
   IS_PUBLIC_KEY,
   OidcAuthenticator,
   Principal,

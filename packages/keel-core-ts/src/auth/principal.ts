@@ -35,5 +35,12 @@ export interface Authenticator {
   authenticate(credential: string): Promise<Principal>;
 }
 
-/** DI token for the Authenticator port. */
+/** DI token for the Authenticator port (verifies the bearer JWT path). */
 export const AUTHENTICATOR = Symbol('keel.Authenticator');
+
+/**
+ * DI token for the optional Authenticator that verifies an X-API-Key credential. When a service
+ * configures one, the guard routes an X-API-Key request to it; otherwise only the bearer path is
+ * available. Kept distinct from AUTHENTICATOR so the two credential kinds verify independently.
+ */
+export const API_KEY_AUTHENTICATOR = Symbol('keel.ApiKeyAuthenticator');
