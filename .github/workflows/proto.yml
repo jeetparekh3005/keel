@@ -69,7 +69,10 @@ jobs:
         run: buf generate proto
       - name: Assert byte-identical to the committed stubs (no drift)
         run: |
-          if ! git diff --exit-code; then
+          # Stage everything first so a NEWLY generated (untracked) stub counts as drift:
+          # a bare 'git diff' only sees tracked files and would silently pass a new file.
+          git add -A
+          if ! git diff --cached --exit-code; then
             echo "::error::committed gRPC stubs drifted from the contract."
             echo "Run 'buf generate proto' locally and commit the delta. See ADR-0022."
             exit 1
