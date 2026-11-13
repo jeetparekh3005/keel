@@ -15,7 +15,6 @@ from __future__ import annotations
 import contextlib
 import logging
 import queue
-import re
 import sys
 import threading
 import time
@@ -27,6 +26,7 @@ from opentelemetry import trace as otel_trace
 from structlog.types import EventDict, Processor, WrappedLogger
 
 from keel_core import context
+from keel_core.adapters.outbound.redaction import DEFAULT_MAX_FIELD_LEN, sanitize
 
 
 class _TextSink(Protocol):
@@ -41,40 +41,6 @@ class _TextSink(Protocol):
         ...
 
 
-# Redact any field whose (normalized) key contains one of these fragments. Family
-# matching catches x-api-key, access_token, client_secret, cookie, set-cookie, etc.
-_SECRET_KEY_FRAGMENTS: tuple[str, ...] = (
-    "password",
-    "passwd",
-    "secret",
-    "token",
-    "apikey",
-    "cookie",
-    "authorization",
-    "credential",
-    "privatekey",
-    "pii",
-)
-_REDACTED = "[REDACTED]"
-
-
-def _is_secret_key(key: str) -> bool:
-    normalized = key.lower().replace("-", "").replace("_", "")
-    return any(fragment in normalized for fragment in _SECRET_KEY_FRAGMENTS)
-
-
-_DEFAULT_MAX_FIELD_LEN = 8192
-
-# High-precision secret patterns scrubbed from any string value and the message.
-# Deliberately narrow to avoid false positives (no "redact anything long").
-_SECRET_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"),  # JWT
-    re.compile(r"AKIA[0-9A-Z]{16}"),  # AWS access key id
-    re.compile(r"(?i)bearer\s+[A-Za-z0-9._~+/-]{8,}=*"),  # bearer token
-    re.compile(r"-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----"),  # PEM private key
-)
-_CC_CANDIDATE = re.compile(r"\b(?:\d[ -]?){13,19}\b")
-
 # Keys the logger owns; a user field with one of these names is namespaced
 # (prefixed ``x_``) so it can never clobber the canonical value.
 _RESERVED: frozenset[str] = frozenset(
@@ -83,53 +49,6 @@ _RESERVED: frozenset[str] = frozenset(
 
 _LEVEL_ALIASES = {"warning": "warn", "critical": "fatal"}
 _NEVER_RATE_LIMIT = frozenset({"error", "fatal"})
-
-
-def _luhn_ok(number: str) -> bool:
-    digits = [int(d) for d in number]
-    checksum = 0
-    for i, digit in enumerate(reversed(digits)):
-        value = digit * 2 if i % 2 == 1 else digit
-        checksum += value - 9 if value > 9 else value
-    return checksum % 10 == 0
-
-
-def _scrub_credit_cards(text: str) -> str:
-    def _replace(match: re.Match[str]) -> str:
-        bare = re.sub(r"[ -]", "", match.group(0))
-        return _REDACTED if bare.isdigit() and _luhn_ok(bare) else match.group(0)
-
-    return _CC_CANDIDATE.sub(_replace, text)
-
-
-def _scrub_text(text: str) -> str:
-    for pattern in _SECRET_PATTERNS:
-        text = pattern.sub(_REDACTED, text)
-    return _scrub_credit_cards(text)
-
-
-def _sanitize(value: object, max_len: int) -> object:
-    """Redact secret-keyed entries, scrub secret-valued strings, and cap sizes."""
-    if isinstance(value, dict):
-        out: dict[object, object] = {}
-        for key, item in value.items():
-            if isinstance(key, str) and _is_secret_key(key):
-                out[key] = _REDACTED
-            else:
-                out[key] = _sanitize(item, max_len)
-        return out
-    if isinstance(value, (list, tuple)):
-        return [_sanitize(item, max_len) for item in value]
-    if isinstance(value, (str, bytes, bytearray)):
-        # bytes values are decoded (lossily) so value-pattern scrubbing (JWT, bearer,
-        # AWS key, PAN) applies to byte payloads too; otherwise a secret in a bytes value
-        # under a non-secret key would be emitted verbatim by the JSON renderer's repr.
-        text = value if isinstance(value, str) else bytes(value).decode("utf-8", errors="replace")
-        scrubbed = _scrub_text(text)
-        if len(scrubbed) > max_len:
-            return f"{scrubbed[:max_len]}...(truncated {len(scrubbed) - max_len} chars)"
-        return scrubbed
-    return value
 
 
 def _namespace_user_reserved(_: WrappedLogger, __: str, event_dict: EventDict) -> EventDict:
@@ -223,8 +142,8 @@ def _shared_processors(
         return event_dict
 
     def _sanitize_processor(_: WrappedLogger, __: str, event_dict: EventDict) -> EventDict:
-        result = _sanitize(dict(event_dict), max_field_len)
-        assert isinstance(result, dict)  # noqa: S101  # _sanitize preserves dict type
+        result = sanitize(dict(event_dict), max_field_len)
+        assert isinstance(result, dict)  # noqa: S101  # sanitize preserves dict type
         return cast("EventDict", result)
 
     chain: list[Processor] = [
@@ -308,7 +227,7 @@ class StructuredLogger:
         version: str,
         level: str = "info",
         stream: _TextSink | None = None,
-        max_field_len: int = _DEFAULT_MAX_FIELD_LEN,
+        max_field_len: int = DEFAULT_MAX_FIELD_LEN,
         rate_limiter: RateLimiter | None = None,
     ) -> None:
         """Create a logger bound to a service name, version, and minimum level."""
@@ -355,7 +274,7 @@ def configure_logging(
     version: str,
     level: str = "info",
     stream: _TextSink | None = None,
-    max_field_len: int = _DEFAULT_MAX_FIELD_LEN,
+    max_field_len: int = DEFAULT_MAX_FIELD_LEN,
     rate_limiter: RateLimiter | None = None,
     non_blocking: bool = True,
 ) -> QueueLogWriter | None:

@@ -6,9 +6,11 @@ from keel_core.adapters.outbound.telemetry.otel import (
     get_tracer,
     shutdown_tracing,
 )
+from keel_core.adapters.outbound.telemetry.redacting_exporter import RedactingSpanExporter
 from keel_core.adapters.outbound.telemetry.saturation import observe_db_pool, observe_log_drops
 
 __all__ = [
+    "RedactingSpanExporter",
     "configure_metrics",
     "configure_tracing",
     "get_meter",
