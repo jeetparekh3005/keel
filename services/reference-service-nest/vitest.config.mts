@@ -13,13 +13,14 @@ export default defineConfig({
       provider: 'v8',
       include: ['src/**/*.ts'],
       exclude: ['src/main.ts', 'src/**/index.ts'],
-      // A floor so the service's coverage cannot silently regress (@keel/core enforces one too).
-      // Set just under the level this suite clears WITHOUT Postgres: the real-DB CRUD e2e is
-      // describe.skipIf-gated on KEEL_TEST_DATABASE_URL, so the item repository is only exercised
-      // in CI. The floor must therefore pass on the leaner local run; CI (with Postgres) only
-      // covers more. Well below @keel/core's 74/61/82/74 - the gap is the repository, which has no
-      // coverage without a database. Ratchet up as in-process (DB-free) tests grow.
-      thresholds: { statements: 37, branches: 35, functions: 42, lines: 37 },
+      // A floor so the service's coverage cannot silently regress. Set to @keel/core's parity
+      // bar: the suite clears it WITHOUT Postgres. The repository is exercised by unit tests over
+      // a fake pg pool (asserting the SQL/params, the row<->domain mapping, and the not-found /
+      // error translation), and the composition root by a wiring e2e that boots AppModule with the
+      // pool replaced by a fake. The only line the DB-free run cannot reach is infra.module's live
+      // Database.connect factory; the real-DB CRUD e2e (describe.skipIf-gated on
+      // KEEL_TEST_DATABASE_URL) covers it in CI, so CI coverage only exceeds this floor.
+      thresholds: { statements: 74, branches: 61, functions: 82, lines: 74 },
     },
   },
 });
