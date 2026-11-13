@@ -28,6 +28,20 @@
     <module>services/reference-service-java</module>
   </modules>
 
+  <!-- The build-only cross-module coverage gate (epic #419) lives behind a profile, NOT in the
+       default reactor: a generated standalone service has no such module, and keeping it out of the
+       default build means the service image (and the byte-identical template dogfood) need no
+       reference to it. CI runs `mvn -Pcoverage-aggregate verify` to enforce the 85% aggregate line
+       floor; the aggregator depends on both modules so it builds last, after their exec data exists. -->
+  <profiles>
+    <profile>
+      <id>coverage-aggregate</id>
+      <modules>
+        <module>coverage-aggregate</module>
+      </modules>
+    </profile>
+  </profiles>
+
   <properties>
     <java.version>25</java.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>

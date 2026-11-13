@@ -11,6 +11,7 @@ on:
     paths:
       - "packages/keel-core-java/**"
       - "services/reference-service-java/**"
+      - "coverage-aggregate/**"
       - "pom.xml"
       - ".mvn/**"
       - "mvnw"
@@ -20,6 +21,7 @@ on:
     paths:
       - "packages/keel-core-java/**"
       - "services/reference-service-java/**"
+      - "coverage-aggregate/**"
       - "pom.xml"
       - ".mvn/**"
       - "mvnw"
@@ -92,7 +94,7 @@ jobs:
           KEEL_KEYCLOAK_CLIENT_ID: keel-api
           KEEL_KEYCLOAK_CLIENT_SECRET: test-secret
           KEEL_OIDC_AUDIENCE: keel-api
-        run: mvn -B verify
+        run: mvn -B -Pcoverage-aggregate verify
       - name: Dependency CVEs (Trivy)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:

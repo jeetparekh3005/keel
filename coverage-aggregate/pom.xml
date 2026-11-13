@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <!--
+    Build-only coverage aggregator (epic #419, v0.6 parity). NOT a service and NOT templated:
+    it ships no artifact (packaging pom) and lives outside packages/ and services/ so the
+    generator never templates it. Its sole job is the cross-module coverage gate.
+
+    keel-core-java's web/auth/edge classes (Conformance, SecurityConfig, ProblemExceptionHandler,
+    the HTTP-edge filters, CORS) are exercised by the reference service's conformance tests, not by
+    keel-core's own unit tests. Per-module JaCoCo cannot credit that cross-module exercise, so
+    keel-core's own number structurally undercounts. This module merges every module's exec data
+    against every module's classes, producing the honest cross-module number - the JVM analog of
+    Python's single fail_under=85 that spans multiple packages - and enforces the 85% aggregate LINE
+    floor on it. The per-module floors in the parent/service poms stay intact as regression guards.
+
+    Mechanism: jacoco:report-aggregate publishes the human-readable merged report
+    (target/site/jacoco-aggregate). The gate itself is jacoco:merge + jacoco:check over the union of
+    both modules' compiled classes (copied in at prepare-package) and their merged exec data, because
+    jacoco:check analyzes a module's own output directory and a classless pom module has none. The
+    two sibling modules build before this one (it depends on them), so their target/classes and
+    target/jacoco.exec already exist when these executions run. The copied classes carry disjoint
+    packages (io.keel.core.* vs io.keel.reference.*), so there is no overlap.
+  -->
+  <parent>
+    <groupId>io.keel</groupId>
+    <artifactId>keel-java-parent</artifactId>
+    <version>0.1.0</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>coverage-aggregate</artifactId>
+  <packaging>pom</packaging>
+  <name>keel Java coverage aggregate</name>
+  <description>Build-only module: cross-module JaCoCo report-aggregate + the 85% aggregate floor.</description>
+
+  <properties>
+    <!-- The honest cross-module floors (epic #419, v0.6 parity). Measured aggregate over the full
+         suite (Postgres 18 + live Keycloak 26.8 + NATS 2.15): LINE 0.8618 / BRANCH 0.6679. The LINE
+         floor is the 85% parity bar, which the real cross-module number clears. BRANCH is held at
+         the achieved number, rounded down, as a regression guard (the same convention the per-module
+         floors use). Raising keel-core's branch coverage toward 0.85 is tracked separately; it does
+         not block the line-coverage parity this module establishes. -->
+    <jacoco.aggregate.line.min>0.85</jacoco.aggregate.line.min>
+    <jacoco.aggregate.branch.min>0.65</jacoco.aggregate.branch.min>
+    <keel-core.classes>${project.basedir}/../packages/keel-core-java/target/classes</keel-core.classes>
+    <reference-service.classes>${project.basedir}/../services/reference-service-java/target/classes</reference-service.classes>
+    <keel-core.exec>${project.basedir}/../packages/keel-core-java/target/jacoco.exec</keel-core.exec>
+    <reference-service.exec>${project.basedir}/../services/reference-service-java/target/jacoco.exec</reference-service.exec>
+    <aggregate.exec>${project.build.directory}/aggregate.exec</aggregate.exec>
+  </properties>
+
+  <!-- Declares the aggregated modules so report-aggregate can discover their reactor classes and
+       exec data. -->
+  <dependencies>
+    <dependency>
+      <groupId>io.keel</groupId>
+      <artifactId>keel-core</artifactId>
+      <version>0.1.0</version>
+    </dependency>
+    <dependency>
+      <groupId>io.keel</groupId>
+      <artifactId>reference-service</artifactId>
+      <version>0.1.0</version>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <!-- Copy both modules' compiled classes into this module's output directory so jacoco:check
+           has the full set of classes to analyze against the merged exec data. Disjoint packages,
+           so no file collides. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-antrun-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>collect-module-classes</id>
+            <phase>prepare-package</phase>
+            <goals>
+              <goal>run</goal>
+            </goals>
+            <configuration>
+              <target>
+                <copy todir="${project.build.outputDirectory}" failonerror="true">
+                  <fileset dir="${keel-core.classes}"/>
+                </copy>
+                <copy todir="${project.build.outputDirectory}" failonerror="true">
+                  <fileset dir="${reference-service.classes}"/>
+                </copy>
+              </target>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.jacoco</groupId>
+        <artifactId>jacoco-maven-plugin</artifactId>
+        <executions>
+          <!-- This module has no sources, so the inherited per-module executions (prepare-agent on
+               an empty module, a report/check over a non-existent local exec) are meaningless here.
+               Disable them by rebinding their ids to phase 'none'. -->
+          <execution>
+            <id>prepare-agent</id>
+            <phase>none</phase>
+          </execution>
+          <execution>
+            <id>report</id>
+            <phase>none</phase>
+          </execution>
+          <execution>
+            <id>check</id>
+            <phase>none</phase>
+          </execution>
+
+          <!-- The human-readable merged report: the honest cross-module number, HTML + XML. -->
+          <execution>
+            <id>aggregate-report</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>report-aggregate</goal>
+            </goals>
+          </execution>
+
+          <!-- Merge both modules' exec data into one aggregate exec for the gate. -->
+          <execution>
+            <id>aggregate-merge</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>merge</goal>
+            </goals>
+            <configuration>
+              <destFile>${aggregate.exec}</destFile>
+              <fileSets>
+                <fileSet>
+                  <directory>${project.basedir}/../packages/keel-core-java/target</directory>
+                  <includes>
+                    <include>jacoco.exec</include>
+                  </includes>
+                </fileSet>
+                <fileSet>
+                  <directory>${project.basedir}/../services/reference-service-java/target</directory>
+                  <includes>
+                    <include>jacoco.exec</include>
+                  </includes>
+                </fileSet>
+              </fileSets>
+            </configuration>
+          </execution>
+
+          <!-- Enforce the honest aggregate floors on the union of both modules' classes against the
+               merged exec. This is the cross-module parity gate; it runs on `mvn verify`. -->
+          <execution>
+            <id>aggregate-check</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>check</goal>
+            </goals>
+            <configuration>
+              <dataFile>${aggregate.exec}</dataFile>
+              <rules>
+                <rule>
+                  <element>BUNDLE</element>
+                  <limits>
+                    <limit>
+                      <counter>LINE</counter>
+                      <value>COVEREDRATIO</value>
+                      <minimum>${jacoco.aggregate.line.min}</minimum>
+                    </limit>
+                    <limit>
+                      <counter>BRANCH</counter>
+                      <value>COVEREDRATIO</value>
+                      <minimum>${jacoco.aggregate.branch.min}</minimum>
+                    </limit>
+                  </limits>
+                </rule>
+              </rules>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>
