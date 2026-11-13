@@ -13,6 +13,56 @@ import (
 	"github.com/jeetparekh3005/keel/packages/keel-core-go/domain"
 )
 
+// TestLivePoolReportsReadyStatsAndMetrics exercises the pool observability surface against a
+// real Postgres: Ping reports ready, Stats exposes a positive configured ceiling, and the public
+// ObservePoolMetrics wrapper registers the saturation gauges so a Collect yields the
+// db.client.connection.max signal tagged with the pool name.
+func TestLivePoolReportsReadyStatsAndMetrics(t *testing.T) {
+	url := os.Getenv("KEEL_TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("KEEL_TEST_DATABASE_URL not set; skipping live-pool integration test")
+	}
+	ctx := context.Background()
+	db, err := Connect(ctx, url)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer db.Close()
+
+	if !db.Ping(ctx) {
+		t.Fatal("Ping on a live pool = false, want true")
+	}
+
+	s := db.Stats()
+	if s.Max < 1 {
+		t.Fatalf("pool Max = %d, want >= 1 (the saturation denominator)", s.Max)
+	}
+	if s.Acquired < 0 || s.Idle < 0 || s.Total < 0 {
+		t.Fatalf("negative pool stats: %+v", s)
+	}
+
+	reader := sdkmetric.NewManualReader()
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	if err := db.ObservePoolMetrics(mp, "live"); err != nil {
+		t.Fatalf("ObservePoolMetrics: %v", err)
+	}
+	var rm metricdata.ResourceMetrics
+	if err := reader.Collect(ctx, &rm); err != nil {
+		t.Fatalf("collect: %v", err)
+	}
+	seenMax := false
+	for _, scope := range rm.ScopeMetrics {
+		for _, m := range scope.Metrics {
+			if m.Name == "db.client.connection.max" {
+				seenMax = true
+			}
+		}
+	}
+	if !seenMax {
+		t.Fatal("db.client.connection.max was not observed from the live pool")
+	}
+}
+
 func TestConnectFailsWithUnavailableDomainError(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()

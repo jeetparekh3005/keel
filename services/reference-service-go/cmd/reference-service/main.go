@@ -23,22 +23,27 @@ import (
 )
 
 func main() {
-	if err := run(); err != nil {
+	// SIGTERM (rolling deploy) / SIGINT (local) cancels this context to start shutdown.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
+
+	cfg, err := app.LoadConfig()
+	if err != nil {
+		slog.Error("reference-service exited with error", "error", err)
+		os.Exit(1)
+	}
+	if err := run(ctx, cfg); err != nil {
 		slog.Error("reference-service exited with error", "error", err)
 		os.Exit(1)
 	}
 }
 
-func run() error {
-	cfg, err := app.LoadConfig()
-	if err != nil {
-		return err
-	}
-
-	// SIGTERM (rolling deploy) / SIGINT (local) cancels this context to start shutdown.
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
-	defer stop()
-
+// run wires the real adapters (telemetry, Postgres, OIDC/JWKS) behind the composed app and
+// serves it until ctx is cancelled (SIGTERM/SIGINT), then drains in-flight requests and flushes
+// telemetry. It is the testable seam: a test drives it with a cancelable context and a config
+// pointing at a test Postgres, asserts the service serves /health, then cancels to assert a
+// clean graceful shutdown.
+func run(ctx context.Context, cfg app.ServiceConfig) error {
 	shutdownTelemetry, err := telemetry.Init(ctx, cfg.ServiceName, cfg.Version, cfg.Environment, cfg.LogLevel, cfg.OTLPEndpoint)
 	if err != nil {
 		return err

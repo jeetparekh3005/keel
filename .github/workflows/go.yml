@@ -127,13 +127,14 @@ jobs:
           done
       - name: Coverage floor
         # Enforce a hard, vertical-wide statement-coverage floor across both Go modules
-        # (keel-core-go + reference-service-go), mirroring Python's 85% fail_under. The
-        # floor is the measured actual rounded down: the service module (reference-service-go,
-        # ~50%, with an uncovered cmd/ entrypoint) sits well below core (~79%), so 85% is not
-        # yet reachable here. Raise FLOOR as coverage improves; never above the measured total.
+        # (keel-core-go + reference-service-go), mirroring Python's 85% fail_under. The service
+        # module now boots end-to-end in a test (cmd/reference-service run() is driven against the
+        # Postgres above, then cancelled to assert graceful shutdown) and its handlers, repository,
+        # and config are covered, so the merged total clears the 85% parity bar. Raise FLOOR only
+        # to the measured total; never above it.
         run: |
           set -e
-          FLOOR=71
+          FLOOR=85
           total=$(go tool cover -func="$RUNNER_TEMP/go-coverage-merged.out" | tail -1 | awk '{print $3}' | tr -d '%')
           echo "Go vertical statement coverage: ${total}% (floor ${FLOOR}%)"
           awk -v t="$total" -v f="$FLOOR" 'BEGIN { exit !(t + 0 >= f + 0) }' || {
