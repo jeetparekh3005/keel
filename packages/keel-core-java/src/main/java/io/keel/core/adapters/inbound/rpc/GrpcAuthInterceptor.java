@@ -52,7 +52,10 @@ public final class GrpcAuthInterceptor implements ServerInterceptor {
    * @param jwtDecoder verifies the bearer token (the same decoder the HTTP resource server uses)
    * @param authoritiesConverter maps the verified JWT to Spring Security authorities
    * @param requiredScopesByMethod full method name ({@code pkg.Service/Method}) to the scopes a
-   *     caller must hold; a method absent from the map requires only authentication
+   *     caller must hold. Deny-by-default: a method absent from the map is closed and a verified
+   *     caller is denied {@link Status#PERMISSION_DENIED}; a method mapped to an explicit empty set
+   *     is open to any authenticated caller. A method that should serve unauthenticated callers
+   *     belongs in {@code exemptMethods}, never as a map omission.
    * @param exemptMethods full method names that bypass auth entirely (health/reflection)
    */
   public GrpcAuthInterceptor(
@@ -98,8 +101,14 @@ public final class GrpcAuthInterceptor implements ServerInterceptor {
   }
 
   private boolean hasRequiredScopes(String method, Collection<GrantedAuthority> authorities) {
+    // Deny-by-default: a method whose full name is absent from the policy map is closed. Only an
+    // explicit entry opens it - an empty set to any authenticated caller, a non-empty set to a
+    // caller holding those scopes. Absence (unmapped) must not fall through to "allow".
+    if (!requiredScopesByMethod.containsKey(method)) {
+      return false;
+    }
     Set<String> required = requiredScopesByMethod.get(method);
-    if (required == null || required.isEmpty()) {
+    if (required.isEmpty()) {
       return true;
     }
     Set<String> held = new HashSet<>();

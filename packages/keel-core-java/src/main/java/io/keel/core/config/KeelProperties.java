@@ -26,6 +26,9 @@ import org.springframework.validation.annotation.Validated;
  * three are present the server serves mTLS and requires a client certificate, otherwise it serves
  * plaintext (local/dev). A {@link io.keel.core.ports.SecretProvider} entry under the same key wins
  * over the configured value, so the PEM can come from a secret store rather than the environment.
+ * Serving plaintext on an exposed gRPC port is fail-closed: it requires the explicit opt-in {@code
+ * KEEL_GRPC_TLS_INSECURE} ({@code keel.grpc-tls-insecure}), false by default, so a production
+ * deployment that forgets to supply the PEM triple fails to start rather than binding in the clear.
  */
 @ConfigurationProperties(prefix = "keel")
 @Validated
@@ -43,7 +46,8 @@ public record KeelProperties(
     @DefaultValue("0") int grpcPort,
     @DefaultValue("") String grpcTlsCertPem,
     @DefaultValue("") String grpcTlsKeyPem,
-    @DefaultValue("") String grpcTlsCaPem) {
+    @DefaultValue("") String grpcTlsCaPem,
+    @DefaultValue("false") boolean grpcTlsInsecure) {
 
   /**
    * One configured API-key credential (platform.yaml auth: api_key). The key is stored only as its

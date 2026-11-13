@@ -36,8 +36,10 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
  *
  * <p>Transport posture follows the TLS config: when the cert, key, and CA PEM are all present (from
  * {@link SecretProvider} first, then {@link KeelProperties}) the server serves mTLS and requires a
- * client certificate; otherwise it serves plaintext for local/dev. The {@link JwtDecoder} bean is
- * the same one the HTTP resource server uses, so the gRPC and HTTP edges verify tokens identically.
+ * client certificate. Incomplete TLS material fails startup unless plaintext is explicitly opted
+ * into ({@code keel.grpc-tls-insecure}, for local/dev), so an exposed port never silently binds in
+ * the clear. The {@link JwtDecoder} bean is the same one the HTTP resource server uses, so the gRPC
+ * and HTTP edges verify tokens identically.
  */
 @AutoConfiguration
 @ConditionalOnClass({Server.class, OpenTelemetry.class})
@@ -54,20 +56,27 @@ public class GrpcServerAutoConfiguration {
   static final String CA_KEY = "KEEL_GRPC_TLS_CA_PEM";
 
   /**
-   * The deny-by-default auth interceptor, reusing the HTTP edge's JWT verification path and mapping
-   * the committed contract's methods to the scopes ADR-0022 requires: GetItem/ListItems need {@code
-   * items:read}, CreateItem needs {@code items:write}.
+   * The canonical per-method scope policy for the committed contract (ADR-0022): GetItem/ListItems
+   * need {@code items:read}, CreateItem needs {@code items:write}. This is the single source of
+   * truth the auth-interceptor bean is built from; tests assert against it rather than restating
+   * the map, so the policy cannot drift between production wiring and its coverage.
+   */
+  public static Map<String, Set<String>> requiredScopesByMethod() {
+    return Map.of(
+        ItemServiceGrpc.getGetItemMethod().getFullMethodName(), Set.of("items:read"),
+        ItemServiceGrpc.getListItemsMethod().getFullMethodName(), Set.of("items:read"),
+        ItemServiceGrpc.getCreateItemMethod().getFullMethodName(), Set.of("items:write"));
+  }
+
+  /**
+   * The deny-by-default auth interceptor, reusing the HTTP edge's JWT verification path and the
+   * canonical {@link #requiredScopesByMethod()} scope policy.
    */
   @Bean
   @ConditionalOnMissingBean
   public GrpcAuthInterceptor grpcAuthInterceptor(JwtDecoder jwtDecoder) {
-    Map<String, Set<String>> requiredScopes =
-        Map.of(
-            ItemServiceGrpc.getGetItemMethod().getFullMethodName(), Set.of("items:read"),
-            ItemServiceGrpc.getListItemsMethod().getFullMethodName(), Set.of("items:read"),
-            ItemServiceGrpc.getCreateItemMethod().getFullMethodName(), Set.of("items:write"));
     return new GrpcAuthInterceptor(
-        jwtDecoder, new ScopeAuthoritiesConverter(), requiredScopes, Set.of());
+        jwtDecoder, new ScopeAuthoritiesConverter(), requiredScopesByMethod(), Set.of());
   }
 
   /** The OpenTelemetry gRPC tracing server interceptor (installed outermost by the factory). */
@@ -116,8 +125,21 @@ public class GrpcServerAutoConfiguration {
     String key = resolve(secretProvider, KEY_KEY, properties.grpcTlsKeyPem());
     String ca = resolve(secretProvider, CA_KEY, properties.grpcTlsCaPem());
     if (cert.isBlank() || key.isBlank() || ca.isBlank()) {
+      // Fail-closed: an exposed gRPC port with incomplete TLS material refuses to bind in the clear
+      // unless plaintext is explicitly opted into (keel.grpc-tls-insecure, for local/dev). This
+      // stops a production misconfiguration from silently downgrading mTLS to cleartext.
+      if (!properties.grpcTlsInsecure()) {
+        throw new IllegalStateException(
+            "gRPC port "
+                + properties.grpcPort()
+                + " is exposed but TLS material is incomplete (KEEL_GRPC_TLS_CERT_PEM,"
+                + " KEEL_GRPC_TLS_KEY_PEM, KEEL_GRPC_TLS_CA_PEM): refusing to serve plaintext. Supply"
+                + " the full PEM triple for mTLS, or set KEEL_GRPC_TLS_INSECURE=true to allow"
+                + " plaintext for local/dev.");
+      }
       log.warn(
-          "gRPC TLS material incomplete; serving plaintext (no mTLS) on port {}",
+          "gRPC TLS material incomplete and KEEL_GRPC_TLS_INSECURE set; serving plaintext (no mTLS)"
+              + " on port {}",
           properties.grpcPort());
       return InsecureServerCredentials.create();
     }

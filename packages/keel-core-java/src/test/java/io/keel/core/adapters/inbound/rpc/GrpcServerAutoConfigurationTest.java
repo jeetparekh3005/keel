@@ -1,13 +1,25 @@
 package io.keel.core.adapters.inbound.rpc;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import io.grpc.Server;
+import io.grpc.ServerCall;
+import io.grpc.ServerCallHandler;
+import io.grpc.Status;
 import io.keel.core.ports.SecretProvider;
+import io.keel.reference.v1.CreateItemRequest;
+import io.keel.reference.v1.CreateItemResponse;
+import io.keel.reference.v1.ItemServiceGrpc;
 import io.opentelemetry.api.OpenTelemetry;
 import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
@@ -36,9 +48,11 @@ class GrpcServerAutoConfigurationTest {
   }
 
   @Test
-  void bindsPlaintextServerWhenPortConfigured() {
+  void bindsPlaintextServerWhenPortConfiguredAndInsecureOptIn() {
+    // Plaintext requires the explicit opt-in; without TLS material the server would otherwise
+    // fail-closed (see failsStartupWhenTlsIncompleteAndNoInsecureOptIn).
     runner
-        .withPropertyValues("keel.grpc-port=0")
+        .withPropertyValues("keel.grpc-port=0", "keel.grpc-tls-insecure=true")
         .withBean(SecretProvider.class, () -> (SecretProvider) (key -> Optional.empty()))
         .run(context -> {
           assertThat(context).hasSingleBean(GrpcServerLifecycle.class);
@@ -46,6 +60,51 @@ class GrpcServerAutoConfigurationTest {
           GrpcServerLifecycle lifecycle = context.getBean(GrpcServerLifecycle.class);
           assertThat(lifecycle.isRunning()).isTrue();
           assertThat(lifecycle.port()).isGreaterThan(0);
+        });
+  }
+
+  @Test
+  void failsStartupWhenTlsIncompleteAndNoInsecureOptIn() {
+    // Fail-closed: an exposed port with no TLS material and no plaintext opt-in must refuse to
+    // start rather than silently serving cleartext.
+    runner
+        .withPropertyValues("keel.grpc-port=0")
+        .withBean(SecretProvider.class, () -> (SecretProvider) (key -> Optional.empty()))
+        .run(context -> {
+          assertThat(context).hasFailed();
+          assertThat(context.getStartupFailure())
+              .rootCause()
+              .isInstanceOf(IllegalStateException.class)
+              .hasMessageContaining("refusing to serve plaintext");
+        });
+  }
+
+  @Test
+  void autoConfiguredInterceptorDeniesWrongScope() {
+    // Drive a real negative call through the AUTO-CONFIGURED interceptor bean and its canonical
+    // scope map (not a restated copy): a read-scoped caller invoking CreateItem (needs items:write)
+    // is closed PERMISSION_DENIED. This is what catches the bean's policy drifting from the
+    // contract.
+    runner
+        .withPropertyValues("keel.grpc-port=0", "keel.grpc-tls-insecure=true")
+        .withBean(SecretProvider.class, () -> (SecretProvider) (key -> Optional.empty()))
+        .run(context -> {
+          assertThat(context).hasSingleBean(GrpcAuthInterceptor.class);
+          GrpcAuthInterceptor interceptor = context.getBean(GrpcAuthInterceptor.class);
+
+          @SuppressWarnings("unchecked")
+          ServerCall<CreateItemRequest, CreateItemResponse> call = mock(ServerCall.class);
+          when(call.getMethodDescriptor()).thenReturn(ItemServiceGrpc.getCreateItemMethod());
+          @SuppressWarnings("unchecked")
+          ServerCallHandler<CreateItemRequest, CreateItemResponse> next =
+              mock(ServerCallHandler.class);
+
+          interceptor.interceptCall(call, GrpcTestSupport.bearer(GrpcTestSupport.READ_TOKEN), next);
+
+          ArgumentCaptor<Status> status = ArgumentCaptor.forClass(Status.class);
+          verify(call).close(status.capture(), any());
+          assertThat(status.getValue().getCode()).isEqualTo(Status.Code.PERMISSION_DENIED);
+          verify(next, never()).startCall(any(), any());
         });
   }
 

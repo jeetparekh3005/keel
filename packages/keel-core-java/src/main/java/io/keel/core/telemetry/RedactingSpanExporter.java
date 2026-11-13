@@ -6,6 +6,8 @@ import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.common.AttributesBuilder;
 import io.opentelemetry.sdk.common.CompletableResultCode;
 import io.opentelemetry.sdk.trace.data.DelegatingSpanData;
+import io.opentelemetry.sdk.trace.data.EventData;
+import io.opentelemetry.sdk.trace.data.LinkData;
 import io.opentelemetry.sdk.trace.data.SpanData;
 import io.opentelemetry.sdk.trace.export.SpanExporter;
 import java.util.ArrayList;
@@ -23,9 +25,12 @@ import java.util.List;
  * <p>Redaction happens on export rather than at span creation so it is unconditional:
  * instrumentation anywhere in the service, including library-emitted spans, is covered without each
  * call site having to remember to scrub. Each {@link SpanData} is wrapped in a {@link
- * DelegatingSpanData} that only overrides {@code getAttributes()}, leaving trace/span ids, timing,
- * status, events, and resource untouched so the exported span is otherwise identical. The pattern
- * families themselves live solely in {@link Redactor}; this class never duplicates them.
+ * DelegatingSpanData} that rewrites the attributes on the span itself and, with the same {@link
+ * Redactor} families, the attributes carried on every span event (including the {@code exception.*}
+ * attributes of a recorded exception) and every link; trace/span ids, timing, status, event names
+ * and timestamps, link span contexts, and resource are left untouched so the exported span is
+ * otherwise identical. The pattern families themselves live solely in {@link Redactor}; this class
+ * never duplicates them.
  */
 public final class RedactingSpanExporter implements SpanExporter {
 
@@ -56,6 +61,8 @@ public final class RedactingSpanExporter implements SpanExporter {
 
   private static SpanData redact(SpanData span) {
     Attributes redactedAttributes = redactAttributes(span.getAttributes());
+    List<EventData> redactedEvents = redactEvents(span.getEvents());
+    List<LinkData> redactedLinks = redactLinks(span.getLinks());
     return new DelegatingSpanData(span) {
       @Override
       public Attributes getAttributes() {
@@ -68,7 +75,47 @@ public final class RedactingSpanExporter implements SpanExporter {
         // (which also accounts for any dropped-by-limit attributes) stays correct.
         return span.getTotalAttributeCount();
       }
+
+      @Override
+      public List<EventData> getEvents() {
+        return redactedEvents;
+      }
+
+      @Override
+      public List<LinkData> getLinks() {
+        return redactedLinks;
+      }
     };
+  }
+
+  // Rebuild each event with its attributes scrubbed, preserving the event name, timestamp, and the
+  // dropped-by-limit count. An exception recorded via Span.recordException lands here as an event
+  // carrying exception.message/exception.stacktrace, so a secret in a thrown message is scrubbed.
+  private static List<EventData> redactEvents(List<EventData> events) {
+    List<EventData> out = new ArrayList<>(events.size());
+    for (EventData event : events) {
+      out.add(
+          EventData.create(
+              event.getEpochNanos(),
+              event.getName(),
+              redactAttributes(event.getAttributes()),
+              event.getTotalAttributeCount()));
+    }
+    return out;
+  }
+
+  // Rebuild each link with its attributes scrubbed, preserving the linked span context and the
+  // dropped-by-limit count.
+  private static List<LinkData> redactLinks(List<LinkData> links) {
+    List<LinkData> out = new ArrayList<>(links.size());
+    for (LinkData link : links) {
+      out.add(
+          LinkData.create(
+              link.getSpanContext(),
+              redactAttributes(link.getAttributes()),
+              link.getTotalAttributeCount()));
+    }
+    return out;
   }
 
   @SuppressWarnings({"unchecked", "rawtypes"})

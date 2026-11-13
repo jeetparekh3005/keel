@@ -67,6 +67,15 @@ public class InMemoryItemService extends ItemServiceGrpc.ItemServiceImplBase {
   @Override
   public void createItem(
       CreateItemRequest request, StreamObserver<CreateItemResponse> responseObserver) {
+    if (request.getName().isBlank()) {
+      // Match the other verticals (Go/Rust/Python/TS): a blank name is a client error, not a stored
+      // item with an empty name.
+      responseObserver.onError(
+          Status.INVALID_ARGUMENT
+              .withDescription("item name must not be blank")
+              .asRuntimeException());
+      return;
+    }
     String id = UUID.randomUUID().toString();
     Item item = Item.newBuilder().setId(id).setName(request.getName()).build();
     store.put(id, item);
