@@ -261,7 +261,11 @@ mod tests {
     fn init_without_otlp_endpoint_emits_logs_and_no_tracer() {
         // No endpoint -> logging plus a real (reader-less) meter, but no tracer provider;
         // must not panic or double-init. A real global meter is still installed so the
-        // HTTP edge records metrics even when export is off.
+        // HTTP edge records metrics even when export is off. Serialized against other
+        // global-provider installs so neither test clobbers the other's global.
+        let _guard = crate::OTEL_GLOBAL_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let telemetry = init("svc", "0", "test", "info", None);
         assert!(!telemetry.exports_traces());
         super::shutdown(telemetry);
