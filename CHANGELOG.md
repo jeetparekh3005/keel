@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.6.1](https://github.com/jeetparekh3005/keel/compare/v0.6.0...v0.6.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* **java:** close telemetry, authz, and supply-chain gaps in keel-core ([#485](https://github.com/jeetparekh3005/keel/issues/485)) ([9defead](https://github.com/jeetparekh3005/keel/commit/9defead712d77da56f92162845e2d7bd6aa4ce7e))
+* **python:** deny-by-default gRPC authz, wire and prove mTLS, cover NATS trace continuity ([#484](https://github.com/jeetparekh3005/keel/issues/484)) ([ae4585e](https://github.com/jeetparekh3005/keel/commit/ae4585ef8643062cdfa8eb133257e217f0189260))
+* **rust:** deny-by-default gRPC authz and cover create_app metrics wiring ([#482](https://github.com/jeetparekh3005/keel/issues/482)) ([43e8505](https://github.com/jeetparekh3005/keel/commit/43e85059d1ac1160b89c3e48ed620cfdeeaa8f8f))
+* **security:** redact span events/links and deny unmapped gRPC methods ([#481](https://github.com/jeetparekh3005/keel/issues/481)) ([61badb7](https://github.com/jeetparekh3005/keel/commit/61badb7e43730b9d187e221badc9d2e5e5a5b5f1))
+* **ts:** harden span redaction and gRPC authz, raise mTLS floor ([#483](https://github.com/jeetparekh3005/keel/issues/483)) ([68bd437](https://github.com/jeetparekh3005/keel/commit/68bd437088a80192026256ad4028197c39773115))
+
+
+### Miscellaneous Chores
+
+* release v0.6.1 (dev to main) ([bb98cf0](https://github.com/jeetparekh3005/keel/commit/bb98cf074166828970a7709d35c5761d6338746a))
+
 ## [0.6.0](https://github.com/jeetparekh3005/keel/compare/v0.5.3...v0.6.0) (2026-11-13)
 
 
