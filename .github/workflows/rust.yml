@@ -106,8 +106,11 @@ jobs:
         # Each fails loudly, not silently, if its backing service is missing -- and they are
         # the paths that carry the service's composition/http/repository and the broker
         # adapter's connect/publish/subscribe/dispatch lines over the floor, so the coverage
-        # number is only honest with them in. --features nats builds the opt-in NatsMessageBus
-        # adapter (and its integration test) so it is exercised and counted here.
+        # number is only honest with them in. --features nats,grpc builds the opt-in
+        # NatsMessageBus adapter (and its integration test) and the opt-in gRPC server
+        # factory/mTLS module (keel_core::grpc, ADR-0022) so both are exercised and counted
+        # here -- without grpc in the feature set the new gRPC code is not compiled under
+        # coverage and the floor could not see it.
         env:
           KEEL_KEYCLOAK_URL: http://localhost:8080
           KEEL_KEYCLOAK_REALM: keel
@@ -115,7 +118,11 @@ jobs:
           KEEL_KEYCLOAK_CLIENT_SECRET: test-secret
           KEEL_OIDC_AUDIENCE: keel-api
           KEEL_NATS_URL: nats://localhost:4222
-        run: cargo llvm-cov --all --locked --features nats --fail-under-lines 85 -- --include-ignored
+        # --ignore-filename-regex genproto drops the committed buf stubs (prost/tonic
+        # generated code under src/genproto) from the denominator: they are not held to the
+        # crate's lint/style/coverage bar (see genproto.rs and the Python genproto excludes),
+        # so only the hand-written server factory/mTLS in keel_core::grpc is measured.
+        run: cargo llvm-cov --all --locked --features nats,grpc --ignore-filename-regex genproto --fail-under-lines 85 -- --include-ignored
       - name: Install cargo-audit
         uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:

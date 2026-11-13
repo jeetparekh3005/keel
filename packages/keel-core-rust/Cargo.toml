@@ -67,18 +67,24 @@ nats = [
 ]
 # Opt-in gRPC stubs for the keel.reference.v1 contract (ADR-0022). Off by default so
 # the default `cargo build` pulls in neither prost nor tonic (parity with Python's
-# `keel-core[grpc]` extra); the generated code lives in `keel_core::genproto`.
+# `keel-core[grpc]` extra); the generated code lives in `keel_core::genproto` and the
+# server factory/mTLS builders in `keel_core::grpc`. `tonic/tls-ring` turns on the
+# ring-backed rustls path so the mTLS `ServerTlsConfig`/`ClientTlsConfig` builders
+# compile (ring is already in the tree via reqwest's rustls-tls, so no aws-lc-rs).
 grpc = [
     "dep:prost",
     "dep:tonic",
     "dep:tonic-prost",
+    "tonic/tls-ring",
 ]
 
 [dev-dependencies]
 figment = { version = "0.10", features = ["env", "toml", "test"] }
 # sync + time back the NATS integration test (mpsc handoff from the consumer task and a
-# receive timeout so a missed delivery fails fast instead of hanging).
-tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
+# receive timeout so a missed delivery fails fast instead of hanging). rt-multi-thread +
+# net back the in-process gRPC tests (a loopback server task plus a client channel over a
+# real TCP connection, the only way to exercise the tonic transport + TLS handshake).
+tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "sync", "time", "net"] }
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
 # InMemoryMetricExporter (gated behind the `testing` feature) backs the HTTP metrics test.
@@ -86,3 +92,9 @@ opentelemetry_sdk = { version = "0.33", features = ["rt-tokio", "metrics", "test
 # Ephemeral RSA keypairs for the OIDC tests; no key material is committed.
 rsa = "0.10"
 rand = "0.10"
+# TcpListenerStream adapts a bound :0 listener into the incoming stream the gRPC tests
+# serve, so the ephemeral port is known before the client connects (no bind race).
+tokio-stream = { version = "0.1", features = ["net"] }
+# Ephemeral CA + leaf certs for the mTLS handshake tests; ring-backed to match tls-ring,
+# and (like the OIDC keys) generated in-test so no key material is committed.
+rcgen = { version = "0.14", default-features = false, features = ["pem", "ring"] }
