@@ -78,10 +78,9 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   vertical for the JSON log sink (family-based key redaction + value scrubbing for
   JWT/bearer/AWS-key/PAN, recursive over event and span fields, with reserved-key
   namespacing). Per-line **log-to-trace correlation** (`trace_id`/`span_id` on every log
-  line inside a span) and the **DB pool saturation metric** are now at Python parity. Not
-  yet at parity: **redaction of the OTLP span-export path** (log-sink redaction does not
-  cover span-field export) and the messaging/gRPC/`api_key`/`mTLS` surfaces (tracked on
-  v0.6, epic #419). A live **Keycloak** JWKS integration test is now in place. **HTTP server request metrics** are now emitted:
+  line inside a span), the **DB pool saturation metric**, and **redaction of the OTLP
+  span-export path** are now at Python parity. Not yet at parity: the messaging/gRPC/`api_key`/
+  `mTLS` surfaces (tracked on v0.6, epic #419). A live **Keycloak** JWKS integration test is now in place. **HTTP server request metrics** are now emitted:
   `http.server.request.duration` (histogram, seconds) and `http.server.active_requests`
   (up-down counter), labelled by the route TEMPLATE (`http.route` from axum `MatchedPath`),
   `http.request.method`, and `http.response.status_code`, through a real OpenTelemetry
@@ -200,7 +199,7 @@ wired to a sink/gate; `none` = absent.
 | HTTP request metrics (`http.server.*`, route-templated) | full | full | full | full | full |
 | Live Keycloak JWKS integration test | full | full | full | full | full |
 | Per-line log-to-trace correlation | full | full | full | full | full |
-| OTLP span-export redaction | none | none | none | none | none |
+| OTLP span-export redaction | full | full | full | full | full |
 | `api_key` authentication (hashed, X-API-Key) | full | none | none | none | none |
 | mTLS credentials | full (gRPC) | none | none | none | none |
 | NATS JetStream MessageBus adapter | full | none | none | none | none |
@@ -217,10 +216,14 @@ enforce the measured floor today and are marked `partial` until raised to 85% - 
 test-writing (Go/TS service layers) and cross-module JaCoCo aggregation (Java), tracked as a v0.6
 follow-up, not a config change.
 
-Still open: OTLP span-export redaction (none of the five) and the backend-integration surfaces -
-`api_key`, mTLS, NATS JetStream, gRPC - which exist only in Python and must reach the other four
-(the heaviest remaining work, ~16 feature slices). Each is "one capability, fanned out across the
-verticals it is still missing from."
+OTLP span-export redaction is now full across all five: each vertical wraps its span exporter to
+scrub secret-family attribute keys and secret-pattern values (and span names/events) through the
+same redactor the log sink uses, so secrets no longer reach the collector in cleartext.
+
+Still open: the backend-integration surfaces - `api_key`, mTLS, NATS JetStream, gRPC - which exist
+only in Python and must reach the other four (the heaviest remaining work, ~16 feature slices).
+`api_key` and NATS are being fanned out next; gRPC + mTLS follow with the v0.7 buf/protobuf IDL.
+Each is "one capability, fanned out across the verticals it is still missing from."
 
 ## Planned - described in the contract/ADRs but NOT yet implemented
 
