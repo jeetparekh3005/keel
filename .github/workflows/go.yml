@@ -49,6 +49,7 @@ jobs:
           --health-retries 10
     env:
       KEEL_TEST_DATABASE_URL: postgres://keel:keel@localhost:5432/reference
+      KEEL_NATS_URL: nats://localhost:4222
       KEEL_KEYCLOAK_URL: http://localhost:8080
       KEEL_KEYCLOAK_REALM: keel
       KEEL_KEYCLOAK_CLIENT_ID: keel-api
@@ -62,6 +63,16 @@ jobs:
         with:
           go-version: stable
           cache-dependency-path: "**/go.sum"
+      - name: Start NATS (JetStream)
+        # A service container can't pass the `-js` arg, so run it as a step. The messaging package
+        # integration test publishes and subscribes against this instance, asserting payload
+        # delivery and trace-context propagation; it skips when KEEL_NATS_URL is unset.
+        run: |
+          docker run -d --name nats -p 4222:4222 nats:2.10 -js
+          for _ in $(seq 1 30); do
+            (echo > /dev/tcp/127.0.0.1/4222) >/dev/null 2>&1 && break
+            sleep 1
+          done
       - name: Start Keycloak (import realm)
         # A service container can't mount the realm file or pass --import-realm, so run it as a
         # step. The OIDC integration test (auth package) mints a client_credentials token and
