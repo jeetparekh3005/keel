@@ -1,0 +1,98 @@
+name: Proto
+
+# Guards the gRPC contract (ADR-0022). Four checks:
+#   1. lint    - buf lint the keel.reference.v1 module.
+#   2. format  - buf format is clean (no un-formatted proto committed).
+#   3. codegen - the regeneration dogfood: re-run `buf generate` and assert the committed
+#      stubs reproduce byte-identically (the same lockstep discipline as generator.yml).
+#   4. breaking - buf breaking against origin/main. No-op until a baseline proto exists on
+#      main (the first PR adds the module), so it is guarded to not fail that first PR.
+
+on:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - "proto/**"
+      - "buf.gen.yaml"
+      - "packages/keel-core-go/genproto/**"
+      - "packages/keel-core-py/src/keel_core/genproto/**"
+      - "packages/keel-core-rust/src/genproto/**"
+      - "packages/keel-core-java/src/main/java/io/keel/reference/**"
+      - "packages/keel-core-ts/src/genproto/**"
+      - ".github/workflows/proto.yml"
+  push:
+    branches: [dev, main]
+    paths:
+      - "proto/**"
+      - "buf.gen.yaml"
+      - "packages/keel-core-go/genproto/**"
+      - "packages/keel-core-py/src/keel_core/genproto/**"
+      - "packages/keel-core-rust/src/genproto/**"
+      - "packages/keel-core-java/src/main/java/io/keel/reference/**"
+      - "packages/keel-core-ts/src/genproto/**"
+      - ".github/workflows/proto.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: proto-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: buf lint + format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: bufbuild/buf-setup-action@a47c93e0b1648d5651a065437926377d060baa99 # v1.50.0
+        with:
+          github_token: ${{ github.token }}
+      - name: buf lint
+        run: buf lint proto
+      - name: buf format (no diff)
+        run: buf format --diff --exit-code proto
+
+  codegen:
+    name: Codegen dogfood (committed stubs regenerate byte-identically)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: bufbuild/buf-setup-action@a47c93e0b1648d5651a065437926377d060baa99 # v1.50.0
+        with:
+          github_token: ${{ github.token }}
+      - name: Regenerate the stubs from the contract
+        run: buf generate proto
+      - name: Assert byte-identical to the committed stubs (no drift)
+        run: |
+          if ! git diff --exit-code; then
+            echo "::error::committed gRPC stubs drifted from the contract."
+            echo "Run 'buf generate proto' locally and commit the delta. See ADR-0022."
+            exit 1
+          fi
+
+  breaking:
+    name: buf breaking (vs main)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: bufbuild/buf-setup-action@a47c93e0b1648d5651a065437926377d060baa99 # v1.50.0
+        with:
+          github_token: ${{ github.token }}
+      - name: buf breaking against main
+        # No-op until a baseline proto exists on main: the first PR that introduces proto/
+        # has no module to compare against, so skip rather than fail. Once main carries the
+        # module, this becomes an enforcing gate (a breaking change requires a new vN package).
+        run: |
+          if git cat-file -e origin/main:proto/buf.yaml 2>/dev/null; then
+            buf breaking proto --against '.git#branch=main,subdir=proto'
+          else
+            echo "No proto/ module on main yet; buf breaking is a no-op for this PR."
+          fi

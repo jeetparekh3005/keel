@@ -31,3 +31,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/keel_core"]
+
+[tool.deptry]
+# genproto/ is the committed buf output for the keel.reference.v1 contract (ADR-0022). Its
+# imports (google.protobuf, the on-path `keel` package) are an artifact of codegen, not real
+# project dependencies; the regeneration dogfood (proto.yml) is its gate, not deptry.
+extend_exclude = ["src/keel_core/genproto"]

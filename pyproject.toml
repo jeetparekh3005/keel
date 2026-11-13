@@ -54,8 +54,10 @@ line-length = 100
 target-version = "py312"
 src = ["packages/keel-core-py/src", "packages/keel-cli/src", "services/reference-service/src"]
 # templates/ holds Copier templates (<< >> placeholders), not runnable source; the generator
-# lane (generator.yml) renders + lints a generated service instead.
-extend-exclude = ["**/migrations/**", "templates/**"]
+# lane (generator.yml) renders + lints a generated service instead. genproto/ is the committed
+# buf output for the keel.reference.v1 contract (ADR-0022), gated by the regeneration dogfood
+# (proto.yml), not ruff.
+extend-exclude = ["**/migrations/**", "templates/**", "**/genproto/**"]
 
 [tool.ruff.lint]
 select = [
@@ -120,9 +122,18 @@ strict = true
 warn_unreachable = true
 warn_redundant_casts = true
 no_implicit_reexport = true
+# genproto/ is the committed buf output for keel.reference.v1 (ADR-0022); it is not held to
+# strict typing (the regeneration dogfood in proto.yml is its gate). Excluded from discovery
+# and, belt-and-suspenders, errors ignored for the package if it is imported.
+exclude = ['(^|/)genproto/']
 
 [[tool.mypy.overrides]]
 module = ["grpc.*", "opentelemetry.instrumentation.*", "opentelemetry.exporter.*", "nats.*", "copier.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["keel_core.genproto.*"]
+ignore_errors = true
 ignore_missing_imports = true
 
 # ---------------------------------------------------------------------------
@@ -152,8 +163,11 @@ fail_under = 85
 show_missing = true
 exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError", "^\\s*\\.\\.\\.$"]
 
+# genproto/* (Go/Python/Rust/TS) and io/keel/reference/* (Java) are the committed buf stubs
+# (ADR-0022); the base64 descriptor bytes in the generated code trip false positives, and the
+# regeneration dogfood (proto.yml) is their gate, not codespell.
 [tool.codespell]
-skip = "*.lock,./.git,./.venv"
+skip = "*.lock,./.git,./.venv,*/genproto/*,*/io/keel/reference/*"
 ignore-words-list = "dependant,afterall,atmost"  # FastAPI route.dependant + vitest afterAll + Awaitility atMost, not typos
 
 # First-party workspace modules (extend as packages/services are added).

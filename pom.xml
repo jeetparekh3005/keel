@@ -54,6 +54,19 @@
     <jacoco.branch.min>0.40</jacoco.branch.min>
   </properties>
 
+  <dependencyManagement>
+    <dependencies>
+      <!-- Force Guava to the latest patched release: the gRPC stack (ADR-0022) pulls a transitive
+           guava-android with CVE-2026-102554 (HIGH, DoS), which Trivy flags in the service image.
+           33.8.0-jre is the current stable (and the JRE flavor is correct for the JRE runtime). -->
+      <dependency>
+        <groupId>com.google.guava</groupId>
+        <artifactId>guava</artifactId>
+        <version>33.8.0-jre</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
   <build>
     <plugins>
       <!-- Format gate (the JVM analog of gofmt/prettier/ruff-format): google-java-format,
@@ -64,6 +77,12 @@
         <version>3.11.0</version>
         <configuration>
           <java>
+            <!-- Generated gRPC stubs (ADR-0022, keel.reference.v1) are committed under
+                 io.keel.reference.v1 but owned by buf's protoc/grpc plugins, not held to
+                 google-java-format; the buf regeneration dogfood (proto.yml) is their gate. -->
+            <excludes>
+              <exclude>**/io/keel/reference/**/*.java</exclude>
+            </excludes>
             <googleJavaFormat>
               <version>2.0.0</version>
             </googleJavaFormat>
@@ -114,6 +133,12 @@
               <goal>check</goal>
             </goals>
             <configuration>
+              <!-- Generated protobuf/gRPC stubs (ADR-0022) are not hand-written and are not
+                   unit-tested; they would otherwise dilute the per-module floor. Their gate is the
+                   buf regeneration dogfood (proto.yml), not coverage. -->
+              <excludes>
+                <exclude>io/keel/reference/v1/**</exclude>
+              </excludes>
               <rules>
                 <rule>
                   <element>BUNDLE</element>

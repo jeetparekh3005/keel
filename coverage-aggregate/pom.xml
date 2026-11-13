@@ -162,6 +162,11 @@
             </goals>
             <configuration>
               <dataFile>${aggregate.exec}</dataFile>
+              <!-- Generated protobuf/gRPC stubs (ADR-0022) are excluded from the aggregate floor
+                   too; they are gated by the buf regeneration dogfood, not coverage. -->
+              <excludes>
+                <exclude>io/keel/reference/v1/**</exclude>
+              </excludes>
               <rules>
                 <rule>
                   <element>BUNDLE</element>

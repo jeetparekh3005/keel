@@ -46,6 +46,12 @@ async-nats = { version = "0.52", optional = true }
 futures = { version = "0.3", optional = true }
 async-trait = { version = "0.1", optional = true }
 bytes = { version = "1", optional = true }
+# Opt-in gRPC stubs (the `grpc` feature). prost backs the generated messages and
+# tonic the generated client/server; off by default so `cargo build` stays
+# gRPC-free, mirroring the Python `keel-core[grpc]` extra.
+prost = { version = "0.14", optional = true }
+tonic = { version = "0.14", optional = true }
+tonic-prost = { version = "0.14", optional = true }
 
 [features]
 # Opt-in NATS JetStream adapter. Off by default so `cargo build` stays broker-free,
@@ -58,6 +64,14 @@ nats = [
     "dep:async-trait",
     "dep:bytes",
     "opentelemetry_sdk/trace",
+]
+# Opt-in gRPC stubs for the keel.reference.v1 contract (ADR-0022). Off by default so
+# the default `cargo build` pulls in neither prost nor tonic (parity with Python's
+# `keel-core[grpc]` extra); the generated code lives in `keel_core::genproto`.
+grpc = [
+    "dep:prost",
+    "dep:tonic",
+    "dep:tonic-prost",
 ]
 
 [dev-dependencies]
