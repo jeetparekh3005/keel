@@ -35,7 +35,7 @@ jobs:
     # Postgres for the persistence/reference integration tests (gated on the URL below).
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18
         env:
           POSTGRES_USER: keel
           POSTGRES_PASSWORD: keel
@@ -49,6 +49,12 @@ jobs:
           --health-retries 10
     env:
       KEEL_TEST_DATABASE_URL: postgres://keel:keel@localhost:5432/reference
+      KEEL_NATS_URL: nats://localhost:4222
+      KEEL_KEYCLOAK_URL: http://localhost:8080
+      KEEL_KEYCLOAK_REALM: keel
+      KEEL_KEYCLOAK_CLIENT_ID: keel-api
+      KEEL_KEYCLOAK_CLIENT_SECRET: test-secret
+      KEEL_OIDC_AUDIENCE: keel-api
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -57,6 +63,30 @@ jobs:
         with:
           go-version: stable
           cache-dependency-path: "**/go.sum"
+      - name: Start NATS (JetStream)
+        # A service container can't pass the `-js` arg, so run it as a step. The messaging package
+        # integration test publishes and subscribes against this instance, asserting payload
+        # delivery and trace-context propagation; it skips when KEEL_NATS_URL is unset.
+        run: |
+          docker run -d --name nats -p 4222:4222 nats:2.15 -js
+          for _ in $(seq 1 30); do
+            (echo > /dev/tcp/127.0.0.1/4222) >/dev/null 2>&1 && break
+            sleep 1
+          done
+      - name: Start Keycloak (import realm)
+        # A service container can't mount the realm file or pass --import-realm, so run it as a
+        # step. The OIDC integration test (auth package) mints a client_credentials token and
+        # verifies it against this instance's live JWKS; it skips when KEEL_KEYCLOAK_URL is unset.
+        run: |
+          docker run -d --name keycloak -p 8080:8080 \
+            -e KEYCLOAK_ADMIN=admin -e KEYCLOAK_ADMIN_PASSWORD=admin \
+            -v "$PWD/deploy/keycloak/realm.json:/opt/keycloak/data/import/realm.json:ro" \
+            quay.io/keycloak/keycloak:26.8 start-dev --import-realm
+          echo "waiting for the keel realm to be ready..."
+          for _ in $(seq 1 60); do
+            curl -sf http://localhost:8080/realms/keel/.well-known/openid-configuration >/dev/null 2>&1 && break
+            sleep 3
+          done
       - name: Format check
         run: |
           # templates/ holds Copier templates (<< >> placeholders), not valid Go, so exclude them
@@ -65,19 +95,52 @@ jobs:
           if [ -n "$unformatted" ]; then
             echo "gofmt needs to run on:"; echo "$unformatted"; exit 1
           fi
-      - name: Vet, lint, test, and vuln-scan each module
+      - name: Vet, lint, test (with coverage), and vuln-scan each module
         # The repo is a go.work with nested modules, so run the per-module gate inside
         # each module directory. govulncheck is blocking: it fails the build on any known
-        # vulnerability the code actually reaches.
+        # vulnerability the code actually reaches. Each module emits a coverage profile that
+        # the next step merges into one vertical-wide total and enforces against a floor
+        # (the Go analog of Python's pytest --cov ... fail_under=85). Postgres and Keycloak
+        # above make the integration tests run, so the measured total is the real one, not a
+        # local lower bound where those paths skip.
         run: |
           set -e
+          : > "$RUNNER_TEMP/go-coverage-merged.out"
+          first=1
           for mod in $(find packages services -name go.mod 2>/dev/null | xargs -n1 dirname | sort -u); do
             echo "::group::$mod"
             ( cd "$mod"
               go vet ./...
               go run honnef.co/go/tools/cmd/staticcheck@latest ./...
-              go test ./...
+              # Exclude the committed buf stubs (genproto, ADR-0022) from the coverage set: they
+              # are generated code with no tests and would otherwise dilute the hand-written
+              # coverage floor. staticcheck already skips them via the generated-code marker.
+              go test -coverprofile=cover.out -covermode=atomic $(go list ./... | grep -v '/genproto')
               go run golang.org/x/vuln/cmd/govulncheck@latest ./...
             )
+            # Merge this module's profile into the vertical-wide one, keeping a single
+            # "mode:" header (the first module's) and appending every later module's body.
+            if [ "$first" = 1 ]; then
+              cat "$mod/cover.out" >> "$RUNNER_TEMP/go-coverage-merged.out"
+              first=0
+            else
+              tail -n +2 "$mod/cover.out" >> "$RUNNER_TEMP/go-coverage-merged.out"
+            fi
             echo "::endgroup::"
           done
+      - name: Coverage floor
+        # Enforce a hard, vertical-wide statement-coverage floor across both Go modules
+        # (keel-core-go + reference-service-go), mirroring Python's 85% fail_under. The service
+        # module now boots end-to-end in a test (cmd/reference-service run() is driven against the
+        # Postgres above, then cancelled to assert graceful shutdown) and its handlers, repository,
+        # and config are covered, so the merged total clears the 85% parity bar. Raise FLOOR only
+        # to the measured total; never above it.
+        run: |
+          set -e
+          FLOOR=85
+          total=$(go tool cover -func="$RUNNER_TEMP/go-coverage-merged.out" | tail -1 | awk '{print $3}' | tr -d '%')
+          echo "Go vertical statement coverage: ${total}% (floor ${FLOOR}%)"
+          awk -v t="$total" -v f="$FLOOR" 'BEGIN { exit !(t + 0 >= f + 0) }' || {
+            echo "::error::Go coverage ${total}% is below the ${FLOOR}% floor"
+            exit 1
+          }

@@ -37,7 +37,7 @@ jobs:
     # Postgres for the reference-service CRUD integration test (gated on the URL below).
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18
         env:
           POSTGRES_USER: keel
           POSTGRES_PASSWORD: keel
@@ -56,20 +56,73 @@ jobs:
         with:
           persist-credentials: false
       # Installs the toolchain declared in rust-toolchain.toml (stable + rustfmt/clippy).
+      # llvm-tools-preview ships llvm-cov/llvm-profdata, which cargo-llvm-cov drives to
+      # instrument the build and render the coverage report for the floor below.
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # stable
         with:
           toolchain: stable
-          components: rustfmt, clippy
+          components: rustfmt, clippy, llvm-tools-preview
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        with:
+          tool: cargo-llvm-cov
       - name: Format check
         run: cargo fmt --all --check
       - name: Clippy (warnings are errors)
         run: cargo clippy --all-targets --all-features -- -D warnings
-      - name: Test
-        # --include-ignored runs the #[ignore]'d Postgres integration test too; the
-        # Postgres service above and KEEL_TEST_DATABASE_URL make it a real round-trip
-        # (it fails loudly, not silently, if the DB is missing).
-        run: cargo test --all --locked -- --include-ignored
+      - name: Start NATS (JetStream)
+        # A service container can't pass the `-js` arg, so run it as a step (like python.yml).
+        # Backs the NatsMessageBus round-trip integration test gated on KEEL_NATS_URL below.
+        run: |
+          docker run -d --name nats -p 4222:4222 nats:2.15 -js
+          for _ in $(seq 1 30); do
+            (echo > /dev/tcp/127.0.0.1/4222) >/dev/null 2>&1 && break
+            sleep 1
+          done
+      - name: Start Keycloak (import realm)
+        # Keycloak imports the shared realm on boot, so it can't run as a service
+        # container (those can't pass `--import-realm`); run it as a step like python.yml.
+        # The imported realm has the service-account client keel-api / secret test-secret.
+        run: |
+          docker run -d --name keycloak -p 8080:8080 \
+            -e KEYCLOAK_ADMIN=admin -e KEYCLOAK_ADMIN_PASSWORD=admin \
+            -v "$PWD/deploy/keycloak/realm.json:/opt/keycloak/data/import/realm.json:ro" \
+            quay.io/keycloak/keycloak:26.8 start-dev --import-realm
+          echo "waiting for the keel realm to be ready..."
+          for _ in $(seq 1 60); do
+            curl -sf http://localhost:8080/realms/keel/.well-known/openid-configuration >/dev/null 2>&1 && break
+            sleep 3
+          done
+      - name: Test with coverage floor (85% lines)
+        # Runs the full suite under cargo-llvm-cov and fails the job if line coverage
+        # drops below 85%, matching the Python vertical's `fail_under = 85` gate so the
+        # Rust vertical cannot silently regress below parity (epic #419, v0.6).
+        #
+        # --include-ignored runs the #[ignore]'d integration tests too: the Postgres CRUD
+        # round-trip (Postgres service above + KEEL_TEST_DATABASE_URL), the live Keycloak
+        # JWKS verification (the container above + KEEL_KEYCLOAK_* below), and the NATS
+        # JetStream publish->subscribe round-trip (the NATS container above + KEEL_NATS_URL).
+        # Each fails loudly, not silently, if its backing service is missing -- and they are
+        # the paths that carry the service's composition/http/repository and the broker
+        # adapter's connect/publish/subscribe/dispatch lines over the floor, so the coverage
+        # number is only honest with them in. --features nats,grpc builds the opt-in
+        # NatsMessageBus adapter (and its integration test) and the opt-in gRPC server
+        # factory/mTLS module (keel_core::grpc, ADR-0022) so both are exercised and counted
+        # here -- without grpc in the feature set the new gRPC code is not compiled under
+        # coverage and the floor could not see it.
+        env:
+          KEEL_KEYCLOAK_URL: http://localhost:8080
+          KEEL_KEYCLOAK_REALM: keel
+          KEEL_KEYCLOAK_CLIENT_ID: keel-api
+          KEEL_KEYCLOAK_CLIENT_SECRET: test-secret
+          KEEL_OIDC_AUDIENCE: keel-api
+          KEEL_NATS_URL: nats://localhost:4222
+        # --ignore-filename-regex genproto drops the committed buf stubs (prost/tonic
+        # generated code under src/genproto) from the denominator: they are not held to the
+        # crate's lint/style/coverage bar (see genproto.rs and the Python genproto excludes),
+        # so only the hand-written server factory/mTLS in keel_core::grpc is measured.
+        run: cargo llvm-cov --all --locked --features nats,grpc --ignore-filename-regex genproto --fail-under-lines 85 -- --include-ignored
       - name: Install cargo-audit
         uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:

@@ -29,6 +29,58 @@ func TestTypeURIIsStableAndNamespaced(t *testing.T) {
 	}
 }
 
+// TestSlugAndTitleForEveryCategory pins the stable machine slug and human title of every
+// taxonomy category (platform.yaml errors.taxonomy), exercising every switch arm. These
+// strings are part of the contract: the slug appears in the problem type URI and in logs,
+// the title in the RFC 9457 body, so a silent rename would be a breaking change.
+func TestSlugAndTitleForEveryCategory(t *testing.T) {
+	cases := []struct {
+		category    ErrorCategory
+		slug, title string
+	}{
+		{Validation, "validation", "Bad Request"},
+		{Unauthenticated, "unauthenticated", "Unauthorized"},
+		{Forbidden, "forbidden", "Forbidden"},
+		{NotFound, "not_found", "Not Found"},
+		{Conflict, "conflict", "Conflict"},
+		{RateLimited, "rate_limited", "Too Many Requests"},
+		{Internal, "internal", "Internal Server Error"},
+		{Unavailable, "unavailable", "Service Unavailable"},
+	}
+	for _, c := range cases {
+		if got := c.category.Slug(); got != c.slug {
+			t.Errorf("Slug() = %q, want %q", got, c.slug)
+		}
+		if got := c.category.Title(); got != c.title {
+			t.Errorf("Title() = %q, want %q", got, c.title)
+		}
+	}
+	// An unknown (out-of-range) category fails closed to the internal arm of every switch.
+	unknown := ErrorCategory(99)
+	if got := unknown.Slug(); got != "internal" {
+		t.Errorf("unknown Slug() = %q, want internal", got)
+	}
+	if got := unknown.Title(); got != "Internal Server Error" {
+		t.Errorf("unknown Title() = %q, want Internal Server Error", got)
+	}
+	if got := unknown.Status(); got != 500 {
+		t.Errorf("unknown Status() = %d, want 500", got)
+	}
+}
+
+// TestErrorStringFormat checks DomainError implements error as "<slug>: <detail>", the form
+// that reaches logs and wrapped-error chains (errors.Is/As at the adapter boundary).
+func TestErrorStringFormat(t *testing.T) {
+	err := New(NotFound, "item not found")
+	if got := err.Error(); got != "not_found: item not found" {
+		t.Errorf("Error() = %q, want %q", got, "not_found: item not found")
+	}
+	var de error = New(Validation, "name is required")
+	if de.Error() != "validation: name is required" {
+		t.Errorf("Error() = %q", de.Error())
+	}
+}
+
 func TestClientFaultKeepsDetail(t *testing.T) {
 	p := New(Validation, "name is required").ToProblem("")
 	if p.Detail != "name is required" {

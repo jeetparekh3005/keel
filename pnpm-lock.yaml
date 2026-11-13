@@ -64,6 +64,15 @@ importers:
 
   packages/keel-core-ts:
     dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.17.0
+        version: 2.17.0
+      '@connectrpc/connect':
+        specifier: 2.3.0
+        version: 2.3.0(@bufbuild/protobuf@2.17.0)
+      '@connectrpc/connect-node':
+        specifier: 2.3.0
+        version: 2.3.0(@bufbuild/protobuf@2.17.0)(@connectrpc/connect@2.3.0(@bufbuild/protobuf@2.17.0))
       '@nestjs/common':
         specifier: 12.4.2
         version: 12.4.2(reflect-metadata@0.2.2)(rxjs@7.8.2)
@@ -73,21 +82,33 @@ importers:
       '@opentelemetry/api':
         specifier: 1.10.0
         version: 1.10.0
+      '@opentelemetry/exporter-metrics-otlp-grpc':
+        specifier: 0.301.1
+        version: 0.301.1(@opentelemetry/api@1.10.0)
       '@opentelemetry/exporter-trace-otlp-grpc':
         specifier: 0.301.1
         version: 0.301.1(@opentelemetry/api@1.10.0)
       '@opentelemetry/resources':
         specifier: 3.1.1
         version: 3.1.1(@opentelemetry/api@1.10.0)
+      '@opentelemetry/sdk-metrics':
+        specifier: 3.1.1
+        version: 3.1.1(@opentelemetry/api@1.10.0)
       '@opentelemetry/sdk-node':
         specifier: 0.301.1
         version: 0.301.1(@opentelemetry/api@1.10.0)
+      '@opentelemetry/sdk-trace-base':
+        specifier: 2.12.0
+        version: 2.12.0(@opentelemetry/api@1.10.0)
       '@opentelemetry/semantic-conventions':
         specifier: 1.45.0
         version: 1.45.0
       jose:
         specifier: 6.2.17
         version: 6.2.17
+      nats:
+        specifier: 2.29.3
+        version: 2.29.3
       pg:
         specifier: 8.23.1
         version: 8.23.1
@@ -116,7 +137,7 @@ importers:
       '@opentelemetry/context-async-hooks':
         specifier: 3.1.1
         version: 3.1.1(@opentelemetry/api@1.10.0)
-      '@opentelemetry/sdk-trace-base':
+      '@opentelemetry/core':
         specifier: 2.12.0
         version: 2.12.0(@opentelemetry/api@1.10.0)
       '@swc/core':
@@ -125,6 +146,9 @@ importers:
       '@types/node':
         specifier: 26.6.6
         version: 26.6.6
+      '@types/node-forge':
+        specifier: 1.3.14
+        version: 1.3.14
       '@types/pg':
         specifier: 8.23.1
         version: 8.23.1
@@ -143,6 +167,9 @@ importers:
       globals:
         specifier: 17.14.0
         version: 17.14.0
+      node-forge:
+        specifier: 1.4.3
+        version: 1.4.3
       prettier:
         specifier: 3.9.10
         version: 3.9.10
@@ -340,11 +367,26 @@ packages:
     resolution: {integrity: sha512-0GEz8qJWokkUVYQYRukmkSHIFNoBH8QTreeHrAFbvz1XFYc3Y+puhMs8PQ5x8GNugiC2l5jvDBXKLbBIByeSBw==}
     hasBin: true
 
+  '@bufbuild/protobuf@2.17.0':
+    resolution: {integrity: sha512-hcPkSz6D7MiTU/5VBBhK+kxaYDoOdQ6yJRFJ3kS8Nydp+VZXfg1vrpABKPNod8bXMufsVCmiUJVIKFzCzta4uw==}
+
   '@cacheable/memory@2.2.0':
     resolution: {integrity: sha512-CTLKqLItRCEixEAewD3/j9DB3/o96gpTPD4eJ1v+DGOlxZRZncRQkGYqqnAGCscYd6RNeXfGeiuCphsPtqyIfQ==}
 
   '@cacheable/utils@2.5.0':
     resolution: {integrity: sha512-buipgOVDkkPXNR5+xBpDw7Zk2n1EvU7qBJCNUcL7rhQ//kfpOXPAvQ511Os0vpLYJ1pZnvudNytkQt2hst3wqA==}
+
+  '@connectrpc/connect-node@2.3.0':
+    resolution: {integrity: sha512-kcQgV4GqFIESsl0MOHInC9/wNYU4aJDvG1OfGR5Lq6/l0gqycSGqEk+fixXGcUtPLc8vJBgS4V1nTmWlh4o9gw==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      '@bufbuild/protobuf': ^2.7.0
+      '@connectrpc/connect': 2.3.0
+
+  '@connectrpc/connect@2.3.0':
+    resolution: {integrity: sha512-rjAn8L9KbAZrkwiB8m1qzDsLs74hkYmwwM2iSWuxTPVOTRm/EZw31smKbQqPU50AXqJC5eKKpEnA6Uf/swQOgQ==}
+    peerDependencies:
+      '@bufbuild/protobuf': ^2.7.0
 
   '@csstools/color-helpers@6.1.2':
     resolution: {integrity: sha512-grhRy3OKmniaAEKXMjua5z/EODX0MSqBGjunw8+j/3HQjOnahs2AGhvEOIYVUWcU6ScApbhLhVrQTX8XqrMrow==}
@@ -1300,6 +1342,9 @@ packages:
 
   '@types/methods@1.1.4':
     resolution: {integrity: sha512-ymXWVrDiCxTBE3+RIrrP533E70eA+9qu7zdWoHuOmGujkYtzf4HQF96b8nwHLqhuf4ykX61IGRIB38CC6/sImQ==}
+
+  '@types/node-forge@1.3.14':
+    resolution: {integrity: sha512-mhVF2BnD4BO+jtOp7z1CdzaK4mbuK0LLQYAvdOLqHTavxFNq4zA1EmYkpnFjP8HOUzedfQkRnp0E2ulSAYSzAw==}
 
   '@types/node@26.6.6':
     resolution: {integrity: sha512-MzQj+8Kx3XI40OmUAE6Qoh58ZMNstNNMwn2nfd3qWsfe7nDNSqJNzes4njhz6AHwrSHOffSLwXU6yb474Q4aog==}
@@ -2675,6 +2720,11 @@ packages:
     engines: {node: ^12.20.0 || ^14.18.0 || >=16.0.0}
     hasBin: true
 
+  nats@2.29.3:
+    resolution: {integrity: sha512-tOQCRCwC74DgBTk4pWZ9V45sk4d7peoE2njVprMRCBXrhJ5q5cYM7i6W+Uvw2qUrcfOSnuisrX7bEx3b3Wx4QA==}
+    engines: {node: '>= 14.0.0'}
+    deprecated: Package moved. Use @nats-io/transport-node from https://github.com/nats-io/nats.js
+
   natural-compare@1.4.0:
     resolution: {integrity: sha512-OWND8ei3VtNC9h7V60qff3SVobHr996CTwgxubgyQYEpg290h9J0buyECNNJexkFm5sOajh5G116RYA1c8ZMSw==}
 
@@ -2703,9 +2753,18 @@ packages:
       sass:
         optional: true
 
+  nkeys.js@1.1.0:
+    resolution: {integrity: sha512-tB/a0shZL5UZWSwsoeyqfTszONTt4k2YS0tuQioMOD180+MbombYVgzDUYHlx+gejYK6rgf08n/2Df99WY0Sxg==}
+    engines: {node: '>=10.0.0'}
+    deprecated: 'Package moved. Use @nats-io/nkeys instead: https://www.npmjs.com/package/@nats-io/nkeys'
+
   node-exports-info@1.6.2:
     resolution: {integrity: sha512-kXs9Go0cah0qHVV2v389IXQLdLCeE1xfFtjOAF+iobu0OIoG1pje8At2vMHyaPMiPMnG/LWP50twML21eMcAag==}
     engines: {node: '>= 0.4'}
+
+  node-forge@1.4.3:
+    resolution: {integrity: sha512-P6wzfh6t70avmV8FrVEAd/36sOPJQ+hkaJVX1Laap9J/77m7M0eyozDvc8SwnDf4P7MP94gwbAAo0rg3YVXT+g==}
+    engines: {node: '>= 6.13.0'}
 
   node-releases@2.0.63:
     resolution: {integrity: sha512-6li2QanLsAXpIH2R6j77MzRyvOyrvdTqlKtO4CgBdHGNvN99ZZfyxszHc5o5+IZBWD5u6Hzwg83JoGXmqZNG9Q==}
@@ -3254,6 +3313,9 @@ packages:
     resolution: {integrity: sha512-3GJYwig8ygEI89oaOZdduJX8/aw6O9eRPYHoIt6T3FZl9hkKjiyIspufJoVgqXihPoJu8M5CSV0DlZvzfohBCw==}
     hasBin: true
 
+  tweetnacl@1.0.3:
+    resolution: {integrity: sha512-6rt+RN7aOi1nGMyC4Xa5DdYiukl2UWCbcJft7YhxReBGQD7OAM8Pbxw6YMo4r2diNEA8FEmu32YOn9rhaiE5yw==}
+
   type-check@0.4.0:
     resolution: {integrity: sha512-XleUoc9uwGXqjWwXaUTZAmzMcFZ5858QA2vvx1Ur5xIcixXIP+8LnFDgRplU30us6teqdlskFfu+ae4K79Ooew==}
     engines: {node: '>= 0.8.0'}
@@ -3704,6 +3766,8 @@ snapshots:
     dependencies:
       css-tree: 3.2.1
 
+  '@bufbuild/protobuf@2.17.0': {}
+
   '@cacheable/memory@2.2.0':
     dependencies:
       '@cacheable/utils': 2.5.0
@@ -3715,6 +3779,15 @@ snapshots:
     dependencies:
       hashery: 1.5.1
       keyv: 5.6.0
+
+  '@connectrpc/connect-node@2.3.0(@bufbuild/protobuf@2.17.0)(@connectrpc/connect@2.3.0(@bufbuild/protobuf@2.17.0))':
+    dependencies:
+      '@bufbuild/protobuf': 2.17.0
+      '@connectrpc/connect': 2.3.0(@bufbuild/protobuf@2.17.0)
+
+  '@connectrpc/connect@2.3.0(@bufbuild/protobuf@2.17.0)':
+    dependencies:
+      '@bufbuild/protobuf': 2.17.0
 
   '@csstools/color-helpers@6.1.2': {}
 
@@ -4496,6 +4569,10 @@ snapshots:
   '@types/json5@0.0.29': {}
 
   '@types/methods@1.1.4': {}
+
+  '@types/node-forge@1.3.14':
+    dependencies:
+      '@types/node': 26.6.6
 
   '@types/node@26.6.6':
     dependencies:
@@ -6080,6 +6157,10 @@ snapshots:
 
   napi-postinstall@0.3.8: {}
 
+  nats@2.29.3:
+    dependencies:
+      nkeys.js: 1.1.0
+
   natural-compare@1.4.0: {}
 
   negotiator@1.1.0:
@@ -6112,12 +6193,18 @@ snapshots:
       - '@types/node'
       - babel-plugin-macros
 
+  nkeys.js@1.1.0:
+    dependencies:
+      tweetnacl: 1.0.3
+
   node-exports-info@1.6.2:
     dependencies:
       array.prototype.flatmap: 1.3.3
       es-errors: 1.3.0
       object.entries: 1.1.9
       semver: 6.3.2
+
+  node-forge@1.4.3: {}
 
   node-releases@2.0.63: {}
 
@@ -6801,6 +6888,8 @@ snapshots:
       '@turbo/linux-arm64': 2.11.10
       '@turbo/windows-64': 2.11.10
       '@turbo/windows-arm64': 2.11.10
+
+  tweetnacl@1.0.3: {}
 
   type-check@0.4.0:
     dependencies:

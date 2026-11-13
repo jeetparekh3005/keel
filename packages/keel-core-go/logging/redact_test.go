@@ -40,6 +40,26 @@ func TestScrubTextPatterns(t *testing.T) {
 	}
 }
 
+// TestExportedRedactionAPI covers the exported wrappers other sinks (the OTLP span-export
+// path) reuse, confirming they delegate to the same classification, scrubbing, and marker.
+func TestExportedRedactionAPI(t *testing.T) {
+	if Redacted != redacted {
+		t.Errorf("Redacted = %q, want %q", Redacted, redacted)
+	}
+	if !IsSecretKey("Authorization") {
+		t.Error("IsSecretKey should classify Authorization as secret")
+	}
+	if IsSecretKey("user_id") {
+		t.Error("IsSecretKey should not classify user_id as secret")
+	}
+	if got := ScrubText("Bearer abcdef1234567890"); got != Redacted {
+		t.Errorf("ScrubText bearer not scrubbed: %q", got)
+	}
+	if got := ScrubText("plain"); got != "plain" {
+		t.Errorf("ScrubText altered a clean value: %q", got)
+	}
+}
+
 func TestLuhn(t *testing.T) {
 	if !luhnOK("4111111111111111") {
 		t.Error("valid Visa test number should pass Luhn")

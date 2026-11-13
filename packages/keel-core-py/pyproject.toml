@@ -11,6 +11,7 @@ dependencies = [
     "pyjwt[crypto]>=2.15.1",
     "starlette>=0.37",            # ASGI middleware types/utilities (fastapi pins a compatible version)
     "opentelemetry-sdk>=1.27",    # OTLP exporter added at deployment time
+    "opentelemetry-instrumentation-fastapi>=0.48b0",  # route-templated http.server.* spans + metrics
 ]
 
 [project.optional-dependencies]
@@ -30,3 +31,14 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/keel_core"]
+
+[tool.deptry]
+# genproto/ is the committed buf output for the keel.reference.v1 contract (ADR-0022). Its
+# imports (google.protobuf, the on-path `keel` package) are an artifact of codegen, not real
+# project dependencies; the regeneration dogfood (proto.yml) is its gate, not deptry.
+extend_exclude = ["src/keel_core/genproto"]
+
+[tool.deptry.per_rule_ignores]
+# `keel` is not a distribution: it is the vendored keel.reference.v1 stub tree reached via the
+# genproto sys.path shim (ADR-0022), imported by the ItemService adapter. Not a missing dep.
+DEP001 = ["keel"]

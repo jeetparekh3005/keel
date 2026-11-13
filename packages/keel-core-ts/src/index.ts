@@ -17,14 +17,22 @@ export { csvList, loadConfig } from './config/index.js';
 
 export {
   createLogger,
+  createNestLogger,
   isSecretKey,
+  NestLoggerAdapter,
   redactValue,
   scrubText,
   REDACTED,
   type Logger,
 } from './logging/index.js';
 
-export { initTelemetry, type TelemetryOptions } from './telemetry/index.js';
+export {
+  initTelemetry,
+  observeDbPool,
+  type ObserveDbPoolOptions,
+  type PoolStatsSource,
+  type TelemetryOptions,
+} from './telemetry/index.js';
 
 export { type Clock, CLOCK, type SecretProvider, SECRET_PROVIDER } from './ports/index.js';
 export { EnvSecretProvider, SystemClock } from './adapters/index.js';
@@ -32,10 +40,21 @@ export { EnvSecretProvider, SystemClock } from './adapters/index.js';
 export { Database, DATABASE, type PoolStats, UnitOfWork } from './persistence/index.js';
 
 export {
+  type InboundMessage,
+  MESSAGE_BUS,
+  type MessageBus,
+  type MessageHandler,
+  type MessagePublisher,
+} from './messaging/index.js';
+
+export {
+  API_KEY_AUTHENTICATOR,
+  ApiKeyAuthenticator,
   type Authenticator,
   AUTHENTICATOR,
   AuthGuard,
   CurrentPrincipal,
+  hashApiKey,
   IS_PUBLIC_KEY,
   OidcAuthenticator,
   Principal,
@@ -43,6 +62,26 @@ export {
   SCOPES_KEY,
   Scopes,
 } from './auth/index.js';
+
+export {
+  type AuthInterceptorOptions,
+  clientTlsOptions,
+  createAuthInterceptor,
+  createGrpcHandler,
+  createMutualTlsGrpcServer,
+  createTelemetryInterceptor,
+  type GrpcHandler,
+  type GrpcServerOptions,
+  grpcMethodPath,
+  InMemoryItemStore,
+  ITEM_SERVICE_SCOPES,
+  loadMutualTlsPem,
+  type MutualTlsPem,
+  type MutualTlsSecretKeys,
+  PRINCIPAL,
+  registerItemService,
+  serverTlsOptions,
+} from './grpc/index.js';
 
 export {
   BodyLimitMiddleware,

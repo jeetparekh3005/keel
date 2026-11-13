@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\"",
-    "test": "vitest run",
+    "test": "vitest run --coverage",
     "start": "node dist/main.js"
   },
   "dependencies": {

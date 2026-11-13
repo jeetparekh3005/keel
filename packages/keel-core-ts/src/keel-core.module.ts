@@ -14,13 +14,14 @@ import {
 } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 
-import { type Authenticator, AUTHENTICATOR } from './auth/principal.js';
+import { API_KEY_AUTHENTICATOR, type Authenticator, AUTHENTICATOR } from './auth/principal.js';
 import { AuthGuard } from './auth/auth.guard.js';
 import { createLogger } from './logging/logger.js';
 import { BodyLimitMiddleware } from './http/body-limit.middleware.js';
 import { CorsMiddleware, CORS_ALLOW_ORIGINS } from './http/cors.middleware.js';
 import { HealthController } from './http/health.controller.js';
 import { ProblemExceptionFilter } from './http/problem.filter.js';
+import { MetricsInterceptor } from './http/metrics.interceptor.js';
 import { RequestIdMiddleware } from './http/request-id.middleware.js';
 import { SecurityHeadersMiddleware } from './http/security-headers.middleware.js';
 import { TracingInterceptor } from './http/tracing.interceptor.js';
@@ -39,6 +40,12 @@ export interface KeelCoreOptions {
   corsAllowOrigins: string[];
   /** The authenticator that verifies bearer tokens (OIDC in prod, a stub in tests). */
   authenticator: Authenticator;
+  /**
+   * Optional authenticator for opaque X-API-Key credentials (an ApiKeyAuthenticator). When set,
+   * the guard verifies an X-API-Key request against it; its principal is subject to the same
+   * @Scopes checks. Omit it for bearer-only services.
+   */
+  apiKeyAuthenticator?: Authenticator;
   /** Readiness check backing /readyz (e.g. a DB ping). */
   readiness: ReadinessCheck;
   /** Request body cap in bytes (content-type-agnostic); defaults to DEFAULT_MAX_BODY_BYTES. */
@@ -79,6 +86,13 @@ export class KeelCoreModule implements NestModule {
         inject: [KEEL_OPTIONS],
       },
       {
+        // Undefined when the service configures no API keys; the guard then treats the bearer
+        // path as the only credential (and rejects an X-API-Key request).
+        provide: API_KEY_AUTHENTICATOR,
+        useFactory: (opts: KeelCoreOptions) => opts.apiKeyAuthenticator,
+        inject: [KEEL_OPTIONS],
+      },
+      {
         provide: READINESS,
         useFactory: (opts: KeelCoreOptions): ReadinessCheck => opts.readiness,
         inject: [KEEL_OPTIONS],
@@ -96,6 +110,7 @@ export class KeelCoreModule implements NestModule {
       { provide: APP_GUARD, useClass: AuthGuard },
       { provide: APP_FILTER, useClass: ProblemExceptionFilter },
       { provide: APP_INTERCEPTOR, useClass: TracingInterceptor },
+      { provide: APP_INTERCEPTOR, useClass: MetricsInterceptor },
     ];
 
     return {
@@ -103,7 +118,7 @@ export class KeelCoreModule implements NestModule {
       imports: options.imports ?? [],
       controllers: [HealthController],
       providers,
-      exports: [LOGGER, AUTHENTICATOR, READINESS, CORS_ALLOW_ORIGINS],
+      exports: [LOGGER, AUTHENTICATOR, API_KEY_AUTHENTICATOR, READINESS, CORS_ALLOW_ORIGINS],
     };
   }
 

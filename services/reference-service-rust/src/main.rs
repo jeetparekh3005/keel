@@ -15,7 +15,7 @@ use reference_service_rust::{build_app, ServiceConfig};
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = ServiceConfig::from_env()?;
-    let tracer = keel_core::telemetry::init(
+    let telemetry = keel_core::telemetry::init(
         &config.service_name,
         &config.version,
         &config.environment,
@@ -26,6 +26,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let database = Database::connect(&config.database_url).await?;
     // Dev convenience; production applies versioned migrations instead.
     SqlItemRepository::new(&database).ensure_schema().await?;
+
+    // Register the DB connection-pool saturation gauges against the global meter installed
+    // above. Held until shutdown so OpenTelemetry can poll the live pool at each collection.
+    let _db_pool_gauges = keel_core::telemetry::observe_db_pool(&database, "default");
 
     // Verify tokens against the issuer's JWKS (https unless a dev-like environment).
     let jwks = Arc::new(JwksCache::new(&config.oidc_jwks_uri, config.is_dev_like())?);
@@ -59,9 +63,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     refresh_task.abort();
-    if let Some(provider) = tracer {
-        keel_core::telemetry::shutdown(provider);
-    }
+    keel_core::telemetry::shutdown(telemetry);
     Ok(())
 }
 

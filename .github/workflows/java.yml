@@ -11,6 +11,7 @@ on:
     paths:
       - "packages/keel-core-java/**"
       - "services/reference-service-java/**"
+      - "coverage-aggregate/**"
       - "pom.xml"
       - ".mvn/**"
       - "mvnw"
@@ -20,6 +21,7 @@ on:
     paths:
       - "packages/keel-core-java/**"
       - "services/reference-service-java/**"
+      - "coverage-aggregate/**"
       - "pom.xml"
       - ".mvn/**"
       - "mvnw"
@@ -39,7 +41,7 @@ jobs:
     # Postgres for the reference-service conformance/CRUD integration test.
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18
         env:
           POSTGRES_USER: keel
           POSTGRES_PASSWORD: keel
@@ -62,8 +64,37 @@ jobs:
           distribution: temurin
           java-version: "25"
           cache: maven
+      # Live Keycloak for the keel-core-java JWKS integration test (epic #419). Reuses the shared
+      # realm import (client keel-api / secret test-secret / realm keel). Started as a docker run
+      # step rather than a `services:` entry because the realm file is only on disk after checkout.
+      - name: Start NATS (JetStream)
+        # A service container can't pass the `-js` arg, so run it as a step (as the Python lane does).
+        run: |
+          docker run -d --name nats -p 4222:4222 nats:2.15 -js
+          for _ in $(seq 1 30); do
+            (echo > /dev/tcp/127.0.0.1/4222) >/dev/null 2>&1 && break
+            sleep 1
+          done
+      - name: Start Keycloak (import realm)
+        run: |
+          docker run -d --name keycloak -p 8080:8080 \
+            -e KEYCLOAK_ADMIN=admin -e KEYCLOAK_ADMIN_PASSWORD=admin \
+            -v "$PWD/deploy/keycloak/realm.json:/opt/keycloak/data/import/realm.json:ro" \
+            quay.io/keycloak/keycloak:26.8 start-dev --import-realm
+          echo "waiting for the keel realm to be ready..."
+          for _ in $(seq 1 60); do
+            curl -sf http://localhost:8080/realms/keel/.well-known/openid-configuration >/dev/null 2>&1 && break
+            sleep 3
+          done
       - name: Verify (spotless, tests, archunit, jacoco)
-        run: mvn -B verify
+        env:
+          KEEL_NATS_URL: nats://localhost:4222
+          KEEL_KEYCLOAK_URL: http://localhost:8080
+          KEEL_KEYCLOAK_REALM: keel
+          KEEL_KEYCLOAK_CLIENT_ID: keel-api
+          KEEL_KEYCLOAK_CLIENT_SECRET: test-secret
+          KEEL_OIDC_AUDIENCE: keel-api
+        run: mvn -B -Pcoverage-aggregate verify
       - name: Dependency CVEs (Trivy)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:

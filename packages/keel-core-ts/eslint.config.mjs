@@ -3,7 +3,18 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['dist/**', 'coverage/**', 'node_modules/**', '*.config.mjs', '*.config.mts'] },
+  // src/genproto is the committed protobuf-es output (ADR-0022); buf owns its style, so it is
+  // linted by the buf regeneration dogfood (proto.yml), not eslint.
+  {
+    ignores: [
+      'dist/**',
+      'coverage/**',
+      'node_modules/**',
+      'src/genproto/**',
+      '*.config.mjs',
+      '*.config.mts',
+    ],
+  },
   ...tseslint.configs.recommendedTypeChecked,
   {
     languageOptions: {

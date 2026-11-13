@@ -6,12 +6,27 @@
 //! logging, telemetry, the HTTP edge, auth, persistence, and the conformance kit.
 
 pub mod adapters;
+pub mod api_key;
 pub mod auth;
 pub mod config;
 pub mod domain;
+/// Generated gRPC stubs for the `keel.reference.v1` contract (ADR-0022). Opt-in:
+/// enable the `grpc` feature (mirrors the Python `keel-core[grpc]` extra) so the
+/// default build needs neither prost nor tonic.
+#[cfg(feature = "grpc")]
+pub mod genproto;
+/// gRPC server factory (deny-by-default auth + per-method scope authz + OTel) and mTLS
+/// credential builders for the `keel.reference.v1` contract (ADR-0022). Opt-in behind the
+/// `grpc` feature, alongside the generated stubs in [`genproto`].
+#[cfg(feature = "grpc")]
+pub mod grpc;
 pub mod http;
 pub mod jwks;
 pub mod logging;
+/// NATS JetStream `MessageBus` adapter. Opt-in: enable the `nats` feature (mirrors the
+/// Python `keel-core[nats]` extra) so the default build needs no broker.
+#[cfg(feature = "nats")]
+pub mod messaging;
 pub mod persistence;
 pub mod ports;
 pub mod redact;

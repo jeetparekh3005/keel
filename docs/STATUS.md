@@ -40,10 +40,14 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   insufficient scope), and a **route-auth conformance check** that fails app startup (and
   a shipped test) if any non-exempt route lacks an auth dependency. JWT verification runs
   off the event loop (threadpool) with a bounded JWKS timeout.
-- **Metrics**: HTTP server metrics (`http.server.request.duration`,
-  `http.server.active_requests`) come from FastAPI's native OpenTelemetry
-  instrumentation, labelled by **route template** (bounded cardinality); plus a DB
-  connection-pool saturation gauge and a dropped-log counter.
+- **Metrics**: a DB connection-pool saturation gauge (`db.client.connection.count`/`.max`) and
+  a dropped-log counter (`log.records.dropped`) are emitted (`telemetry/saturation.py`). **HTTP
+  request metrics (`http.server.request.duration`, `http.server.active_requests`) are emitted**,
+  route-templated (`http.route`) and labelled by method (`http.request.method`) and status
+  (`http.response.status_code`), via OpenTelemetry FastAPI instrumentation wired in `create_app`.
+  `tests/test_metrics.py` records them through an in-memory metric reader and asserts the route
+  template, so it fails if the instrumentation is removed. Bringing this to the four non-Python
+  verticals is a v0.6 parity item (see the parity matrix below).
 - **Port-coverage conformance check**: every driven port in `platform.yaml` must have a
   registered adapter (fails CI otherwise).
 - **Postgres integration test** (CI service container) + an 85% coverage floor.
@@ -73,11 +77,14 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   enforces deny-by-default per route. Structured **log redaction** matches the Python
   vertical for the JSON log sink (family-based key redaction + value scrubbing for
   JWT/bearer/AWS-key/PAN, recursive over event and span fields, with reserved-key
-  namespacing). Not yet at Python parity: per-line **log-to-trace correlation**
-  (`trace_id`/`span_id` are not emitted on Rust log lines), **redaction of the OTLP
-  span-export path** (log-sink redaction does not cover span-field export), HTTP request
-  **metrics** instrumentation, a live **Keycloak** JWKS integration test, and the
-  messaging/gRPC/`api_key`/`mTLS` surfaces (tracked follow-ups on v0.4).
+  namespacing). Per-line **log-to-trace correlation** (`trace_id`/`span_id` on every log
+  line inside a span), the **DB pool saturation metric**, and **redaction of the OTLP
+  span-export path** are now at Python parity. Not yet at parity: the messaging/gRPC/`api_key`/
+  `mTLS` surfaces (tracked on v0.6, epic #419). A live **Keycloak** JWKS integration test is now in place. **HTTP server request metrics** are now emitted:
+  `http.server.request.duration` (histogram, seconds) and `http.server.active_requests`
+  (up-down counter), labelled by the route TEMPLATE (`http.route` from axum `MatchedPath`),
+  `http.request.method`, and `http.response.status_code`, through a real OpenTelemetry
+  MeterProvider (OTLP export when an endpoint is configured, no-op reader otherwise).
 - **Go vertical (v0.4)**: a third language vertical, same hexagonal boundaries, stdlib-first
   (ADR-0018). Shared library `packages/keel-core-go` (a Cargo-workspace-equivalent `go.work`
   module) + thin `services/reference-service-go` (net/http + go-chi/chi). Implements the full
@@ -94,7 +101,10 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   go vet, staticcheck, go test (with a Postgres service), and **govulncheck as a blocking
   dependency-CVE gate**. Several Rust follow-ups are built in from the start here (native JWKS
   refresh, `scp`-string, log-trace correlation, ReDoS-immune scrubbers, honest `t.Skip`
-  integration gating). Not yet: HTTP request metrics and a live Keycloak JWKS test.
+  integration gating) plus **route-templated HTTP request metrics** (`http.server.request.duration`,
+  `http.server.active_requests`, via a chi middleware and an OTLP MeterProvider), a live Keycloak
+  JWKS integration test, and the DB pool saturation metric. At Python parity for the v0.6 surfaces
+  closed so far.
 - **TypeScript/NestJS vertical (v0.4)**: a fourth language vertical, same hexagonal
   boundaries, deliberately batteries-included (NestJS + DI) as the contrast to the stdlib-first
   Go/Rust services (ADR-0019). Shared library `packages/keel-core-ts` (`@keel/core`) + thin
@@ -115,9 +125,12 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   PSS-restricted posture. CI lane (`nest.yml`): prettier, typescript-eslint (type-checked),
   `tsc`, vitest (with a Postgres service), and **`pnpm audit` as a blocking dependency-CVE
   gate**. TypeScript is pinned to the latest 5.x the toolchain supports (not the 7.x native-port
-  compiler, which typescript-eslint and NestJS do not yet support). Not yet: HTTP request
-  metrics, a live Keycloak JWKS test, and JSON-formatting NestJS's own bootstrap log lines (the
-  app/error path already logs through the redacting pino logger).
+  compiler, which typescript-eslint and NestJS do not yet support). HTTP request metrics
+  (`http.server.request.duration` histogram + `http.server.active_requests` up-down counter,
+  labelled by the matched route template) are emitted via a core MetricsInterceptor against a
+  globally registered OpenTelemetry MeterProvider (OTLP exporter); a live Keycloak JWKS integration
+  test is now in place. Not yet: JSON-formatting NestJS's own bootstrap log lines (the app/error path already logs
+  through the redacting pino logger).
 - **Java/Spring Boot vertical (v0.4)**: a fifth language vertical, same hexagonal boundaries,
   the dominant enterprise JVM framework (ADR-0020), where several contract requirements are
   framework-native. Shared library `packages/keel-core-java` (`keel-core`) + thin
@@ -130,7 +143,11 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   through Spring Boot's structured-logging value processor, and **per-line trace correlation**
   (Micrometer Tracing populates `traceId`/`spanId`); OpenTelemetry/OTLP tracing; edge hardening
   as servlet filters (security headers outermost, body limit -> 413, request-id, deny-by-default
-  CORS) and health probes with a real readiness check; **OIDC/JWT auth via Spring Security
+  CORS) and health probes with a real readiness check; **HTTP server request metrics** exported
+  over OTLP (a `micrometer-registry-otlp` registry pushes Boot's `http.server.requests` timer,
+  renamed to the OTel `http.server.request.duration` histogram in seconds plus
+  `http.server.active_requests`, keyed by the route-template `uri`/`method`/`status` tags; export
+  gated on `KEEL_OTLP_ENDPOINT` like the span exporter); **OIDC/JWT auth via Spring Security
   resource server**, whose `NimbusJwtDecoder` refreshes the JWKS natively (and a custom
   converter accepts the Entra `scp`-as-string form), **structurally deny-by-default**
   (`anyRequest().authenticated()`) with per-route `@PreAuthorize` scopes; `JdbcClient`
@@ -141,9 +158,9 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   signed + SLSA-attested on release) and a Helm chart with the same PSS-restricted posture. CI
   lane (`java.yml`): **Spotless (google-java-format)**, JUnit + the Spring Boot conformance test
   (with a Postgres service), an **ArchUnit** hexagonal-layering test, JaCoCo, and **Trivy as the
-  blocking dependency-CVE gate**. Java is pinned to **25 LTS** (not the non-LTS 27). Not yet:
-  HTTP request metrics beyond Micrometer's defaults, a live Keycloak JWKS test, and a hard
-  JaCoCo coverage floor (needs cross-module report-aggregation).
+  blocking dependency-CVE gate**. Java is pinned to **25 LTS** (not the non-LTS 27). A live
+  Keycloak JWKS integration test is now in place, and a hard JaCoCo floor is enforced
+  (currently a weak 25/30 line/branch; raising it to Python parity is a v0.6 item).
 
 - **Service generator (v0.5, all five verticals; ADR-0021).** A **Copier** template per language
   (`templates/service-<lang>` for python, go, rust, java, ts) scaffolds a new thin service (the
@@ -169,6 +186,51 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   per-language workflows, so the reusable lanes are the mechanism for the polyrepo future (ADR-0011,
   which also needs the keel-core packages published per language).
 
+## Cross-vertical parity matrix (v0.6 target)
+
+Python is the reference vertical. The first LTS requires **full functional parity**: every
+capability implemented in every vertical, or explicitly waived. This matrix is the honest,
+code-audited current state and the v0.6 target (every non-`full` cell becomes `full`). It is
+tracked by epic #419. Legend: `full` = implemented + tested; `partial` = plumbing exists but not
+wired to a sink/gate; `none` = absent.
+
+| Capability | Python | Rust | Go | Java | TypeScript |
+|------------|--------|------|-----|------|------------|
+| HTTP request metrics (`http.server.*`, route-templated) | full | full | full | full | full |
+| Live Keycloak JWKS integration test | full | full | full | full | full |
+| Per-line log-to-trace correlation | full | full | full | full | full |
+| OTLP span-export redaction | full | full | full | full | full |
+| `api_key` authentication (hashed, X-API-Key) | full | full | full | full | full |
+| mTLS credentials | full (gRPC) | full | full | full | full |
+| NATS JetStream MessageBus adapter | full | full | full | full | full |
+| gRPC server (deny-by-default auth + mTLS) | full | full | full | full | full |
+| Enforced CI coverage floor | full (85%) | full (85%) | full (85%) | full (85% aggregate) | full (lib + service) |
+| DB pool saturation metric (emitted, not just readable) | full | full | full | full | full |
+| NestJS bootstrap logs as JSON (TS-only) | n/a | n/a | n/a | n/a | full |
+
+Closed so far in v0.6 (full across all five): HTTP request metrics, per-line log-to-trace
+correlation, the DB pool saturation metric, the live Keycloak JWKS integration test, and (TS)
+JSON bootstrap logging. The **enforced coverage floor is now at the 85% parity bar in all five**:
+Python and Rust already were; Go reached it with meaningful handler/repository/boot tests (75 to
+86%), TS raised the reference service to the library bar with mocked-pool repository + wiring tests
+(38 to 94%), and Java enforces 85% on an honest cross-module JaCoCo report-aggregate (the per-module
+number undercounted because the reference service's conformance tests exercise keel-core's classes).
+
+OTLP span-export redaction is now full across all five: each vertical wraps its span exporter to
+scrub secret-family attribute keys and secret-pattern values (and span names/events) through the
+same redactor the log sink uses, so secrets no longer reach the collector in cleartext.
+
+`api_key` authentication and the NATS JetStream MessageBus adapter (with trace-context
+propagation and poison handling) are full across all five. The **gRPC server + mTLS** are now too:
+a single `keel.reference.v1` protobuf contract with buf codegen (committed stubs, byte-identical
+regeneration dogfood; ADR-0022) drives a deny-by-default gRPC server factory per language (the auth
+interceptor is installed by construction, re-verifies the Bearer token, enforces per-method scopes,
+UNAUTHENTICATED / PERMISSION_DENIED) with mutual-TLS server + client credentials proven over a real
+loopback handshake (trusted succeeds, untrusted-CA rejected).
+
+**v0.6 cross-vertical parity is complete:** every capability in the matrix is full across all five
+verticals. The remaining backend-integration work (Kafka/RabbitMQ brokers, AsyncAPI) is v0.7.
+
 ## Planned - described in the contract/ADRs but NOT yet implemented
 
 | Area | Claimed in | Status |
@@ -178,7 +240,7 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
 | **Keycloak / NATS integration tests** | ADR-0010 | **Implemented** - CI integration job runs Postgres, a NATS JetStream container (MessageBus roundtrip), and Keycloak with an imported realm (OIDC authenticate against a real JWKS via client_credentials) |
 | **Kubernetes/Helm** + runtime `securityContext`, NetworkPolicy | ADR-0004/0008 | **Implemented** - Helm chart at `deploy/charts/reference-service` (non-root, read-only rootfs, drop-all caps, seccomp RuntimeDefault, no SA token, default-deny NetworkPolicy, liveness/readiness probes); lint + kubeconform in CI |
 | Base-image **digest pinning** | platform.yaml image; ADR-0008 | **Deliberately not pinned.** Chainguard bases are rolling/continuously-rebuilt, so every build is Trivy-scanned instead; a static digest pin would freeze stale CVEs. The published image is cosign-signed and attested by its built digest. (No Renovate in this repo; Dependabot covers the github-actions, uv, and npm ecosystems.) |
-| **gRPC IDL/buf**, **Kafka/RabbitMQ** broker adapters | platform.yaml interservice; ADR-0012 | **Partial.** NATS JetStream adapter (`keel-core[nats]`) implemented with trace propagation, held to a shared MessageBus contract; Kafka/RabbitMQ and buf/protobuf IDL still planned. gRPC application auth (deny-by-default) and mTLS credentials are implemented. |
+| **gRPC IDL/buf**, **Kafka/RabbitMQ** broker adapters | platform.yaml interservice; ADR-0012 | **Mostly implemented.** The buf/protobuf IDL (`keel.reference.v1`, ADR-0022) + a gRPC server with deny-by-default auth + mTLS are implemented in all five verticals; the NATS JetStream `MessageBus` adapter too. **Kafka/RabbitMQ** broker adapters + AsyncAPI are the remaining planned items (v0.7). |
 | Production **secret backends** (Vault, AWS/GCP secret managers) | platform.yaml `secrets.prod_adapters` | **Not implemented.** The `SecretProvider` port exists with an env-backed adapter (dev). The `vault` / `aws_secrets_manager` / `gcp_secret_manager` production adapters named in the contract are not yet built; deployments inject secrets via env (Kubernetes Secret) today. |
 
 This table shrinks as the gaps close. v0.1 delivered the Python vertical and its review

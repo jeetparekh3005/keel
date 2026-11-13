@@ -9,9 +9,15 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 
 	"github.com/jeetparekh3005/keel/packages/keel-core-go/domain"
 )
+
+// meterName scopes the pool saturation instruments to this package so the emitted metrics are
+// attributable to keel-core-go rather than an anonymous scope.
+const meterName = "github.com/jeetparekh3005/keel/packages/keel-core-go/persistence"
 
 // Database is a Postgres connection pool.
 type Database struct {
@@ -40,17 +46,71 @@ func (d *Database) Ping(ctx context.Context) bool { return d.pool.Ping(ctx) == n
 // Close releases the pool.
 func (d *Database) Close() { d.pool.Close() }
 
-// PoolStats is pool usage, for the saturation (fourth golden) signal.
+// PoolStats is pool usage, for the saturation (fourth golden) signal. Max is the configured
+// ceiling (the saturation denominator); Acquired/Idle/Total are the live counts.
 type PoolStats struct {
 	Total    int32
 	Idle     int32
 	Acquired int32
+	Max      int32
 }
 
 // Stats returns current pool usage.
 func (d *Database) Stats() PoolStats {
 	s := d.pool.Stat()
-	return PoolStats{Total: s.TotalConns(), Idle: s.IdleConns(), Acquired: s.AcquiredConns()}
+	return PoolStats{
+		Total:    s.TotalConns(),
+		Idle:     s.IdleConns(),
+		Acquired: s.AcquiredConns(),
+		Max:      s.MaxConns(),
+	}
+}
+
+// ObservePoolMetrics registers OpenTelemetry observable gauges of this pool's saturation on mp,
+// reading the live pool stats on each metric collection. It emits the OTel DB semconv signals
+// db.client.connection.count (by state: used | idle) and db.client.connection.max (the
+// denominator), both tagged with db.client.connection.pool.name so a service running several
+// pools does not collapse them into one series. Call it once after the pool is connected and the
+// MeterProvider is installed. A no-op provider (telemetry export off) yields no-op instruments,
+// so this is always safe to call.
+func (d *Database) ObservePoolMetrics(mp metric.MeterProvider, poolName string) error {
+	return observePoolMetrics(mp, poolName, d.Stats)
+}
+
+// observePoolMetrics is the decoupled core of ObservePoolMetrics: it reads whatever stats
+// returns on each collection, so a test can register against a fake stats source without a live
+// pool.
+func observePoolMetrics(mp metric.MeterProvider, poolName string, stats func() PoolStats) error {
+	m := mp.Meter(meterName)
+	count, err := m.Int64ObservableGauge(
+		"db.client.connection.count",
+		metric.WithUnit("{connection}"),
+		metric.WithDescription("Database connections by state."),
+	)
+	if err != nil {
+		return err
+	}
+	maxConns, err := m.Int64ObservableGauge(
+		"db.client.connection.max",
+		metric.WithUnit("{connection}"),
+		metric.WithDescription("Maximum open connections the pool allows (saturation denominator)."),
+	)
+	if err != nil {
+		return err
+	}
+	pool := attribute.String("db.client.connection.pool.name", poolName)
+	_, err = m.RegisterCallback(func(_ context.Context, o metric.Observer) error {
+		s := stats()
+		// semconv state enum {used, idle}: used = checked-out connections, idle = warm
+		// checked-in connections.
+		o.ObserveInt64(count, int64(s.Acquired),
+			metric.WithAttributes(pool, attribute.String("db.client.connection.state", "used")))
+		o.ObserveInt64(count, int64(s.Idle),
+			metric.WithAttributes(pool, attribute.String("db.client.connection.state", "idle")))
+		o.ObserveInt64(maxConns, int64(s.Max), metric.WithAttributes(pool))
+		return nil
+	}, count, maxConns)
+	return err
 }
 
 // Begin starts a transactional unit of work.
