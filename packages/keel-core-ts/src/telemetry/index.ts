@@ -13,6 +13,8 @@ import { NodeSDK } from '@opentelemetry/sdk-node';
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
 import { randomUUID } from 'node:crypto';
 
+import { RedactingSpanExporter } from './span-redaction.js';
+
 export { observeDbPool, type ObserveDbPoolOptions, type PoolStatsSource } from './saturation.js';
 
 /** Telemetry identity and export configuration. */
@@ -47,7 +49,10 @@ export function initTelemetry(options: TelemetryOptions): () => Promise<void> {
 
   const sdk = new NodeSDK({
     resource,
-    traceExporter: new OTLPTraceExporter({ url: options.otlpEndpoint }),
+    // Wrap the OTLP trace exporter so secret-family attribute keys and pattern secrets in string
+    // attribute values (and the span name) are redacted at the export boundary, matching the pino
+    // log sink. NodeSDK still batches: it feeds this decorator through its BatchSpanProcessor.
+    traceExporter: new RedactingSpanExporter(new OTLPTraceExporter({ url: options.otlpEndpoint })),
     metricReaders: [
       new PeriodicExportingMetricReader({
         exporter: new OTLPMetricExporter({ url: options.otlpEndpoint }),
