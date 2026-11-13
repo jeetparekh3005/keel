@@ -1,10 +1,13 @@
 //! axum integration for authentication/authorization (the deny-by-default edge).
 //!
-//! A handler that takes [`Authed`] is protected: a missing or invalid Bearer token is
-//! rejected before the handler runs (401), a key-source outage is a 503, and scope
-//! checks return 403 - all rendered as RFC 9457 problem+json. Public routes simply do
-//! not take [`Authed`]. The shared [`Authenticator`] is provided via a request
-//! extension (see [`authenticator_layer`]).
+//! A handler that takes [`Authed`] is protected: a request authenticates via EITHER an
+//! `X-API-Key` header (verified by the [`ApiKeyAuthenticator`]) OR a Bearer JWT (the
+//! [`Authenticator`] extension). A missing or invalid credential is rejected before the
+//! handler runs (401), a key-source outage is a 503, and scope checks return 403 - all
+//! rendered as RFC 9457 problem+json, and the same deny-by-default scope check applies
+//! whichever credential produced the [`Principal`]. Public routes simply do not take
+//! [`Authed`]. The authenticators are provided via request extensions (see
+//! [`authenticator_layer`] and [`api_key_authenticator_layer`]).
 
 use std::sync::Arc;
 
@@ -15,14 +18,33 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Extension;
 
+use crate::api_key::ApiKeyAuthenticator;
 use crate::auth::{Authenticator, Principal};
 use crate::domain::errors::{DomainError, ErrorCategory};
+
+/// The header that carries an opaque API key (the non-Bearer credential).
+const API_KEY_HEADER: &str = "x-api-key";
 
 /// A shared authenticator, attached to the router as a request extension.
 pub type SharedAuthenticator = Arc<dyn Authenticator>;
 
+/// A shared API-key authenticator, attached as a distinct request extension so it never
+/// collides with the Bearer [`SharedAuthenticator`] in the type-keyed extension map.
+pub type SharedApiKeyAuthenticator = Arc<ApiKeyAuthenticator>;
+
 /// The extension layer that makes `authenticator` available to the [`Authed`] extractor.
 pub fn authenticator_layer(authenticator: SharedAuthenticator) -> Extension<SharedAuthenticator> {
+    Extension(authenticator)
+}
+
+/// The extension layer that enables the `X-API-Key` path for the [`Authed`] extractor.
+///
+/// Optional: a service that layers it accepts API keys in addition to Bearer JWTs; a
+/// service that does not keeps the Bearer-only behavior. Either way the resulting
+/// [`Principal`] flows into the same scope checks.
+pub fn api_key_authenticator_layer(
+    authenticator: SharedApiKeyAuthenticator,
+) -> Extension<SharedApiKeyAuthenticator> {
     Extension(authenticator)
 }
 
@@ -73,6 +95,25 @@ where
     type Rejection = DomainError;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        // EITHER/OR credential resolution. An explicit `X-API-Key` header takes the
+        // API-key path; otherwise the Bearer/JWT path runs unchanged. Whichever
+        // produces the Principal, it flows into the same `require_scopes` check, so an
+        // API-key caller is just as subject to deny-by-default as a Bearer caller.
+        if let Some(key) = api_key_header(parts) {
+            let authenticator = parts
+                .extensions
+                .get::<SharedApiKeyAuthenticator>()
+                .ok_or_else(|| {
+                    // The caller presented an API key but this service accepts none:
+                    // an unknown credential, so 401 (not a 500) and no config is leaked.
+                    DomainError::new(
+                        ErrorCategory::Unauthenticated,
+                        "api-key authentication is not enabled",
+                    )
+                })?;
+            let principal = authenticator.authenticate(key)?;
+            return Ok(Authed(principal));
+        }
         let authenticator = parts
             .extensions
             .get::<SharedAuthenticator>()
@@ -98,9 +139,20 @@ fn bearer_token(parts: &Parts) -> Option<&str> {
     (!token.is_empty()).then_some(token)
 }
 
+fn api_key_header(parts: &Parts) -> Option<&str> {
+    // An empty or non-ASCII header value is treated as absent, so it falls through to
+    // the Bearer path rather than forcing a failed API-key lookup.
+    let key = parts.headers.get(API_KEY_HEADER)?.to_str().ok()?.trim();
+    (!key.is_empty()).then_some(key)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{authenticator_layer, Authed, SharedAuthenticator};
+    use super::{
+        api_key_authenticator_layer, authenticator_layer, Authed, SharedApiKeyAuthenticator,
+        SharedAuthenticator,
+    };
+    use crate::api_key::ApiKeyAuthenticator;
     use crate::auth::Principal;
     use crate::domain::errors::ErrorCategory;
     use crate::testkit::StubAuthenticator;
@@ -113,17 +165,18 @@ mod tests {
     use std::sync::Arc;
     use tower::ServiceExt;
 
-    fn app() -> Router {
-        let principal = Principal {
+    fn principal(scopes: &[&str]) -> Principal {
+        Principal {
             subject: "user-1".to_string(),
-            scopes: BTreeSet::from(["items:read".to_string()]),
+            scopes: scopes
+                .iter()
+                .map(ToString::to_string)
+                .collect::<BTreeSet<_>>(),
             roles: BTreeSet::new(),
-        };
-        let authenticator: SharedAuthenticator =
-            Arc::new(StubAuthenticator::new(HashMap::from([(
-                "tok".to_string(),
-                principal,
-            )])));
+        }
+    }
+
+    fn routes() -> Router {
         Router::new()
             .route(
                 "/protected",
@@ -139,7 +192,33 @@ mod tests {
                     Ok::<_, crate::domain::errors::DomainError>(StatusCode::OK)
                 }),
             )
-            .layer(authenticator_layer(authenticator))
+    }
+
+    fn app() -> Router {
+        let authenticator: SharedAuthenticator =
+            Arc::new(StubAuthenticator::new(HashMap::from([(
+                "tok".to_string(),
+                principal(&["items:read"]),
+            )])));
+        routes().layer(authenticator_layer(authenticator))
+    }
+
+    // An app wiring BOTH paths: the Bearer stub ("tok" -> items:read) and an API-key
+    // authenticator ("k-read" -> items:read, "k-norole" -> an unrelated scope). Used to
+    // prove the EITHER/OR resolution and that deny-by-default still applies to API keys.
+    fn app_with_api_keys() -> Router {
+        let bearer: SharedAuthenticator = Arc::new(StubAuthenticator::new(HashMap::from([(
+            "tok".to_string(),
+            principal(&["items:read"]),
+        )])));
+        let api_keys: SharedApiKeyAuthenticator =
+            Arc::new(ApiKeyAuthenticator::from_keys(HashMap::from([
+                ("k-read".to_string(), principal(&["items:read"])),
+                ("k-norole".to_string(), principal(&["unrelated:scope"])),
+            ])));
+        routes()
+            .layer(api_key_authenticator_layer(api_keys))
+            .layer(authenticator_layer(bearer))
     }
 
     async fn call(path: &str, auth: Option<&str>) -> StatusCode {
@@ -148,6 +227,18 @@ mod tests {
             builder = builder.header("authorization", format!("Bearer {token}"));
         }
         app()
+            .oneshot(builder.body(Body::empty()).unwrap())
+            .await
+            .unwrap()
+            .status()
+    }
+
+    async fn call_api_key(path: &str, key: Option<&str>) -> StatusCode {
+        let mut builder = Request::get(path);
+        if let Some(key) = key {
+            builder = builder.header("x-api-key", key);
+        }
+        app_with_api_keys()
             .oneshot(builder.body(Body::empty()).unwrap())
             .await
             .unwrap()
@@ -193,6 +284,97 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn valid_api_key_with_scope_is_200() {
+        // An X-API-Key caller whose principal holds the required scope passes the same
+        // scope-guarded route a Bearer caller would.
+        assert_eq!(
+            call_api_key("/protected", Some("k-read")).await,
+            StatusCode::OK
+        );
+    }
+
+    #[tokio::test]
+    async fn wrong_api_key_is_401() {
+        assert_eq!(
+            call_api_key("/protected", Some("k-bogus")).await,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[tokio::test]
+    async fn absent_credential_is_401() {
+        // Neither header present: deny-by-default rejects before the handler runs.
+        assert_eq!(
+            call_api_key("/protected", None).await,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[tokio::test]
+    async fn api_key_principal_missing_scope_is_403() {
+        // "k-norole" authenticates (401 would be wrong) but lacks items:write, so the
+        // deny-by-default scope check still returns 403 - an API-key principal is not
+        // privileged past the route's required scope.
+        assert_eq!(
+            call_api_key("/needs-write", Some("k-norole")).await,
+            StatusCode::FORBIDDEN
+        );
+    }
+
+    #[tokio::test]
+    async fn bearer_path_unchanged_when_api_keys_enabled() {
+        // With the API-key layer present, a Bearer JWT (no X-API-Key header) still
+        // resolves via the Bearer authenticator exactly as before.
+        let status = app_with_api_keys()
+            .oneshot(
+                Request::get("/protected")
+                    .header("authorization", "Bearer tok")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+            .status();
+        assert_eq!(status, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn api_key_header_takes_precedence_over_bearer() {
+        // When both headers are present, X-API-Key wins. A bogus key therefore 401s even
+        // though the Bearer token is valid - the resolution is header-driven, not a
+        // fallback cascade.
+        let status = app_with_api_keys()
+            .oneshot(
+                Request::get("/protected")
+                    .header("x-api-key", "k-bogus")
+                    .header("authorization", "Bearer tok")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+            .status();
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn api_key_without_api_key_layer_is_401() {
+        // The Bearer-only app has no API-key authenticator; presenting an API key is an
+        // unknown credential (401), never a 500.
+        let status = app()
+            .oneshot(
+                Request::get("/protected")
+                    .header("x-api-key", "k-read")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+            .status();
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]

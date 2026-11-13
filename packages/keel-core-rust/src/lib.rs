@@ -6,6 +6,7 @@
 //! logging, telemetry, the HTTP edge, auth, persistence, and the conformance kit.
 
 pub mod adapters;
+pub mod api_key;
 pub mod auth;
 pub mod config;
 pub mod domain;
