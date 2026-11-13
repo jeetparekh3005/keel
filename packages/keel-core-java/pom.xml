@@ -68,6 +68,14 @@
       <artifactId>spring-boot-starter-test</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- InMemorySpanExporter + the SDK tracer-provider test harness, used to prove the redacting
+         span exporter scrubs secrets on export. Version is managed by the OpenTelemetry BOM that
+         Spring Boot's dependency management imports (same source as the SDK trace classes). -->
+    <dependency>
+      <groupId>io.opentelemetry</groupId>
+      <artifactId>opentelemetry-sdk-testing</artifactId>
+      <scope>test</scope>
+    </dependency>
     <dependency>
       <groupId>com.tngtech.archunit</groupId>
       <artifactId>archunit-junit5</artifactId>
