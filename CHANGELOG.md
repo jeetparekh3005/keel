@@ -1,5 +1,49 @@
 # Changelog
 
+## [0.6.0](https://github.com/jeetparekh3005/keel/compare/v0.5.3...v0.6.0) (2026-11-13)
+
+
+### Features
+
+* **go:** API-key (X-API-Key) authentication ([#454](https://github.com/jeetparekh3005/keel/issues/454)) ([fc76f9f](https://github.com/jeetparekh3005/keel/commit/fc76f9ffe7bfb2d8e4db6b8d77f9d5cd275a008d))
+* **go:** emit DB pool saturation metrics ([#432](https://github.com/jeetparekh3005/keel/issues/432)) ([6f332ec](https://github.com/jeetparekh3005/keel/commit/6f332ec9b7a9f92f3110f3e0195799c6db057593))
+* **go:** emit http.server request metrics (route-templated) ([#427](https://github.com/jeetparekh3005/keel/issues/427)) ([c5e5e54](https://github.com/jeetparekh3005/keel/commit/c5e5e5461f6ae999afa9eaf9bc1f77ac7f98ecbc))
+* **go:** gRPC server (deny-by-default auth + mTLS) ([#471](https://github.com/jeetparekh3005/keel/issues/471)) ([0125861](https://github.com/jeetparekh3005/keel/commit/01258619adf3b1ec06ea9cc5337a57acd5312876))
+* **go:** NATS JetStream MessageBus adapter ([#459](https://github.com/jeetparekh3005/keel/issues/459)) ([16548e2](https://github.com/jeetparekh3005/keel/commit/16548e20f36daeb0cd5a023009453205be212bf1))
+* **go:** redact secrets on the OTLP span-export path ([#449](https://github.com/jeetparekh3005/keel/issues/449)) ([39e63f1](https://github.com/jeetparekh3005/keel/commit/39e63f16d22eb60ea6f4398024fde88716526bb2))
+* **java:** API-key (X-API-Key) authentication ([#457](https://github.com/jeetparekh3005/keel/issues/457)) ([6796ab3](https://github.com/jeetparekh3005/keel/commit/6796ab36f7b542a6ed293dbfac65d63533685dd9))
+* **java:** export DB pool saturation metrics ([#435](https://github.com/jeetparekh3005/keel/issues/435)) ([6bc5240](https://github.com/jeetparekh3005/keel/commit/6bc52407e1fcb5fa72f1b916d787efa16594da01))
+* **java:** export http.server request metrics (route-templated) ([#430](https://github.com/jeetparekh3005/keel/issues/430)) ([ffdcce0](https://github.com/jeetparekh3005/keel/commit/ffdcce0352af4477d9eefc4977d31369301da227))
+* **java:** gRPC server (deny-by-default auth + mTLS) ([#475](https://github.com/jeetparekh3005/keel/issues/475)) ([c3a37eb](https://github.com/jeetparekh3005/keel/commit/c3a37eb01886b337a3161848414d2766aaceec14))
+* **java:** NATS JetStream MessageBus adapter ([#461](https://github.com/jeetparekh3005/keel/issues/461)) ([0feb6e4](https://github.com/jeetparekh3005/keel/commit/0feb6e400a33105ccedf63fc401d84c6a24cd276))
+* **java:** redact secrets on the OTLP span-export path ([#450](https://github.com/jeetparekh3005/keel/issues/450)) ([7164d69](https://github.com/jeetparekh3005/keel/commit/7164d69b9704eb3c4fc815940f0ea8d1453db7f0))
+* **platform:** protobuf contract (keel.reference.v1) + buf codegen for all five languages ([#470](https://github.com/jeetparekh3005/keel/issues/470)) ([a615a95](https://github.com/jeetparekh3005/keel/commit/a615a9545c07f1c1ee76665ebdbb8c14716ac77d))
+* **python:** emit http.server request metrics (route-templated) ([#431](https://github.com/jeetparekh3005/keel/issues/431)) ([85fff45](https://github.com/jeetparekh3005/keel/commit/85fff4535d735a903682b1b098a80377859aadca))
+* **python:** gRPC ItemService servicer (deny-by-default, mTLS) ([#472](https://github.com/jeetparekh3005/keel/issues/472)) ([19bc42f](https://github.com/jeetparekh3005/keel/commit/19bc42f73fe0551ea38b3401061c93813a479958))
+* **python:** redact secrets on the OTLP span-export path ([#448](https://github.com/jeetparekh3005/keel/issues/448)) ([d052fa3](https://github.com/jeetparekh3005/keel/commit/d052fa39f4dc403415ae03f82c393ff570417de0))
+* **rust:** API-key (X-API-Key) authentication ([#455](https://github.com/jeetparekh3005/keel/issues/455)) ([f84009d](https://github.com/jeetparekh3005/keel/commit/f84009d2fc50e6fc7d93a84293eaeba0600d9af1))
+* **rust:** emit http.server request metrics (route-templated) ([#429](https://github.com/jeetparekh3005/keel/issues/429)) ([35678a2](https://github.com/jeetparekh3005/keel/commit/35678a27a9d6689ee1bd088d6eea98e1fb2873f0))
+* **rust:** gRPC server (deny-by-default auth + mTLS) ([#474](https://github.com/jeetparekh3005/keel/issues/474)) ([b386cd3](https://github.com/jeetparekh3005/keel/commit/b386cd3294ad17df374745b69535afbe4f184547))
+* **rust:** NATS JetStream MessageBus adapter ([#460](https://github.com/jeetparekh3005/keel/issues/460)) ([5988a82](https://github.com/jeetparekh3005/keel/commit/5988a8263f35aa63450cb1f33acc19086becb468))
+* **rust:** per-line log-trace correlation and DB pool saturation metrics ([#434](https://github.com/jeetparekh3005/keel/issues/434)) ([765dd06](https://github.com/jeetparekh3005/keel/commit/765dd06ffcc6f5cb1159c05a5f6a8a03b40195f1))
+* **rust:** redact secrets on the OTLP span-export path ([#452](https://github.com/jeetparekh3005/keel/issues/452)) ([89fa49e](https://github.com/jeetparekh3005/keel/commit/89fa49eba53fa62c48e257f80efcca0ff1ece536))
+* **ts:** API-key (X-API-Key) authentication ([#456](https://github.com/jeetparekh3005/keel/issues/456)) ([27378dc](https://github.com/jeetparekh3005/keel/commit/27378dca5d266f9739589f9b00d16b87075cf7fb))
+* **ts:** emit DB pool saturation metrics ([#433](https://github.com/jeetparekh3005/keel/issues/433)) ([7cd83ba](https://github.com/jeetparekh3005/keel/commit/7cd83baed3224e8280b1d4698405d0b2dad5b0dc))
+* **ts:** emit http.server request metrics (route-templated) ([#428](https://github.com/jeetparekh3005/keel/issues/428)) ([d757f7b](https://github.com/jeetparekh3005/keel/commit/d757f7bc1a1d35c7c2110ca87d5a5c559576ae5b))
+* **ts:** gRPC server (deny-by-default auth + mTLS) ([#473](https://github.com/jeetparekh3005/keel/issues/473)) ([391c3ac](https://github.com/jeetparekh3005/keel/commit/391c3ac2e632ad1b5755797cf20edb16e1fd3e6e))
+* **ts:** NATS JetStream MessageBus adapter ([#462](https://github.com/jeetparekh3005/keel/issues/462)) ([27c962f](https://github.com/jeetparekh3005/keel/commit/27c962fe5e3eef01ddcbad2e9ee9699a94f0ea97))
+* **ts:** redact secrets on the OTLP span-export path ([#451](https://github.com/jeetparekh3005/keel/issues/451)) ([15be57d](https://github.com/jeetparekh3005/keel/commit/15be57d2d2b653d44b4fd2c8ad194a04b158a04d))
+
+
+### Bug Fixes
+
+* **ts:** make the Keycloak tampered-token test reliably invalidate the signature ([#446](https://github.com/jeetparekh3005/keel/issues/446)) ([2810164](https://github.com/jeetparekh3005/keel/commit/28101641c6b17adc8e8a2bd837411cf68b0e72bc))
+
+
+### Miscellaneous Chores
+
+* release v0.6.0 (dev to main) ([bd31df9](https://github.com/jeetparekh3005/keel/commit/bd31df90fb2f47f98af529323a2543c6f6ebaf27))
+
 ## [0.5.3](https://github.com/jeetparekh3005/keel/compare/v0.5.2...v0.5.3) (2026-11-12)
 
 
