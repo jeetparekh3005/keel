@@ -204,27 +204,27 @@ wired to a sink/gate; `none` = absent.
 | mTLS credentials | full (gRPC) | none | none | none | none |
 | NATS JetStream MessageBus adapter | full | full | full | full | full |
 | gRPC server (deny-by-default auth + mTLS) | full | none | none | none | none |
-| Enforced CI coverage floor | full (85%) | full (85%) | partial (71%) | partial (30/65%) | partial (74% lib / 37% svc) |
+| Enforced CI coverage floor | full (85%) | full (85%) | full (85%) | full (85% aggregate) | full (lib + service) |
 | DB pool saturation metric (emitted, not just readable) | full | full | full | full | full |
 | NestJS bootstrap logs as JSON (TS-only) | n/a | n/a | n/a | n/a | full |
 
 Closed so far in v0.6 (full across all five): HTTP request metrics, per-line log-to-trace
 correlation, the DB pool saturation metric, the live Keycloak JWKS integration test, and (TS)
-JSON bootstrap logging. A coverage floor is now enforced in every vertical, but only Python and
-Rust are at the 85% parity bar: Go (71%), Java (per-module 30/65%), and TS (74% lib / 37% svc)
-enforce the measured floor today and are marked `partial` until raised to 85% - that needs
-test-writing (Go/TS service layers) and cross-module JaCoCo aggregation (Java), tracked as a v0.6
-follow-up, not a config change.
+JSON bootstrap logging. The **enforced coverage floor is now at the 85% parity bar in all five**:
+Python and Rust already were; Go reached it with meaningful handler/repository/boot tests (75 to
+86%), TS raised the reference service to the library bar with mocked-pool repository + wiring tests
+(38 to 94%), and Java enforces 85% on an honest cross-module JaCoCo report-aggregate (the per-module
+number undercounted because the reference service's conformance tests exercise keel-core's classes).
 
 OTLP span-export redaction is now full across all five: each vertical wraps its span exporter to
 scrub secret-family attribute keys and secret-pattern values (and span names/events) through the
 same redactor the log sink uses, so secrets no longer reach the collector in cleartext.
 
 `api_key` authentication and the NATS JetStream MessageBus adapter (with trace-context
-propagation and poison handling) are now full across all five. Still open in v0.6: **mTLS** and
-the **gRPC** server, which exist only in Python and couple with the v0.7 buf/protobuf IDL (so
-they are sequenced to land with it); and raising the Go/Java/TS coverage floors to the 85% parity
-bar (a test-writing + JaCoCo-aggregation follow-up).
+propagation and poison handling) are now full across all five. The only capabilities still open in
+v0.6 are **mTLS** and the **gRPC** server, which exist only in Python and couple with the v0.7
+buf/protobuf IDL, so they are sequenced to land with it. Every other capability in the matrix is now
+full across all five verticals.
 
 ## Planned - described in the contract/ADRs but NOT yet implemented
 
