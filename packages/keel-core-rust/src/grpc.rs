@@ -99,13 +99,18 @@ fn authorize(
             _ => Status::unauthenticated("invalid token"),
         }
     })?;
-    if let Some(required) = scopes.get(path) {
-        if !required
-            .iter()
-            .all(|scope| principal.scopes.contains(scope))
-        {
-            return Err(Status::permission_denied("insufficient scope"));
-        }
+    // Deny-by-default: a method absent from the scope map is not exposed to anyone, even a
+    // valid caller (fail-closed, not fail-open). An EXPLICIT "any authenticated caller may
+    // call this" is a present-but-empty scope set (`Some(&[])`), which the `all` below passes
+    // vacuously; it is deliberately distinct from absence (`None`).
+    let Some(required) = scopes.get(path) else {
+        return Err(Status::permission_denied("method not authorized"));
+    };
+    if !required
+        .iter()
+        .all(|scope| principal.scopes.contains(scope))
+    {
+        return Err(Status::permission_denied("insufficient scope"));
     }
     Ok(principal)
 }
@@ -339,8 +344,9 @@ impl ItemService for InMemoryItemService {
 #[cfg(test)]
 mod tests {
     use super::{
-        bearer_token, client_tls_config, reference_router, reference_scopes, server_tls_config,
-        InMemoryItemService, SharedAuthenticator, SCOPE_ITEMS_READ, SCOPE_ITEMS_WRITE,
+        authorize, bearer_token, client_tls_config, reference_router, reference_scopes,
+        server_tls_config, InMemoryItemService, SharedAuthenticator, SCOPE_ITEMS_READ,
+        SCOPE_ITEMS_WRITE,
     };
     use crate::auth::{Authenticator, Principal};
     use crate::domain::errors::{DomainError, ErrorCategory};
@@ -445,6 +451,38 @@ mod tests {
         assert_eq!(bearer_token(&headers), Some("abc"));
         headers.insert("authorization", "Basic abc".parse().unwrap());
         assert!(bearer_token(&headers).is_none());
+    }
+
+    // Deny-by-default: a valid token to a method NOT in the scope map is PERMISSION_DENIED,
+    // never allowed. (Before the fail-closed fix this returned the principal, i.e. fail-open.)
+    // Exercised at the `authorize` seam because no generated client can dial an unmapped path.
+    #[test]
+    fn authenticated_request_to_unmapped_path_is_permission_denied() {
+        let authenticator = stub();
+        let scopes = reference_scopes();
+        let mut headers = tonic::codegen::http::HeaderMap::new();
+        headers.insert("authorization", "Bearer tok-write".parse().unwrap());
+        let status = authorize(
+            authenticator.as_ref(),
+            &scopes,
+            "/keel.reference.v1.ItemService/Unmapped",
+            &headers,
+        )
+        .unwrap_err();
+        assert_eq!(status.code(), Code::PermissionDenied);
+    }
+
+    // An EXPLICIT open (a present-but-empty scope set) stays allowed for any authenticated
+    // caller: it is distinct from absence, which the test above denies.
+    #[test]
+    fn authenticated_request_to_explicitly_open_path_is_allowed() {
+        let authenticator = stub();
+        let scopes = HashMap::from([("/open".to_string(), Vec::<String>::new())]);
+        let mut headers = tonic::codegen::http::HeaderMap::new();
+        headers.insert("authorization", "Bearer tok-read".parse().unwrap());
+        let principal = authorize(authenticator.as_ref(), &scopes, "/open", &headers)
+            .expect("explicitly-open path allows any authenticated caller");
+        assert_eq!(principal.subject, "reader");
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
