@@ -28,3 +28,14 @@ async def test_nats_bus_satisfies_the_contract():
         await assert_pubsub_roundtrip(bus, subject="keel.test.events")
     finally:
         await bus.close()
+
+
+async def test_nats_bus_propagates_trace_context_end_to_end():
+    # Proves traceparent continuity over a real broker: the consumer handler must run
+    # under a context whose trace_id matches the producer's active span.
+    bus = NatsMessageBus(_NATS_URL, stream="keel-test-trace", subjects=["keel.test.trace.>"])
+    await bus.connect()
+    try:
+        await assert_pubsub_roundtrip(bus, subject="keel.test.trace.events", check_trace=True)
+    finally:
+        await bus.close()

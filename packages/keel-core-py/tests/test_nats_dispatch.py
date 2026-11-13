@@ -3,6 +3,7 @@
 from types import SimpleNamespace
 
 import pytest
+from opentelemetry import trace as otel_trace
 
 pytest.importorskip("nats")
 
@@ -58,6 +59,24 @@ def _bus(logger: _RecordingLogger | None = None) -> NatsMessageBus:
         max_deliver=5,
         logger=logger,  # type: ignore[arg-type]
     )
+
+
+async def test_dispatch_runs_handler_under_incoming_trace_context() -> None:
+    # A message carrying a known W3C traceparent must be dispatched to the handler
+    # under a context whose trace_id equals that header's (propagate.extract +
+    # context.attach), proving NATS consumer trace-continuity without a broker.
+    trace_id = "0af7651916cd43dd8448eb211c80319c"
+    span_id = "b7ad6b7169203331"
+    seen: dict[str, str] = {}
+
+    async def handler(_: InboundMessage) -> None:
+        span_context = otel_trace.get_current_span().get_span_context()
+        seen["trace_id"] = format(span_context.trace_id, "032x")
+
+    msg = _FakeMsg()
+    msg.headers = {"traceparent": f"00-{trace_id}-{span_id}-01"}
+    await _bus()._dispatch(msg, handler)  # noqa: SLF001
+    assert seen["trace_id"] == trace_id
 
 
 async def test_ack_on_success() -> None:
