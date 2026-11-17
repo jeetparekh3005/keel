@@ -88,7 +88,10 @@ def _redact_links(links: Sequence[Link]) -> list[Link]:
 
 def _redact_span(span: ReadableSpan) -> ReadableSpan:
     return ReadableSpan(
-        name=scrub_text(span.name),
+        # Span names are low-cardinality operation identifiers; the PAN matcher would
+        # false-positive on a Luhn-valid numeric path id, so it is skipped here while
+        # every other secret matcher (bearer/JWT/AWS-key/PEM) still runs.
+        name=scrub_text(span.name, include_pan=False),
         context=span.context,
         parent=span.parent,
         resource=span.resource,

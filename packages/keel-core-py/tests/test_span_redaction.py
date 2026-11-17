@@ -13,6 +13,7 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import Link, SpanContext, TraceFlags
 
+from keel_core.adapters.outbound.redaction import REDACTED
 from keel_core.adapters.outbound.telemetry import RedactingSpanExporter
 
 # A secret-family attribute KEY and a value carrying a high-precision pattern (AWS key).
@@ -142,3 +143,68 @@ def test_secret_in_span_name_is_scrubbed():
     assert "abcdef1234567890" not in tainted.name
     assert "[REDACTED]" in tainted.name
     assert normal.name == "GET /items"
+
+
+# A Luhn-valid 16-digit id (a test Visa number) embedded in a route, plus an AWS access
+# key id, both carried in a span name. The first is a legitimate low-cardinality path id
+# that must survive; the second is a real secret that must still be scrubbed.
+_LUHN_ID = "4532015112830366"
+_PAN_SPAN_NAME = f"GET /v1/accounts/{_LUHN_ID}/balance"
+_AWS_SPAN_NAME = f"GET /proxy?key={_AWS_KEY}"
+
+
+def _export_named_span(exporter: InMemorySpanExporter, name: str):
+    """Export a single span with ``name`` and return the exported (redacted) span."""
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(RedactingSpanExporter(exporter)))
+    tracer = provider.get_tracer("test-span-redaction")
+    with tracer.start_as_current_span(name):
+        pass
+    provider.force_flush()
+    (span,) = exporter.get_finished_spans()
+    return span
+
+
+def test_span_name_with_luhn_id_is_preserved():
+    """A Luhn-valid numeric path id in a span name must not be mistaken for a PAN.
+
+    Span names are low-cardinality operation identifiers, so a numeric id in the route
+    (account number, order id) is part of the name, not a leaked card number. The PAN
+    matcher is skipped for names; before the fix it rewrote the id to ``[REDACTED]``.
+    """
+    span = _export_named_span(InMemorySpanExporter(), _PAN_SPAN_NAME)
+
+    assert span.name == _PAN_SPAN_NAME
+    assert _LUHN_ID in span.name
+    assert REDACTED not in span.name
+
+
+def test_span_name_still_scrubs_non_pan_secret():
+    """Skipping the PAN matcher for names must not disarm the other matchers.
+
+    A bearer/JWT/AWS-key/PEM secret embedded in a span name is still a leak and must be
+    scrubbed; only the PAN/Luhn matcher is suppressed for names.
+    """
+    span = _export_named_span(InMemorySpanExporter(), _AWS_SPAN_NAME)
+
+    assert _AWS_KEY not in span.name
+    assert REDACTED in span.name
+
+
+def test_span_attribute_value_still_redacts_pan():
+    """The full value scrubber (attributes/events/links) must keep PAN redaction.
+
+    Only span names skip the PAN matcher; a Luhn-valid card number in a free-form
+    attribute value is still a leak and must be redacted by the unchanged ``scrub_text``.
+    """
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(RedactingSpanExporter(exporter)))
+    tracer = provider.get_tracer("test-span-redaction")
+    with tracer.start_as_current_span("charge") as span:
+        span.set_attribute("note", f"card {_LUHN_ID} declined")
+    provider.force_flush()
+    (exported,) = exporter.get_finished_spans()
+
+    assert _LUHN_ID not in exported.attributes["note"]
+    assert REDACTED in str(exported.attributes["note"])
