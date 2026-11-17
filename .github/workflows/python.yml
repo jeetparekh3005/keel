@@ -105,7 +105,11 @@ jobs:
             curl -sf http://localhost:8080/realms/keel/.well-known/openid-configuration >/dev/null 2>&1 && break
             sleep 3
           done
-      - name: Integration tests (real Postgres + NATS + Keycloak)
+      - name: Start OpenBao (dev)
+        run: |
+          docker run -d --name openbao -p 8200:8200 --cap-add IPC_LOCK -e BAO_DEV_ROOT_TOKEN_ID=root openbao/openbao:2.7.2 server -dev -dev-root-token-id=root -dev-listen-address=0.0.0.0:8200
+          for i in $(seq 1 30); do curl -sf http://localhost:8200/v1/sys/health >/dev/null && break; sleep 1; done
+      - name: Integration tests (real Postgres + NATS + Keycloak + OpenBao)
         env:
           KEEL_TEST_DATABASE_URL: postgresql+asyncpg://keel:keel@localhost:5432/reference
           KEEL_NATS_URL: nats://localhost:4222
@@ -114,4 +118,8 @@ jobs:
           KEEL_KEYCLOAK_CLIENT_ID: keel-api
           KEEL_KEYCLOAK_CLIENT_SECRET: test-secret
           KEEL_OIDC_AUDIENCE: keel-api
+          KEEL_VAULT_ADDR: http://localhost:8200
+          KEEL_VAULT_TOKEN: root
+          KEEL_VAULT_MOUNT: secret
+          KEEL_VAULT_PATH: keel-test
         run: uv run pytest -m integration
