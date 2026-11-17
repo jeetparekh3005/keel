@@ -29,6 +29,7 @@ func (e redactingExporter) ExportSpans(ctx context.Context, spans []sdktrace.Rea
 	for i, span := range spans {
 		out[i] = redactedSpan{
 			ReadOnlySpan: span,
+			name:         logging.ScrubText(span.Name()),
 			attrs:        redactAttributes(span.Attributes()),
 			events:       redactEvents(span.Events()),
 			links:        redactLinks(span.Links()),
@@ -46,13 +47,19 @@ func (e redactingExporter) Shutdown(ctx context.Context) error {
 // redacted sets. ReadOnlySpan has unexported methods, so the inner span is embedded to satisfy
 // the interface; every other method is promoted unchanged. Events() and Links() must be
 // overridden too: a secret recorded on an exception/error event (span.RecordError) or on a
-// link would otherwise reach the collector in cleartext via the promoted methods.
+// link would otherwise reach the collector in cleartext via the promoted methods. The span
+// Name() is scrubbed too: an operation name built from a request value (a URL, a token) would
+// otherwise reach the collector raw, matching the TS vertical which scrubs the span name.
 type redactedSpan struct {
 	sdktrace.ReadOnlySpan
+	name   string
 	attrs  []attribute.KeyValue
 	events []sdktrace.Event
 	links  []sdktrace.Link
 }
+
+// Name returns the scrubbed span name, shadowing the embedded span's method.
+func (s redactedSpan) Name() string { return s.name }
 
 // Attributes returns the redacted attribute set, shadowing the embedded span's method.
 func (s redactedSpan) Attributes() []attribute.KeyValue { return s.attrs }

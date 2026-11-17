@@ -138,3 +138,114 @@ func TestSpanExportRedactsEventAttributes(t *testing.T) {
 		}
 	}
 }
+
+// exportSpanNamed starts and ends a single span named name against exporter, returning the
+// span name the exporter received. The provider is shut down after reading so the span is
+// flushed and the in-memory buffer is not reset before the read.
+func exportSpanNamed(t *testing.T, name string, exporter sdktrace.SpanExporter, inmem *tracetest.InMemoryExporter) string {
+	t.Helper()
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+		sdktrace.WithSyncer(exporter),
+	)
+	_, span := tp.Tracer("test").Start(context.Background(), name)
+	span.End()
+	stubs := inmem.GetSpans()
+	if len(stubs) != 1 {
+		t.Fatalf("expected 1 exported span, got %d", len(stubs))
+	}
+	if err := tp.Shutdown(context.Background()); err != nil {
+		t.Fatalf("provider shutdown: %v", err)
+	}
+	return stubs[0].Name
+}
+
+// TestSpanExportScrubsSpanName asserts the redacting exporter scrubs secret patterns out of
+// the span NAME before export, mirroring the TS vertical. A span named with an embedded bearer
+// token exports with the token replaced by the marker; a benign name is left unchanged. The
+// negative control through the bare exporter proves the scrub comes from the wrapper.
+func TestSpanExportScrubsSpanName(t *testing.T) {
+	const secretName = "GET /items with Bearer abcdef1234567890"
+	const wantName = "GET /items with [REDACTED]"
+
+	inmem := tracetest.NewInMemoryExporter()
+	if got := exportSpanNamed(t, secretName, newRedactingExporter(inmem), inmem); got != wantName {
+		t.Errorf("span name not scrubbed: got %q, want %q", got, wantName)
+	}
+
+	inmem = tracetest.NewInMemoryExporter()
+	if got := exportSpanNamed(t, "ItemService/GetItem", newRedactingExporter(inmem), inmem); got != "ItemService/GetItem" {
+		t.Errorf("benign span name altered: got %q", got)
+	}
+
+	// Negative control: without the wrapper the secret name survives, proving the scrub in the
+	// positive case comes from the redacting exporter and not the SDK or the test setup.
+	inmem = tracetest.NewInMemoryExporter()
+	if got := exportSpanNamed(t, secretName, inmem, inmem); got != secretName {
+		t.Errorf("expected raw span name %q without the redactor, got %q", secretName, got)
+	}
+}
+
+// linkSecretVal is the cleartext secret placed on a span link's secret-family attribute; it
+// must never reach the exporter.
+const linkSecretVal = "Bearer linksupersecret5555"
+
+// TestSpanExportRedactsLinkAttributes asserts the redacting exporter also scrubs span LINK
+// attributes, not just top-level and event attributes: a link carrying a secret-family
+// attribute and a scrubbable string value must reach the exporter with the secret replaced by
+// the marker and the pattern scrubbed, while a benign link attribute survives unchanged.
+// Without the Links() override the promoted link attributes leak in cleartext.
+func TestSpanExportRedactsLinkAttributes(t *testing.T) {
+	inmem := tracetest.NewInMemoryExporter()
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+		sdktrace.WithSyncer(newRedactingExporter(inmem)),
+	)
+
+	// Build a valid linked span context to attach the link to.
+	linked := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    trace.TraceID{0x01},
+		SpanID:     trace.SpanID{0x02},
+		TraceFlags: trace.FlagsSampled,
+	})
+	_, span := tp.Tracer("test").Start(context.Background(), "op", trace.WithLinks(trace.Link{
+		SpanContext: linked,
+		Attributes: []attribute.KeyValue{
+			attribute.String(secretKeyAttr, linkSecretVal),
+			attribute.String(patternAttr, patternRawVal),
+			attribute.String("link.kind", "follows-from"),
+		},
+	}))
+	span.End()
+
+	stubs := inmem.GetSpans()
+	if len(stubs) != 1 {
+		t.Fatalf("expected 1 exported span, got %d", len(stubs))
+	}
+	links := stubs[0].Links
+	if len(links) != 1 {
+		t.Fatalf("expected 1 exported link, got %d", len(links))
+	}
+	got := map[string]string{}
+	for _, kv := range links[0].Attributes {
+		if kv.Value.Type() == attribute.STRING {
+			got[string(kv.Key)] = kv.Value.AsString()
+		}
+	}
+	if got[secretKeyAttr] != "[REDACTED]" {
+		t.Errorf("link secret-family attribute not redacted: %q = %q", secretKeyAttr, got[secretKeyAttr])
+	}
+	if got[patternAttr] != patternWantVal {
+		t.Errorf("link secret pattern not scrubbed: %q = %q, want %q", patternAttr, got[patternAttr], patternWantVal)
+	}
+	// Negative control: a benign link attribute must survive unchanged.
+	if got["link.kind"] != "follows-from" {
+		t.Errorf("benign link attribute altered: %q = %q", "link.kind", got["link.kind"])
+	}
+	// Belt and suspenders: the cleartext secret must not survive anywhere in the link.
+	for _, kv := range links[0].Attributes {
+		if kv.Value.Type() == attribute.STRING && strings.Contains(kv.Value.AsString(), "linksupersecret5555") {
+			t.Errorf("cleartext secret leaked in link attribute %q = %q", kv.Key, kv.Value.AsString())
+		}
+	}
+}
