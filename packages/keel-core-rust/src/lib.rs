@@ -32,6 +32,11 @@ pub mod ports;
 pub mod redact;
 pub mod telemetry;
 pub mod testkit;
+/// OpenBao (and HashiCorp Vault) `SecretProvider` adapter over the KV v2 HTTP API
+/// (ADR-0023). Opt-in: enable the `vault` feature (which turns on `reqwest/blocking`) so
+/// the default build stays env-only, mirroring the `nats` feature gating the broker.
+#[cfg(feature = "vault")]
+pub mod vault;
 pub mod webauth;
 
 /// The platform `contractVersion` this vertical targets (`platform.yaml`

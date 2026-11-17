@@ -77,6 +77,11 @@ grpc = [
     "dep:tonic-prost",
     "tonic/tls-ring",
 ]
+# Opt-in OpenBao/Vault SecretProvider adapter (ADR-0023). Off by default so the default
+# `cargo build` stays env-only; enabling it turns on reqwest's blocking client (the adapter
+# does all HTTP on a dedicated std::thread, so no new HTTP/TLS stack is pulled in - reqwest
+# with rustls-tls is already in the tree). Mirrors the `nats` feature gating the broker.
+vault = ["reqwest/blocking"]
 
 [dev-dependencies]
 figment = { version = "0.10", features = ["env", "toml", "test"] }

@@ -51,6 +51,12 @@ jobs:
           --health-retries 10
     env:
       KEEL_TEST_DATABASE_URL: postgres://keel:keel@localhost:5432/reference
+      # Backs the OpenBaoSecretProvider KV v2 round-trip integration test (ADR-0023), gated
+      # on KEEL_VAULT_ADDR below against the dev OpenBao server started as a step.
+      KEEL_VAULT_ADDR: http://localhost:8200
+      KEEL_VAULT_TOKEN: root
+      KEEL_VAULT_MOUNT: secret
+      KEEL_VAULT_PATH: keel-test
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -94,6 +100,13 @@ jobs:
             curl -sf http://localhost:8080/realms/keel/.well-known/openid-configuration >/dev/null 2>&1 && break
             sleep 3
           done
+      - name: Start OpenBao (dev)
+        # A dev-mode server can't run as a service container (it needs the `server -dev`
+        # args and IPC_LOCK), so run it as a step like NATS/Keycloak. Backs the
+        # OpenBaoSecretProvider KV v2 round-trip integration test gated on KEEL_VAULT_ADDR.
+        run: |
+          docker run -d --name openbao -p 8200:8200 --cap-add IPC_LOCK -e BAO_DEV_ROOT_TOKEN_ID=root openbao/openbao:2.7.2 server -dev -dev-root-token-id=root -dev-listen-address=0.0.0.0:8200
+          for i in $(seq 1 30); do curl -sf http://localhost:8200/v1/sys/health >/dev/null && break; sleep 1; done
       - name: Test with coverage floor (85% lines)
         # Runs the full suite under cargo-llvm-cov and fails the job if line coverage
         # drops below 85%, matching the Python vertical's `fail_under = 85` gate so the
@@ -101,16 +114,18 @@ jobs:
         #
         # --include-ignored runs the #[ignore]'d integration tests too: the Postgres CRUD
         # round-trip (Postgres service above + KEEL_TEST_DATABASE_URL), the live Keycloak
-        # JWKS verification (the container above + KEEL_KEYCLOAK_* below), and the NATS
-        # JetStream publish->subscribe round-trip (the NATS container above + KEEL_NATS_URL).
-        # Each fails loudly, not silently, if its backing service is missing -- and they are
-        # the paths that carry the service's composition/http/repository and the broker
-        # adapter's connect/publish/subscribe/dispatch lines over the floor, so the coverage
-        # number is only honest with them in. --features nats,grpc builds the opt-in
-        # NatsMessageBus adapter (and its integration test) and the opt-in gRPC server
-        # factory/mTLS module (keel_core::grpc, ADR-0022) so both are exercised and counted
-        # here -- without grpc in the feature set the new gRPC code is not compiled under
-        # coverage and the floor could not see it.
+        # JWKS verification (the container above + KEEL_KEYCLOAK_* below), the NATS
+        # JetStream publish->subscribe round-trip (the NATS container above + KEEL_NATS_URL),
+        # and the OpenBao KV v2 write/read round-trip (the OpenBao container above +
+        # KEEL_VAULT_* at job level). Each fails loudly, not silently, if its backing service
+        # is missing -- and they are the paths that carry the service's composition/http/
+        # repository, the broker adapter's connect/publish/subscribe/dispatch, and the vault
+        # adapter's authenticate/load lines over the floor, so the coverage number is only
+        # honest with them in. --features nats,grpc,vault builds the opt-in NatsMessageBus
+        # adapter (and its integration test), the opt-in gRPC server factory/mTLS module
+        # (keel_core::grpc, ADR-0022), and the opt-in OpenBaoSecretProvider (keel_core::vault,
+        # ADR-0023) so all three are exercised and counted here -- without them in the feature
+        # set the new code is not compiled under coverage and the floor could not see it.
         env:
           KEEL_KEYCLOAK_URL: http://localhost:8080
           KEEL_KEYCLOAK_REALM: keel
@@ -122,7 +137,7 @@ jobs:
         # generated code under src/genproto) from the denominator: they are not held to the
         # crate's lint/style/coverage bar (see genproto.rs and the Python genproto excludes),
         # so only the hand-written server factory/mTLS in keel_core::grpc is measured.
-        run: cargo llvm-cov --all --locked --features nats,grpc --ignore-filename-regex genproto --fail-under-lines 85 -- --include-ignored
+        run: cargo llvm-cov --all --locked --features nats,grpc,vault --ignore-filename-regex genproto --fail-under-lines 85 -- --include-ignored
       - name: Install cargo-audit
         uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
