@@ -7,6 +7,8 @@
 
 #![cfg(any(feature = "vault", feature = "aws"))]
 
+#[cfg(feature = "aws")]
+use keel_core::aws::AwsError;
 use keel_core::secret::{secret_provider_from_env, SecretProviderError};
 
 /// Save and restore a set of env vars around a test that mutates them.
@@ -39,6 +41,7 @@ fn selection_is_fail_closed_across_the_gating_vars() {
     let saved = EnvSnapshot::take(&[
         "KEEL_VAULT_ADDR",
         "KEEL_AWS_SECRET_ID",
+        "KEEL_SECRET_CACHE_TTL_SECONDS",
         "KEEL_SECRET_SELECT_PROBE",
     ]);
 
@@ -62,6 +65,23 @@ fn selection_is_fail_closed_across_the_gating_vars() {
         Some("from-the-environment"),
         "with no backend configured, get() must fall through to the environment",
     );
+
+    // Only KEEL_AWS_SECRET_ID set selects the AWS backend. Proven hermetically - no IMDS, no
+    // network: a deliberately invalid shared cache TTL makes AwsSecretsConfig::from_env fail in
+    // config parsing, before any SDK client build or credential/IMDS call, and the failure
+    // surfaces as the AWS variant. So the AWS branch was taken (not Vault, not the env provider).
+    #[cfg(feature = "aws")]
+    {
+        std::env::remove_var("KEEL_VAULT_ADDR");
+        std::env::remove_var("KEEL_SECRET_SELECT_PROBE");
+        std::env::set_var("KEEL_AWS_SECRET_ID", "keel-test");
+        std::env::set_var("KEEL_SECRET_CACHE_TTL_SECONDS", "not-a-number");
+        let result = secret_provider_from_env();
+        assert!(
+            matches!(result, Err(SecretProviderError::Aws(AwsError::Config(_)))),
+            "only KEEL_AWS_SECRET_ID set must select the AWS backend (fail-fast in config parsing, no network)",
+        );
+    }
 
     saved.restore();
 }
