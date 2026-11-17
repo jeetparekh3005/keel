@@ -24,6 +24,13 @@ grpc = [
 nats = [
     "nats-py>=2.6",
 ]
+# AWS Secrets Manager backend (ADR-0024) is opt-in: only services using it pull boto3.
+# boto3 handles SigV4 signing and the default credential chain (env, IRSA, instance
+# profile, SSO); the standard AWS_ENDPOINT_URL_SECRETS_MANAGER env var points it at
+# LocalStack in tests, so no custom endpoint config is carried here.
+aws = [
+    "boto3>=1.42",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -41,4 +48,6 @@ extend_exclude = ["src/keel_core/genproto"]
 [tool.deptry.per_rule_ignores]
 # `keel` is not a distribution: it is the vendored keel.reference.v1 stub tree reached via the
 # genproto sys.path shim (ADR-0022), imported by the ItemService adapter. Not a missing dep.
-DEP001 = ["keel"]
+# `mypy_boto3_secretsmanager` is a type-only stub (boto3-stubs) imported under TYPE_CHECKING in
+# the AWS adapter (ADR-0024); it is a dev/type dependency, never imported at runtime.
+DEP001 = ["keel", "mypy_boto3_secretsmanager"]
