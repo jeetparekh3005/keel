@@ -287,7 +287,7 @@ def test_factory_builds_openbao_when_addr_set(mock_vault: Any) -> None:
             "KEEL_VAULT_ADDR": addr,
             "KEEL_VAULT_TOKEN": "root",
             "KEEL_VAULT_PATH": "keel-test",
-            "KEEL_VAULT_CACHE_TTL_SECONDS": "3600",  # long TTL: thread parks, no refresh in-test
+            "KEEL_SECRET_CACHE_TTL_SECONDS": "3600",  # long TTL: thread parks, no refresh in-test
         }
     )
     assert isinstance(provider, OpenBaoSecretProvider)
@@ -388,7 +388,7 @@ def test_factory_rejects_non_positive_or_unparseable_ttl(bad_ttl: str) -> None:
                 "KEEL_VAULT_ADDR": "http://127.0.0.1:1",
                 "KEEL_VAULT_TOKEN": "root",
                 "KEEL_VAULT_PATH": "p",
-                "KEEL_VAULT_CACHE_TTL_SECONDS": bad_ttl,
+                "KEEL_SECRET_CACHE_TTL_SECONDS": bad_ttl,
             }
         )
 

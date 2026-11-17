@@ -43,6 +43,8 @@ dev = [
     "opentelemetry-instrumentation-grpc>=0.48b0",
     "psycopg[binary]>=3.3.8",   # sync Postgres driver for Alembic migrations in CI
     "nats-py>=2.6",           # keel-core[nats] extra - installed for the NATS integration test
+    "boto3>=1.42",            # keel-core[aws] extra - installed for the AWS Secrets Manager tests
+    "boto3-stubs[secretsmanager]>=1.42",  # type stubs for the AWS adapter (mypy strict)
 ]
 
 # ---------------------------------------------------------------------------
