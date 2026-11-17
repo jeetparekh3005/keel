@@ -14,6 +14,12 @@ import { RedactingSpanExporter } from './span-redaction.js';
 // JWT, which gitleaks would flag) while still exercising the scrubText AWS pattern.
 const AWS_EXAMPLE_KEY = 'AKIAIOSFODNN7EXAMPLE';
 
+// A 16-digit Luhn-valid test id (the canonical Visa test PAN; not a live card). Span names are
+// low-cardinality operation ids, so a Luhn-valid digit run in a route segment is an account/order
+// id, not a cardholder number: the name scrubber must leave it alone. In an attribute VALUE the
+// same digit run is a plausible PAN and must still be redacted (full scrubText).
+const LUHN_ID = '4532015112830366';
+
 // Drive the real export path: span -> SimpleSpanProcessor -> (optional) RedactingSpanExporter ->
 // InMemorySpanExporter. The redactor is a drop-in SpanExporter decorator, so omitting it (the
 // negative control) feeds the raw span straight to memory and the secrets survive - which is what
@@ -171,6 +177,65 @@ describe('RedactingSpanExporter', () => {
     const link = redacted?.links[0];
     expect(link?.attributes?.['db.user.password']).toBe('[REDACTED]');
     expect(link?.context.traceId).toBe(upstream.spanContext().traceId);
+  });
+
+  it('preserves a Luhn-valid id segment in a span NAME (PAN matcher does not run on names)', () => {
+    const memory = new InMemorySpanExporter();
+    const provider = new BasicTracerProvider({
+      spanProcessors: [new SimpleSpanProcessor(new RedactingSpanExporter(memory))],
+    });
+    providers.push(provider);
+
+    const name = `GET /v1/accounts/${LUHN_ID}/balance`;
+    provider.getTracer('span-redaction-name').startSpan(name).end();
+
+    const redacted = memory.getFinishedSpans();
+    expect(redacted).toHaveLength(1);
+    // Before the fix the name scrubber ran the PAN/Luhn matcher and corrupted this to
+    // `GET /v1/accounts/[REDACTED]/balance`; the operation name must survive intact.
+    expect(redacted[0].name).toBe(name);
+    expect(redacted[0].name).toContain(LUHN_ID);
+  });
+
+  it('still scrubs bearer and AWS-key secrets from a span NAME', () => {
+    const memory = new InMemorySpanExporter();
+    const provider = new BasicTracerProvider({
+      spanProcessors: [new SimpleSpanProcessor(new RedactingSpanExporter(memory))],
+    });
+    providers.push(provider);
+    const tracer = provider.getTracer('span-redaction-name-secrets');
+
+    // Bearer and AWS-key cover the non-PAN secret patterns on the name path. The JWT pattern is
+    // exercised by the scrubText value tests; a JWT literal here would trip the secret scanner.
+    tracer.startSpan(`auth bearer sk-live-abcdefgh12345678 tail`).end();
+    tracer.startSpan(`call key=${AWS_EXAMPLE_KEY}`).end();
+
+    const names = memory.getFinishedSpans().map((s) => s.name);
+    expect(names).toContain('auth [REDACTED] tail');
+    expect(names).toContain('call key=[REDACTED]');
+    // None of the raw secrets survive in any exported name.
+    const joined = names.join('\n');
+    expect(joined).not.toContain('sk-live-abcdefgh12345678');
+    expect(joined).not.toContain(AWS_EXAMPLE_KEY);
+  });
+
+  it('still redacts a Luhn-valid PAN in an attribute VALUE (full scrubText unchanged)', () => {
+    const memory = new InMemorySpanExporter();
+    const provider = new BasicTracerProvider({
+      spanProcessors: [new SimpleSpanProcessor(new RedactingSpanExporter(memory))],
+    });
+    providers.push(provider);
+
+    const span = provider.getTracer('span-redaction-pan-value').startSpan('charge');
+    // The same digit run that is preserved in a NAME must be redacted in a VALUE, where it is a
+    // plausible cardholder PAN rather than an operation id.
+    span.setAttribute('payment.card', `card ${LUHN_ID} on file`);
+    span.end();
+
+    const redacted = memory.getFinishedSpans();
+    expect(redacted).toHaveLength(1);
+    expect(redacted[0].attributes['payment.card']).toBe('card [REDACTED] on file');
+    expect(JSON.stringify(redacted[0].attributes)).not.toContain(LUHN_ID);
   });
 
   it('delegates shutdown and forceFlush to the wrapped exporter', async () => {

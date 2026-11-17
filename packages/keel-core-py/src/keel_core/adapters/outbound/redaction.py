@@ -65,11 +65,19 @@ def _scrub_credit_cards(text: str) -> str:
     return _CC_CANDIDATE.sub(_replace, text)
 
 
-def scrub_text(text: str) -> str:
-    """Scrub secret value patterns (JWT, bearer, AWS key, PEM, Luhn PAN) from a string."""
+def scrub_text(text: str, *, include_pan: bool = True) -> str:
+    """Scrub secret value patterns (JWT, bearer, AWS key, PEM, Luhn PAN) from a string.
+
+    With ``include_pan=False`` the credit-card/PAN/Luhn matcher is skipped while every
+    other matcher still runs. Span names are low-cardinality operation identifiers (OTel
+    convention), so a Luhn-valid numeric path id (e.g. an account number in a route) is a
+    legitimate part of the name, not a leaked card number; running the PAN matcher there
+    false-positives and corrupts the name. Attribute/event/link string values are free-form
+    and keep the default (``include_pan=True``).
+    """
     for pattern in _SECRET_PATTERNS:
         text = pattern.sub(REDACTED, text)
-    return _scrub_credit_cards(text)
+    return _scrub_credit_cards(text) if include_pan else text
 
 
 def sanitize(value: object, max_len: int = DEFAULT_MAX_FIELD_LEN) -> object:

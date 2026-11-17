@@ -58,10 +58,7 @@ public final class Redactor {
 
   /** Replace secret patterns and Luhn-valid card numbers in a string value. */
   public static String scrubText(String text) {
-    String out = text;
-    for (Pattern pattern : SECRET_PATTERNS) {
-      out = pattern.matcher(out).replaceAll(REDACTED);
-    }
+    String out = scrubSecretPatterns(text);
     out =
         CC_CANDIDATE
             .matcher(out)
@@ -72,6 +69,31 @@ public final class Redactor {
               }
               return java.util.regex.Matcher.quoteReplacement(match.group());
             });
+    return out;
+  }
+
+  /**
+   * Scrub a span name for secret patterns, deliberately skipping the credit-card/PAN/Luhn matcher.
+   *
+   * <p>Span names are low-cardinality operation identifiers (e.g. {@code GET
+   * /v1/accounts/4532015112830366/balance}), not free-form values. A route segment that happens to
+   * be a Luhn-valid 13-19 digit id is not a leaked card number, so running the PAN matcher over a
+   * name false-positives and corrupts legitimate names while helping nothing: a real card number
+   * does not belong in an operation name. The high-precision patterns (bearer/JWT/AWS key/PEM) are
+   * still applied because an operator can interpolate one of those into a name. String attribute,
+   * event, and link VALUES keep full PAN redaction via {@link #scrubText}; this method is only for
+   * names.
+   */
+  public static String scrubTextForName(String name) {
+    return scrubSecretPatterns(name);
+  }
+
+  // Apply the high-precision secret patterns (JWT/AWS/bearer/PEM), excluding the PAN/Luhn matcher.
+  private static String scrubSecretPatterns(String text) {
+    String out = text;
+    for (Pattern pattern : SECRET_PATTERNS) {
+      out = pattern.matcher(out).replaceAll(REDACTED);
+    }
     return out;
   }
 

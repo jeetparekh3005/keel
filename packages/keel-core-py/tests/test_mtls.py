@@ -161,7 +161,11 @@ async def test_trusted_client_handshakes_and_untrusted_ca_client_is_rejected() -
         # by a CA the server does NOT trust -> server rejects it at the TLS layer.
         untrusted = mtls_channel_credentials(root_ca=ca_pem, cert=rogue_cert, key=rogue_key)
         async with create_channel(f"localhost:{port}", credentials=untrusted) as channel:
-            with pytest.raises(grpc.aio.AioRpcError):
+            with pytest.raises(grpc.aio.AioRpcError) as rejection:
                 await channel.unary_unary(_METHOD)(b"ping", metadata=_AUTH)
+            # Pin the code: a TLS-layer handshake rejection surfaces as UNAVAILABLE, so an
+            # unrelated error (e.g. a bad-argument or auth failure that still reached the
+            # handler) cannot masquerade as a successful cert rejection.
+            assert rejection.value.code() == grpc.StatusCode.UNAVAILABLE
     finally:
         await server.stop(grace=None)

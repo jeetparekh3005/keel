@@ -26,7 +26,8 @@ import java.util.List;
  * instrumentation anywhere in the service, including library-emitted spans, is covered without each
  * call site having to remember to scrub. Each {@link SpanData} is wrapped in a {@link
  * DelegatingSpanData} that rewrites the attributes on the span itself and, with the same {@link
- * Redactor} families, the attributes carried on every span event (including the {@code exception.*}
+ * Redactor} families, the span name (scrubbed for secret patterns the same way a string attribute
+ * value is), the attributes carried on every span event (including the {@code exception.*}
  * attributes of a recorded exception) and every link; trace/span ids, timing, status, event names
  * and timestamps, link span contexts, and resource are left untouched so the exported span is
  * otherwise identical. The pattern families themselves live solely in {@link Redactor}; this class
@@ -63,7 +64,21 @@ public final class RedactingSpanExporter implements SpanExporter {
     Attributes redactedAttributes = redactAttributes(span.getAttributes());
     List<EventData> redactedEvents = redactEvents(span.getEvents());
     List<LinkData> redactedLinks = redactLinks(span.getLinks());
+    // The span name is operator-chosen text that can carry an interpolated secret (bearer/JWT/AWS
+    // key/PEM), so it is scrubbed with the name-specific scrubber. That scrubber deliberately omits
+    // the credit-card/PAN/Luhn matcher: span names are low-cardinality operation identifiers (e.g.
+    // GET /v1/accounts/4532015112830366/balance) where a Luhn-valid id is a route segment, not a
+    // leaked card, so the PAN matcher there false-positives and corrupts legitimate names. String
+    // attribute/event/link VALUES keep full PAN redaction via Redactor.scrubText. Key-based
+    // wholesale redaction has no meaning for a name, which is why only the value scrubber is
+    // applied.
+    String redactedName = Redactor.scrubTextForName(span.getName());
     return new DelegatingSpanData(span) {
+      @Override
+      public String getName() {
+        return redactedName;
+      }
+
       @Override
       public Attributes getAttributes() {
         return redactedAttributes;
