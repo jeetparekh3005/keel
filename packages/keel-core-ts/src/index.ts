@@ -36,6 +36,13 @@ export {
 
 export { type Clock, CLOCK, type SecretProvider, SECRET_PROVIDER } from './ports/index.js';
 export { EnvSecretProvider, SystemClock } from './adapters/index.js';
+export {
+  createOpenBaoSecretProvider,
+  OpenBaoSecretProvider,
+  type OpenBaoOptions,
+  type SecretProviderLogger,
+  secretProviderFromEnv,
+} from './adapters/openbao.secret-provider.js';
 
 export { Database, DATABASE, type PoolStats, UnitOfWork } from './persistence/index.js';
 

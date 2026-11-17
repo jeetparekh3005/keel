@@ -81,6 +81,12 @@ jobs:
             (echo > /dev/tcp/127.0.0.1/4222) >/dev/null 2>&1 && break
             sleep 1
           done
+      - name: Start OpenBao (dev)
+        # A dev-mode OpenBao server for the KV v2 SecretProvider integration test (@keel/core),
+        # gated on KEEL_VAULT_ADDR below. Mirrors the NATS/Keycloak docker-run pattern.
+        run: |
+          docker run -d --name openbao -p 8200:8200 --cap-add IPC_LOCK -e BAO_DEV_ROOT_TOKEN_ID=root openbao/openbao:2.7.2 server -dev -dev-root-token-id=root -dev-listen-address=0.0.0.0:8200
+          for i in $(seq 1 30); do curl -sf http://localhost:8200/v1/sys/health >/dev/null && break; sleep 1; done
       - name: Start Keycloak (import realm)
         # A service container cannot pass `start-dev --import-realm`, so run it as a step. The
         # live-JWKS auth integration test (@keel/core) is gated on KEEL_KEYCLOAK_URL below.
@@ -94,7 +100,7 @@ jobs:
             curl -sf http://localhost:8080/realms/keel/.well-known/openid-configuration >/dev/null 2>&1 && break
             sleep 3
           done
-      - name: Test (with Postgres + NATS + Keycloak)
+      - name: Test (with Postgres + NATS + Keycloak + OpenBao)
         env:
           KEEL_NATS_URL: nats://localhost:4222
           KEEL_KEYCLOAK_URL: http://localhost:8080
@@ -102,6 +108,10 @@ jobs:
           KEEL_KEYCLOAK_CLIENT_ID: keel-api
           KEEL_KEYCLOAK_CLIENT_SECRET: test-secret
           KEEL_OIDC_AUDIENCE: keel-api
+          KEEL_VAULT_ADDR: http://localhost:8200
+          KEEL_VAULT_TOKEN: root
+          KEEL_VAULT_MOUNT: secret
+          KEEL_VAULT_PATH: keel-test
         run: pnpm --filter @keel/core --filter reference-service-nest run test
       - name: Build the service
         run: pnpm --filter reference-service-nest run build
