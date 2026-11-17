@@ -52,6 +52,26 @@ bytes = { version = "1", optional = true }
 prost = { version = "0.14", optional = true }
 tonic = { version = "0.14", optional = true }
 tonic-prost = { version = "0.14", optional = true }
+# Opt-in AWS Secrets Manager SecretProvider adapter (the `aws` feature, ADR-0024). The
+# official SDK carries correct SigV4 signing + the default credential chain (env, IRSA,
+# instance profile, SSO), which ADR-0024 deliberately prefers over hand-rolled HTTP; off by
+# default so the default `cargo build` pulls in neither, mirroring the `vault` feature.
+#
+# `default-features = false` + the ring-backed legacy rustls client (and NOT the default
+# aws-lc-rs HTTPS client) keeps the crypto backend on `ring`, matching reqwest's `rustls-tls`
+# already in the tree: no aws-lc-sys C build, one crypto provider, and no extra RUSTSEC surface
+# for the audit gate. `BehaviorVersion::latest()` is pinned in code, so the SDK's
+# behavior-version-latest feature is intentionally omitted.
+aws-config = { version = "1", optional = true, default-features = false, features = [
+    "rt-tokio",
+    "credentials-process",
+    "sso",
+    "legacy-client",
+] }
+aws-sdk-secretsmanager = { version = "1", optional = true, default-features = false, features = [
+    "rustls",
+    "rt-tokio",
+] }
 
 [features]
 # Opt-in NATS JetStream adapter. Off by default so `cargo build` stays broker-free,
@@ -82,6 +102,19 @@ grpc = [
 # does all HTTP on a dedicated std::thread, so no new HTTP/TLS stack is pulled in - reqwest
 # with rustls-tls is already in the tree). Mirrors the `nats` feature gating the broker.
 vault = ["reqwest/blocking"]
+# Opt-in AWS Secrets Manager SecretProvider adapter (ADR-0024). Off by default so the default
+# `cargo build` pulls in neither the AWS SDK nor an async IO driver; enabling it turns on the
+# official aws-config/aws-sdk-secretsmanager crates and the tokio `net` feature so the adapter
+# can drive the async SDK on a dedicated current-thread runtime inside its blocking refresh
+# thread (never on the app's async runtime). Mirrors the `vault` feature gating OpenBao; both
+# share the ADR-0024 caching core in `crate::secret`.
+aws = [
+    "dep:aws-config",
+    "dep:aws-sdk-secretsmanager",
+    "tokio/net",
+    "tokio/rt",
+    "tokio/time",
+]
 
 [dev-dependencies]
 figment = { version = "0.10", features = ["env", "toml", "test"] }
@@ -103,3 +136,7 @@ tokio-stream = { version = "0.1", features = ["net"] }
 # Ephemeral CA + leaf certs for the mTLS handshake tests; ring-backed to match tls-ring,
 # and (like the OIDC keys) generated in-test so no key material is committed.
 rcgen = { version = "0.14", default-features = false, features = ["pem", "ring"] }
+# The official AWS SDK mocking crate: intercepts the Secrets Manager operation at the SDK
+# boundary so the `aws` unit tests assert field-map round-trip, coercion, not-found-as-empty,
+# fail-closed, and the no-leak invariant with no network (ADR-0024 "AWS unit (non-gated)").
+aws-smithy-mocks = "0.3"

@@ -57,6 +57,15 @@ jobs:
       KEEL_VAULT_TOKEN: root
       KEEL_VAULT_MOUNT: secret
       KEEL_VAULT_PATH: keel-test
+      # Backs the AwsSecretsManagerSecretProvider round-trip integration test (ADR-0024), gated on
+      # KEEL_AWS_SECRET_ID below against the LocalStack Secrets Manager container started as a step.
+      # The SDK honors AWS_ENDPOINT_URL_SECRETS_MANAGER to target LocalStack and resolves the static
+      # test credentials from the default chain; nothing here is a real AWS account.
+      AWS_ENDPOINT_URL_SECRETS_MANAGER: http://localhost:4566
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      KEEL_AWS_SECRET_ID: keel-test
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -107,6 +116,13 @@ jobs:
         run: |
           docker run -d --name openbao -p 8200:8200 --cap-add IPC_LOCK -e BAO_DEV_ROOT_TOKEN_ID=root openbao/openbao:2.7.2 server -dev -dev-root-token-id=root -dev-listen-address=0.0.0.0:8200
           for i in $(seq 1 30); do curl -sf http://localhost:8200/v1/sys/health >/dev/null && break; sleep 1; done
+      - name: Start LocalStack (Secrets Manager)
+        # Backs the AwsSecretsManagerSecretProvider GetSecretValue round-trip integration test
+        # (ADR-0024) gated on KEEL_AWS_SECRET_ID. Run as a step (like OpenBao/NATS/Keycloak) so the
+        # Secrets Manager emulator is reachable at localhost:4566 before the test runs.
+        run: |
+          docker run -d --name localstack -p 4566:4566 -e SERVICES=secretsmanager localstack/localstack:2026.09.1
+          for i in $(seq 1 60); do curl -sf http://localhost:4566/_localstack/health >/dev/null && break; sleep 1; done
       - name: Test with coverage floor (85% lines)
         # Runs the full suite under cargo-llvm-cov and fails the job if line coverage
         # drops below 85%, matching the Python vertical's `fail_under = 85` gate so the
@@ -116,16 +132,19 @@ jobs:
         # round-trip (Postgres service above + KEEL_TEST_DATABASE_URL), the live Keycloak
         # JWKS verification (the container above + KEEL_KEYCLOAK_* below), the NATS
         # JetStream publish->subscribe round-trip (the NATS container above + KEEL_NATS_URL),
-        # and the OpenBao KV v2 write/read round-trip (the OpenBao container above +
-        # KEEL_VAULT_* at job level). Each fails loudly, not silently, if its backing service
-        # is missing -- and they are the paths that carry the service's composition/http/
-        # repository, the broker adapter's connect/publish/subscribe/dispatch, and the vault
-        # adapter's authenticate/load lines over the floor, so the coverage number is only
-        # honest with them in. --features nats,grpc,vault builds the opt-in NatsMessageBus
+        # the OpenBao KV v2 write/read round-trip (the OpenBao container above + KEEL_VAULT_* at
+        # job level), and the AWS Secrets Manager GetSecretValue round-trip (the LocalStack
+        # container above + AWS_*/KEEL_AWS_SECRET_ID at job level). Each fails loudly, not silently,
+        # if its backing service is missing -- and they are the paths that carry the service's
+        # composition/http/repository, the broker adapter's connect/publish/subscribe/dispatch, and
+        # the secret adapters' authenticate/load lines over the floor, so the coverage number is
+        # only honest with them in. --features nats,grpc,vault,aws builds the opt-in NatsMessageBus
         # adapter (and its integration test), the opt-in gRPC server factory/mTLS module
-        # (keel_core::grpc, ADR-0022), and the opt-in OpenBaoSecretProvider (keel_core::vault,
-        # ADR-0023) so all three are exercised and counted here -- without them in the feature
-        # set the new code is not compiled under coverage and the floor could not see it.
+        # (keel_core::grpc, ADR-0022), the opt-in OpenBaoSecretProvider (keel_core::vault,
+        # ADR-0023), and the opt-in AwsSecretsManagerSecretProvider over the shared caching core
+        # (keel_core::aws + keel_core::secret, ADR-0024) so all are exercised and counted here --
+        # without them in the feature set the new code is not compiled under coverage and the floor
+        # could not see it.
         env:
           KEEL_KEYCLOAK_URL: http://localhost:8080
           KEEL_KEYCLOAK_REALM: keel
@@ -137,7 +156,7 @@ jobs:
         # generated code under src/genproto) from the denominator: they are not held to the
         # crate's lint/style/coverage bar (see genproto.rs and the Python genproto excludes),
         # so only the hand-written server factory/mTLS in keel_core::grpc is measured.
-        run: cargo llvm-cov --all --locked --features nats,grpc,vault --ignore-filename-regex genproto --fail-under-lines 85 -- --include-ignored
+        run: cargo llvm-cov --all --locked --features nats,grpc,vault,aws --ignore-filename-regex genproto --fail-under-lines 85 -- --include-ignored
       - name: Install cargo-audit
         uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:

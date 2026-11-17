@@ -1,38 +1,42 @@
 //! OpenBao `SecretProvider` adapter (ADR-0023): static KV v2 read over the Vault HTTP API.
 //!
 //! The identical wire protocol serves OpenBao and HashiCorp Vault, so this one adapter
-//! covers either endpoint unchanged. The port's [`SecretProvider::get`] is synchronous and
-//! must never perform I/O, so the adapter authenticates and loads the KV v2 field map into
-//! an in-memory cache once at construction, then serves `get()` from that cache under a
-//! `RwLock`. A background `std::thread` re-loads the path every `KEEL_VAULT_CACHE_TTL_SECONDS`
-//! and, when the auth method issues a lease, proactively re-logs in a skew before the token
-//! expires (not only reactively on a `401/403`, which it still handles by re-authenticating -
-//! Kubernetes re-login; a static token surfaces the error - and retrying once). A failed refresh
-//! keeps serving the last good map and logs, so a transient OpenBao outage does not take the
-//! service down.
+//! covers either endpoint unchanged. The caching, refresh scheduling, fail-closed construction,
+//! and no-leak serving live in the shared [`crate::secret`] core (ADR-0024); OpenBao is one
+//! [`SecretLoader`] over it. This module is only the OpenBao-specific part: the `KEEL_VAULT_*`
+//! configuration, the KV v2 authenticate + read, and the Vault lease re-login that the core
+//! schedules via the loader's [`SecretLoader::next_maintenance`]/[`SecretLoader::maintain`].
 //!
-//! Selection is fail-closed: [`secret_provider_from_env`] returns this provider when
-//! `KEEL_VAULT_ADDR` is set and fails loudly on misconfiguration (missing auth, unreachable
-//! server, missing path) rather than silently falling back to the environment; with
-//! `KEEL_VAULT_ADDR` unset it returns the dev [`EnvSecretProvider`].
+//! The port's [`SecretProvider::get`] is synchronous and must never perform I/O, so the core
+//! authenticates and loads the KV v2 field map into an in-memory cache once at construction, then
+//! serves `get()` from that cache. It re-loads every `KEEL_SECRET_CACHE_TTL_SECONDS` and, when
+//! the auth method issues a lease, has this loader proactively re-log in a skew before the token
+//! expires (not only reactively on a `401/403`, which the loader still handles by
+//! re-authenticating - Kubernetes re-login; a static token surfaces the error - and retrying
+//! once). A failed refresh keeps serving the last good map and logs, so a transient OpenBao
+//! outage does not take the service down.
 //!
-//! All blocking HTTP (the eager initial load and the periodic refresh) runs on the dedicated
-//! refresh thread, never on the caller's thread, so construction is safe to invoke from
+//! Selection is fail-closed (see [`crate::secret::secret_provider_from_env`]): this provider is
+//! used when `KEEL_VAULT_ADDR` is set and fails loudly on misconfiguration (missing auth,
+//! unreachable server, missing path) rather than silently falling back to the environment.
+//!
+//! All blocking HTTP (the eager initial load and the periodic refresh) runs on the core's
+//! dedicated refresh thread, never on the caller's thread, so construction is safe to invoke from
 //! within an async runtime even though it blocks until the first load completes.
 //!
 //! This whole module is gated behind the `vault` feature (it enables `reqwest/blocking`);
 //! the default core build stays env-only, exactly like the `nats` feature gating the broker.
 
 use std::collections::HashMap;
-use std::sync::mpsc;
-use std::sync::{Arc, Condvar, Mutex, RwLock};
-use std::thread::JoinHandle;
-use std::time::Duration;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 
-use crate::adapters::EnvSecretProvider;
 use crate::ports::SecretProvider;
+use crate::secret::{
+    env_var, flatten_fields, parse_cache_ttl, CachingSecretProvider, SecretLoader, StartError,
+};
 
 /// Default Kubernetes auth mount path when `KEEL_VAULT_K8S_MOUNT` is unset.
 const DEFAULT_K8S_MOUNT: &str = "kubernetes";
@@ -40,8 +44,6 @@ const DEFAULT_K8S_MOUNT: &str = "kubernetes";
 const DEFAULT_K8S_JWT_PATH: &str = "/var/run/secrets/kubernetes.io/serviceaccount/token";
 /// Default KV v2 mount when `KEEL_VAULT_MOUNT` is unset.
 const DEFAULT_MOUNT: &str = "secret";
-/// Default field-map cache TTL when `KEEL_VAULT_CACHE_TTL_SECONDS` is unset.
-const DEFAULT_CACHE_TTL: Duration = Duration::from_secs(60);
 /// Total request timeout (bounds a stalled OpenBao endpoint).
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 /// Connect timeout (bounds a black-holed endpoint at the TCP layer).
@@ -104,7 +106,7 @@ pub struct VaultConfig {
     pub namespace: Option<String>,
     /// CA for TLS verification (`KEEL_VAULT_CACERT`): a PEM literal or a file path.
     pub cacert: Option<String>,
-    /// Field-map cache TTL (`KEEL_VAULT_CACHE_TTL_SECONDS`, default 60s).
+    /// Field-map cache TTL (shared `KEEL_SECRET_CACHE_TTL_SECONDS`, default 60s).
     pub cache_ttl: Duration,
 }
 
@@ -118,7 +120,7 @@ impl VaultConfig {
     ///
     /// # Errors
     /// Returns [`VaultError::Config`] if `KEEL_VAULT_ADDR`/`KEEL_VAULT_PATH` is unset, no
-    /// auth is configured, or `KEEL_VAULT_CACHE_TTL_SECONDS` is not a valid number.
+    /// auth is configured, or `KEEL_SECRET_CACHE_TTL_SECONDS` is not a positive integer.
     pub fn from_env() -> Result<Self, VaultError> {
         let addr = env_var("KEEL_VAULT_ADDR")
             .ok_or_else(|| VaultError::Config("KEEL_VAULT_ADDR must be set".into()))?;
@@ -128,23 +130,9 @@ impl VaultConfig {
         let mount = env_var("KEEL_VAULT_MOUNT").unwrap_or_else(|| DEFAULT_MOUNT.to_string());
         let namespace = env_var("KEEL_VAULT_NAMESPACE");
         let cacert = env_var("KEEL_VAULT_CACERT");
-        let cache_ttl = match env_var("KEEL_VAULT_CACHE_TTL_SECONDS") {
-            Some(raw) => {
-                // A non-positive or unparseable TTL is a fatal misconfiguration, not a value to
-                // clamp: silently serving a 1s cache would hammer OpenBao and hide the typo.
-                let seconds: u64 =
-                    raw.parse()
-                        .ok()
-                        .filter(|seconds| *seconds > 0)
-                        .ok_or_else(|| {
-                            VaultError::Config(format!(
-                            "KEEL_VAULT_CACHE_TTL_SECONDS must be a positive integer, got {raw:?}"
-                        ))
-                        })?;
-                Duration::from_secs(seconds)
-            }
-            None => DEFAULT_CACHE_TTL,
-        };
+        // Shared across all backends (ADR-0024): OpenBao migrates from the old
+        // `KEEL_VAULT_CACHE_TTL_SECONDS` to `KEEL_SECRET_CACHE_TTL_SECONDS`.
+        let cache_ttl = parse_cache_ttl().map_err(VaultError::Config)?;
 
         // Token first, then Kubernetes (ADR-0023 auth order); neither set is fail-closed.
         let auth = if let Some(token) = env_var("KEEL_VAULT_TOKEN") {
@@ -173,14 +161,6 @@ impl VaultConfig {
             cache_ttl,
         })
     }
-}
-
-/// Read an environment variable, treating empty as unset and trimming surrounding whitespace.
-fn env_var(key: &str) -> Option<String> {
-    std::env::var(key)
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
 }
 
 /// The outcome of one KV v2 read: the (possibly empty) field map, or an auth challenge.
@@ -227,19 +207,108 @@ struct AuthResult {
     lease: Option<Duration>,
 }
 
+/// The OpenBao [`SecretLoader`] over the shared caching core: it builds the HTTP client,
+/// authenticates (lazily, on the first load), reads the KV v2 field map, and - when the auth
+/// method issues a lease - carries the proactive re-login the core schedules. It runs only on the
+/// core's refresh thread, so its `client`/`renew_at`/`authenticated` state is single-threaded;
+/// `token_state` stays a `Mutex` because the shared [`load`] and [`authenticate`] helpers (also
+/// exercised directly by the unit tests) take it by shared reference.
+struct OpenBaoLoader {
+    config: VaultConfig,
+    client: Option<reqwest::blocking::Client>,
+    token_state: Mutex<String>,
+    /// When to proactively re-login; `None` for a static token (no lease) or before the first
+    /// authenticate.
+    renew_at: Option<Instant>,
+    authenticated: bool,
+}
+
+impl OpenBaoLoader {
+    fn new(config: VaultConfig) -> Self {
+        Self {
+            config,
+            client: None,
+            token_state: Mutex::new(String::new()),
+            renew_at: None,
+            authenticated: false,
+        }
+    }
+}
+
+impl SecretLoader for OpenBaoLoader {
+    type Error = VaultError;
+
+    fn load(&mut self) -> Result<HashMap<String, String>, VaultError> {
+        if self.client.is_none() {
+            self.client = Some(build_client(self.config.cacert.as_deref())?);
+        }
+        if !self.authenticated {
+            // A static token is used as-is; Kubernetes auth logs in once here for the first token.
+            // The client borrow is scoped so the subsequent mutations do not overlap it.
+            let auth = {
+                let client = self.client.as_ref().expect("client built above");
+                authenticate(client, &self.config)?
+            };
+            // When the token carries a lease, schedule the first proactive re-login; a static
+            // token (no lease) is never proactively renewed, so `renew_at` stays `None`.
+            self.renew_at = auth
+                .lease
+                .map(|lease| renew_deadline(Instant::now(), lease));
+            if let Ok(mut guard) = self.token_state.lock() {
+                *guard = auth.token;
+            }
+            self.authenticated = true;
+        }
+        let client = self.client.as_ref().expect("client built above");
+        load(client, &self.config, &self.token_state)
+    }
+
+    fn next_maintenance(&self) -> Option<Instant> {
+        self.renew_at
+    }
+
+    fn maintain(&mut self) {
+        // Proactive token renewal: re-login before the lease lapses, independently of the
+        // field-map cache refresh, so a short-lived token never expires out from under us.
+        let fresh = {
+            let client = self
+                .client
+                .as_ref()
+                .expect("client built before maintenance");
+            authenticate(client, &self.config)
+        };
+        match fresh {
+            Ok(fresh) => {
+                self.renew_at = fresh
+                    .lease
+                    .map(|lease| renew_deadline(Instant::now(), lease));
+                if let Ok(mut guard) = self.token_state.lock() {
+                    *guard = fresh.token;
+                }
+            }
+            Err(error) => {
+                // Keep the current token and try again shortly; the reactive 401/403 retry still
+                // covers the token actually lapsing before then.
+                tracing::warn!(error = %error, "openbao proactive token renewal failed; will retry");
+                self.renew_at = Some(Instant::now() + RENEW_RETRY_BACKOFF);
+            }
+        }
+    }
+
+    fn log_load_failure(&self, error: &VaultError) {
+        log_refresh_failure(error);
+    }
+}
+
 /// A `SecretProvider` backed by OpenBao (or HashiCorp Vault) over the KV v2 HTTP API.
 ///
+/// A thin wrapper over the shared [`CachingSecretProvider`] core driving an [`OpenBaoLoader`].
 /// Constructed already loaded: [`OpenBaoSecretProvider::new`] authenticates and performs the
 /// first read before returning, so a misconfiguration fails at construction and `get()` then
-/// serves synchronously from the in-memory cache with no I/O. A background thread refreshes
-/// the cache every `cache_ttl`; [`Drop`] stops and joins it.
+/// serves synchronously from the in-memory cache with no I/O. The core's background thread
+/// refreshes every `cache_ttl` and stops on drop.
 pub struct OpenBaoSecretProvider {
-    /// The cached KV v2 field map; the only thing `get()` touches.
-    cache: Arc<RwLock<HashMap<String, String>>>,
-    /// Stop flag + condvar used to wake and end the refresh thread promptly on drop.
-    stop: Arc<(Mutex<bool>, Condvar)>,
-    /// The refresh thread handle, joined on drop.
-    handle: Option<JoinHandle<()>>,
+    inner: CachingSecretProvider,
 }
 
 impl OpenBaoSecretProvider {
@@ -253,183 +322,30 @@ impl OpenBaoSecretProvider {
     }
 
     /// Build the provider from an explicit [`VaultConfig`]: authenticate, perform the initial
-    /// load, and start the background refresh thread.
+    /// load, and start the background refresh thread (all on the shared core's refresh thread).
     ///
-    /// All HTTP runs on the refresh thread; construction blocks until the first load reports
-    /// success or failure, so it is safe to call from within an async runtime.
+    /// Construction blocks until the first load reports success or failure, so it is safe to call
+    /// from within an async runtime.
     ///
     /// # Errors
     /// Returns a [`VaultError`] if building the client, authenticating, or the first read
     /// fails (fail-closed).
     pub fn new(config: VaultConfig) -> Result<Self, VaultError> {
-        let cache: Arc<RwLock<HashMap<String, String>>> = Arc::new(RwLock::new(HashMap::new()));
-        let stop = Arc::new((Mutex::new(false), Condvar::new()));
-        // One-shot channel the refresh thread uses to report the result of the eager load,
-        // so construction fails closed if auth or the first read fails.
-        let (init_tx, init_rx) = mpsc::channel::<Result<(), VaultError>>();
-
-        let thread_cache = Arc::clone(&cache);
-        let thread_stop = Arc::clone(&stop);
-        let handle = std::thread::Builder::new()
-            .name("keel-vault-refresh".to_string())
-            .spawn(move || {
-                refresh_thread(config, thread_cache, thread_stop, init_tx);
-            })
-            .map_err(|error| VaultError::Client(format!("spawn refresh thread: {error}")))?;
-
-        match init_rx.recv() {
-            Ok(Ok(())) => Ok(Self {
-                cache,
-                stop,
-                handle: Some(handle),
-            }),
-            Ok(Err(error)) => {
-                // The thread finished after reporting the failure; join it so no thread leaks.
-                let _ = handle.join();
-                Err(error)
-            }
-            Err(_) => {
-                let _ = handle.join();
-                Err(VaultError::Config(
-                    "vault refresh thread terminated before reporting the initial load".into(),
-                ))
-            }
-        }
+        let cache_ttl = config.cache_ttl;
+        let loader = OpenBaoLoader::new(config);
+        let inner = CachingSecretProvider::start(loader, cache_ttl, "keel-vault-refresh").map_err(
+            |error| match error {
+                StartError::Load(vault_error) => vault_error,
+                StartError::Internal(message) => VaultError::Client(message),
+            },
+        )?;
+        Ok(Self { inner })
     }
 }
 
 impl SecretProvider for OpenBaoSecretProvider {
     fn get(&self, key: &str) -> Option<String> {
-        // A pure cache read: no I/O on the request path. A poisoned lock (a writer panicked)
-        // reports absent rather than propagating the panic through the port.
-        self.cache
-            .read()
-            .ok()
-            .and_then(|fields| fields.get(key).cloned())
-    }
-}
-
-impl Drop for OpenBaoSecretProvider {
-    fn drop(&mut self) {
-        let (lock, cvar) = &*self.stop;
-        if let Ok(mut stopping) = lock.lock() {
-            *stopping = true;
-        }
-        cvar.notify_all();
-        if let Some(handle) = self.handle.take() {
-            let _ = handle.join();
-        }
-    }
-}
-
-/// The refresh thread body: build the client, authenticate, perform the eager initial load
-/// (reporting its result back to construction), then re-load every `cache_ttl` and proactively
-/// re-login before the token's lease expires, until stopped.
-fn refresh_thread(
-    config: VaultConfig,
-    cache: Arc<RwLock<HashMap<String, String>>>,
-    stop: Arc<(Mutex<bool>, Condvar)>,
-    init_tx: mpsc::Sender<Result<(), VaultError>>,
-) {
-    let client = match build_client(config.cacert.as_deref()) {
-        Ok(client) => client,
-        Err(error) => {
-            let _ = init_tx.send(Err(error));
-            return;
-        }
-    };
-
-    // A static token is used as-is; Kubernetes auth logs in once here for the first token.
-    let auth = match authenticate(&client, &config) {
-        Ok(auth) => auth,
-        Err(error) => {
-            let _ = init_tx.send(Err(error));
-            return;
-        }
-    };
-    // When the token carries a lease, schedule the first proactive re-login; a static token
-    // (no lease) is never proactively renewed, so `renew_at` stays `None`.
-    let mut renew_at = auth
-        .lease
-        .map(|lease| renew_deadline(std::time::Instant::now(), lease));
-    let token_state = Mutex::new(auth.token);
-
-    match load(&client, &config, &token_state) {
-        Ok(fields) => {
-            if let Ok(mut writable) = cache.write() {
-                *writable = fields;
-            }
-            let _ = init_tx.send(Ok(()));
-        }
-        Err(error) => {
-            let _ = init_tx.send(Err(error));
-            return;
-        }
-    }
-
-    // Periodic work: refresh the field-map every `cache_ttl` and, independently, proactively
-    // re-login a skew before the token's lease expires. The thread sleeps until the nearer of
-    // the two deadlines (or the stop signal), so a short lease is renewed well before the cache
-    // would otherwise refresh.
-    let (lock, cvar) = &*stop;
-    let mut next_refresh = std::time::Instant::now() + config.cache_ttl;
-    loop {
-        let now = std::time::Instant::now();
-        let wake_at = match renew_at {
-            Some(renew) => next_refresh.min(renew),
-            None => next_refresh,
-        };
-        let wait = wake_at.saturating_duration_since(now);
-        let stopping = {
-            let Ok(guard) = lock.lock() else { break };
-            let (guard, _timeout) = match cvar.wait_timeout(guard, wait) {
-                Ok(result) => result,
-                Err(_) => break,
-            };
-            *guard
-        };
-        if stopping {
-            break;
-        }
-
-        let now = std::time::Instant::now();
-        // Proactive token renewal: re-login before the lease lapses, independently of the
-        // field-map cache refresh, so a short-lived token never expires out from under us.
-        if let Some(renew) = renew_at {
-            if now >= renew {
-                match authenticate(&client, &config) {
-                    Ok(fresh) => {
-                        if let Ok(mut guard) = token_state.lock() {
-                            *guard = fresh.token;
-                        }
-                        renew_at = fresh
-                            .lease
-                            .map(|lease| renew_deadline(std::time::Instant::now(), lease));
-                    }
-                    Err(error) => {
-                        // Keep the current token and try again shortly; the reactive 401/403
-                        // retry still covers the token actually lapsing before then.
-                        tracing::warn!(error = %error, "openbao proactive token renewal failed; will retry");
-                        renew_at = Some(now + RENEW_RETRY_BACKOFF);
-                    }
-                }
-            }
-        }
-
-        if now >= next_refresh {
-            match load(&client, &config, &token_state) {
-                Ok(fields) => {
-                    if let Ok(mut writable) = cache.write() {
-                        *writable = fields;
-                    }
-                }
-                Err(error) => {
-                    // A transient outage must not take the service down: keep the last good map.
-                    log_refresh_failure(&error);
-                }
-            }
-            next_refresh = std::time::Instant::now() + config.cache_ttl;
-        }
+        self.inner.get(key)
     }
 }
 
@@ -582,49 +498,15 @@ fn load(
     }
 }
 
-/// Flatten the KV v2 `.data.data` object into string fields (ADR-0023 field coercion):
-/// a scalar is coerced to its canonical string (a string passes through, a number becomes its
-/// JSON text, a boolean becomes `"true"`/`"false"`); a non-scalar (object, array, or null) has
-/// no canonical flat-key representation and is dropped, so `get()` reports it absent rather than
-/// returning serialized JSON a caller would mistake for the secret value.
-fn flatten_fields(data: serde_json::Map<String, serde_json::Value>) -> HashMap<String, String> {
-    data.into_iter()
-        .filter_map(|(key, value)| {
-            let coerced = match value {
-                serde_json::Value::String(text) => Some(text),
-                serde_json::Value::Number(number) => Some(number.to_string()),
-                serde_json::Value::Bool(flag) => Some(flag.to_string()),
-                serde_json::Value::Object(_)
-                | serde_json::Value::Array(_)
-                | serde_json::Value::Null => None,
-            };
-            coerced.map(|value| (key, value))
-        })
-        .collect()
-}
-
-/// Select the production secret provider fail-closed: the OpenBao adapter when
-/// `KEEL_VAULT_ADDR` is set, else the dev [`EnvSecretProvider`]. Boxed as
-/// `Arc<dyn SecretProvider>` for the service composition root (ADR-0023 "Selection and wiring").
-///
-/// # Errors
-/// Returns a [`VaultError`] when `KEEL_VAULT_ADDR` is set but the OpenBao provider cannot be
-/// built (bad config, auth failure, unreachable server): the service fails to start rather
-/// than silently reading secrets from the environment.
-pub fn secret_provider_from_env() -> Result<Arc<dyn SecretProvider>, VaultError> {
-    if env_var("KEEL_VAULT_ADDR").is_some() {
-        Ok(Arc::new(OpenBaoSecretProvider::from_env()?))
-    } else {
-        Ok(Arc::new(EnvSecretProvider))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::secret::DEFAULT_CACHE_TTL;
     use std::io::{Read, Write};
     use std::net::TcpListener;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::Arc;
+    use std::thread::JoinHandle;
 
     /// One request captured by [`MockVault`].
     #[derive(Clone)]
@@ -1116,17 +998,17 @@ mod tests {
             "KEEL_VAULT_PATH",
             "KEEL_VAULT_TOKEN",
             "KEEL_VAULT_ROLE",
-            "KEEL_VAULT_CACHE_TTL_SECONDS",
+            "KEEL_SECRET_CACHE_TTL_SECONDS",
         ]);
         std::env::set_var("KEEL_VAULT_ADDR", "https://openbao:8200");
         std::env::set_var("KEEL_VAULT_PATH", "app");
         std::env::set_var("KEEL_VAULT_TOKEN", "root");
         std::env::remove_var("KEEL_VAULT_ROLE");
 
-        // A zero, negative, fractional, or non-numeric TTL must fail construction (ADR-0023):
-        // it is a misconfiguration, not a value to clamp to 1s.
+        // A zero, negative, fractional, or non-numeric TTL must fail construction (ADR-0023,
+        // ADR-0024): it is a misconfiguration, not a value to clamp to 1s.
         for bad in ["0", "-5", "abc", "1.5"] {
-            std::env::set_var("KEEL_VAULT_CACHE_TTL_SECONDS", bad);
+            std::env::set_var("KEEL_SECRET_CACHE_TTL_SECONDS", bad);
             let result = VaultConfig::from_env();
             assert!(
                 matches!(result, Err(VaultError::Config(_))),
@@ -1135,7 +1017,7 @@ mod tests {
         }
 
         // A valid positive TTL is honored verbatim.
-        std::env::set_var("KEEL_VAULT_CACHE_TTL_SECONDS", "5");
+        std::env::set_var("KEEL_SECRET_CACHE_TTL_SECONDS", "5");
         let config = VaultConfig::from_env().expect("a positive TTL is valid");
         assert_eq!(config.cache_ttl, Duration::from_secs(5));
 
