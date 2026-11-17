@@ -34,6 +34,11 @@ jobs:
   rust:
     name: Rust (fmt, clippy, test)
     runs-on: ubuntu-latest
+    # A cold compile of the full feature set (nats+grpc+vault+aws) under cargo-llvm-cov
+    # legitimately runs ~45-60 min; this bound exists to kill a genuine HANG (e.g. an
+    # unbounded network/credential call in a test) with a clear signal instead of letting
+    # it run to the 6-hour default. Raise it if a legitimate cold build ever approaches it.
+    timeout-minutes: 80
     # Postgres for the reference-service CRUD integration test (gated on the URL below).
     services:
       postgres:
@@ -78,6 +83,12 @@ jobs:
           toolchain: stable
           components: rustfmt, clippy, llvm-tools-preview
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          # cargo-llvm-cov instruments into a SEPARATE target dir (different RUSTFLAGS), which
+          # the default cache does not cover - so the coverage build recompiled the whole tree
+          # every run. Cache it too so repeat runs (unchanged Cargo.lock) are fast; a new-SDK PR
+          # that changes Cargo.lock still pays one cold build.
+          cache-directories: target/llvm-cov-target
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
