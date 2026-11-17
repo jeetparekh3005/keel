@@ -21,6 +21,8 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
+use aws_sdk_secretsmanager::config::retry::RetryConfig;
+use aws_sdk_secretsmanager::config::timeout::TimeoutConfig;
 use aws_sdk_secretsmanager::error::SdkError;
 use aws_sdk_secretsmanager::operation::get_secret_value::GetSecretValueOutput;
 use aws_sdk_secretsmanager::Client;
@@ -29,6 +31,17 @@ use crate::ports::SecretProvider;
 use crate::secret::{
     env_var, flatten_fields, parse_cache_ttl, CachingSecretProvider, SecretLoader, StartError,
 };
+
+/// Total per-operation timeout, bounding a stalled Secrets Manager endpoint. Mirrors the OpenBao
+/// client's `REQUEST_TIMEOUT` and satisfies ADR-0023's "hard HTTP timeouts" rule so the eager load
+/// at construction cannot hang service startup on an unreachable endpoint.
+const OPERATION_TIMEOUT: Duration = Duration::from_secs(10);
+/// Connect timeout, bounding a black-holed endpoint at the TCP layer (including a wedged IMDS or
+/// credential-provider hop). Mirrors the OpenBao client's `CONNECT_TIMEOUT`.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+/// Retry cap: at most two attempts, so a persistent auth/network/IMDS failure fails fast at
+/// construction instead of the SDK's default exponential-backoff loop.
+const MAX_RETRY_ATTEMPTS: u32 = 2;
 
 /// Failures constructing or refreshing the AWS Secrets Manager provider. Construction errors are
 /// fatal and surface fail-closed; refresh errors are logged and the last good map keeps serving.
@@ -129,7 +142,17 @@ impl AwsLoader {
             let region = self.config.region.clone();
             let client = self.runtime.block_on(async move {
                 let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest())
-                    .http_client(ring_https_client());
+                    .http_client(ring_https_client())
+                    // Hard timeouts + a retry cap so a wedged/unreachable Secrets Manager or a
+                    // degraded credential/IMDS path fails fast rather than hanging the eager load
+                    // at construction (ADR-0023 "hard HTTP timeouts", as on the OpenBao client).
+                    .timeout_config(
+                        TimeoutConfig::builder()
+                            .operation_timeout(OPERATION_TIMEOUT)
+                            .connect_timeout(CONNECT_TIMEOUT)
+                            .build(),
+                    )
+                    .retry_config(RetryConfig::standard().with_max_attempts(MAX_RETRY_ATTEMPTS));
                 if let Some(region) = region {
                     loader = loader.region(aws_sdk_secretsmanager::config::Region::new(region));
                 }
