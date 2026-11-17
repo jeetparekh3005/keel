@@ -37,11 +37,13 @@ class _Recorded:
 class _MockVault:
     """Programmable state for the mock Vault, shared with the request handler."""
 
-    kv: dict[str, str] | None = field(default_factory=dict)  # None => 404 at the path
+    kv: dict[str, Any] | None = field(default_factory=dict)  # None => 404 at the path
     client_token: str = "s.servertoken"
     lease_duration: int = 3600
     fail_next_reads: int = 0  # return `fail_status` for the next N reads, then succeed
     fail_status: int = 403
+    malformed_next_reads: int = 0  # return a 200 with `malformed_body` for the next N reads
+    malformed_body: bytes = b"not-json"
     requests: list[_Recorded] = field(default_factory=list)
 
     @property
@@ -91,11 +93,22 @@ def _make_handler(state: _MockVault) -> type[BaseHTTPRequestHandler]:
                 return
             self._send_json(404, {"errors": []})
 
+        def _send_raw(self, status: int, raw: bytes) -> None:
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+
         def do_GET(self) -> None:
             self._record(None)
             if state.fail_next_reads > 0:
                 state.fail_next_reads -= 1
                 self._send_json(state.fail_status, {"errors": ["denied"]})
+                return
+            if state.malformed_next_reads > 0:
+                state.malformed_next_reads -= 1
+                self._send_raw(200, state.malformed_body)  # 200 OK, body is not valid JSON
                 return
             if state.kv is None:
                 self._send_json(404, {"errors": []})
@@ -274,7 +287,7 @@ def test_factory_builds_openbao_when_addr_set(mock_vault: Any) -> None:
             "KEEL_VAULT_ADDR": addr,
             "KEEL_VAULT_TOKEN": "root",
             "KEEL_VAULT_PATH": "keel-test",
-            "KEEL_VAULT_CACHE_TTL_SECONDS": "0",  # no background thread
+            "KEEL_VAULT_CACHE_TTL_SECONDS": "3600",  # long TTL: thread parks, no refresh in-test
         }
     )
     assert isinstance(provider, OpenBaoSecretProvider)
@@ -318,3 +331,153 @@ def test_https_cacert_builds_tls_context(tmp_path: Any) -> None:
 def test_empty_addr_rejected() -> None:
     with pytest.raises(ValueError, match="KEEL_VAULT_ADDR must be set"):
         OpenBaoSecretProvider(addr="", path="p", token="root")
+
+
+# -- field coercion (ADR-0023) ----------------------------------------------------
+
+
+def test_field_coercion_is_canonical_not_python_repr(mock_vault: Any) -> None:
+    addr, state = mock_vault
+    state.kv = {
+        "name": "alice",
+        "flag_true": True,
+        "flag_false": False,
+        "count": 3,
+        "ratio": 3.5,
+        "obj": {"a": 1},
+        "arr": [1, 2],
+        "nothing": None,
+    }
+    with OpenBaoSecretProvider(
+        addr=addr, path="keel-test", token="root", start_refresh=False
+    ) as provider:
+        # JSON string verbatim; number -> JSON text; boolean -> lowercase true/false.
+        assert provider.get("name") == "alice"
+        assert provider.get("count") == "3"
+        assert provider.get("ratio") == "3.5"
+        assert provider.get("flag_true") == "true"  # not Python "True"
+        assert provider.get("flag_false") == "false"  # not Python "False"
+        # Object/array/null are not scalar secrets: absent, never a Python repr.
+        for absent in ("obj", "arr", "nothing"):
+            assert provider.get_optional(absent) is None
+            with pytest.raises(KeyError):
+                provider.get(absent)
+
+
+# -- cache TTL fail-closed (ADR-0023) ---------------------------------------------
+
+
+@pytest.mark.parametrize("bad_ttl", [0, 0.0, -1, -0.5])
+def test_constructor_rejects_non_positive_ttl(bad_ttl: float) -> None:
+    # Rejected before any I/O, so no reachable server is needed.
+    with pytest.raises(ValueError, match="positive integer"):
+        OpenBaoSecretProvider(
+            addr="http://127.0.0.1:1",
+            path="p",
+            token="root",
+            cache_ttl_seconds=bad_ttl,
+            start_refresh=False,
+        )
+
+
+@pytest.mark.parametrize("bad_ttl", ["0", "-1", "abc", "3.5", "", "  "])
+def test_factory_rejects_non_positive_or_unparseable_ttl(bad_ttl: str) -> None:
+    with pytest.raises(ValueError, match="positive integer"):
+        secret_provider_from_env(
+            environ={
+                "KEEL_VAULT_ADDR": "http://127.0.0.1:1",
+                "KEEL_VAULT_TOKEN": "root",
+                "KEEL_VAULT_PATH": "p",
+                "KEEL_VAULT_CACHE_TTL_SECONDS": bad_ttl,
+            }
+        )
+
+
+def test_factory_defaults_ttl_to_60_when_unset(mock_vault: Any) -> None:
+    addr, state = mock_vault
+    state.kv = {"k": "v"}
+    provider = secret_provider_from_env(
+        environ={
+            "KEEL_VAULT_ADDR": addr,
+            "KEEL_VAULT_TOKEN": "root",
+            "KEEL_VAULT_PATH": "keel-test",
+        }
+    )
+    assert isinstance(provider, OpenBaoSecretProvider)
+    try:
+        assert provider._ttl == 60.0  # noqa: SLF001 - asserting the unset default
+    finally:
+        provider.close()
+
+
+# -- no-leak invariant (ADR-0023) -------------------------------------------------
+
+
+class _RecordingLogger:
+    """A Logger that captures every emitted message and its structured fields as text."""
+
+    def __init__(self) -> None:
+        self.records: list[str] = []
+
+    def _record(self, message: str, **fields: object) -> None:
+        self.records.append(f"{message} {json.dumps(fields, default=str)}")
+
+    def debug(self, message: str, **fields: object) -> None:
+        self._record(message, **fields)
+
+    def info(self, message: str, **fields: object) -> None:
+        self._record(message, **fields)
+
+    def warning(self, message: str, **fields: object) -> None:
+        self._record(message, **fields)
+
+    def error(self, message: str, **fields: object) -> None:
+        self._record(message, **fields)
+
+    def exception(self, message: str, **fields: object) -> None:
+        self._record(message, **fields)
+
+    @property
+    def text(self) -> str:
+        return "\n".join(self.records)
+
+
+def test_refresh_failure_does_not_leak_secret_or_token(mock_vault: Any) -> None:
+    addr, state = mock_vault
+    secret_value = "s3cret-leak-canary-value"
+    token = "root-token-leak-canary"
+    state.kv = {"db_password": secret_value}
+    logger = _RecordingLogger()
+    with OpenBaoSecretProvider(
+        addr=addr, path="keel-test", token=token, logger=logger, start_refresh=False
+    ) as provider:
+        # (a) a 500 refresh failure.
+        state.fail_next_reads = 1
+        state.fail_status = 500
+        provider._refresh_once()  # noqa: SLF001 - exercising the refresh path directly
+        # (b) a 200 whose body is not valid JSON and echoes the secret value.
+        state.malformed_next_reads = 1
+        state.malformed_body = secret_value.encode("utf-8")
+        provider._refresh_once()  # noqa: SLF001 - exercising the refresh path directly
+        assert provider.get("db_password") == secret_value  # last good map still served
+    captured = logger.text
+    assert logger.records  # the failures were actually logged
+    assert secret_value not in captured
+    assert token not in captured
+
+
+def test_read_path_unparseable_body_error_omits_body(mock_vault: Any) -> None:
+    addr, state = mock_vault
+    leak = "SECRET-LEAK-xyz-in-body"
+    state.kv = {"k": "v"}
+    state.malformed_next_reads = 1  # the construction read gets a 200 with a non-JSON body
+    state.malformed_body = leak.encode("utf-8")
+    with pytest.raises(Exception) as exc_info:  # noqa: PT011 - type asserted below
+        OpenBaoSecretProvider(addr=addr, path="keel-test", token="root", start_refresh=False)
+    exc = exc_info.value
+    assert type(exc).__name__ == "_VaultHttpError"
+    # The error carries only status + path, never the response body, and the raw
+    # JSONDecodeError (whose .doc holds the body) is not chained as the cause.
+    assert leak not in str(exc)
+    assert "keel-test" in str(exc)
+    assert exc.__cause__ is None

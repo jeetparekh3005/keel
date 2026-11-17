@@ -177,7 +177,7 @@ exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError", "^\\s*\\.\\.\\
 # regeneration dogfood (proto.yml) is their gate, not codespell.
 [tool.codespell]
 skip = "*.lock,./.git,./.venv,*/genproto/*,*/io/keel/reference/*"
-ignore-words-list = "dependant,afterall,atmost"  # FastAPI route.dependant + vitest afterAll + Awaitility atMost, not typos
+ignore-words-list = "dependant,afterall,atmost,unparseable"  # FastAPI route.dependant + vitest afterAll + Awaitility atMost + ADR-0023 "unparseable" spelling, not typos
 
 # First-party workspace modules (extend as packages/services are added).
 [tool.deptry]
