@@ -66,20 +66,38 @@ function luhnOk(digits: string): boolean {
   return sum % 10 === 0;
 }
 
-/** Replace secret patterns and Luhn-valid card numbers in a string value. */
-export function scrubText(text: string): string {
+/** Replace the high-precision secret patterns (JWT, AWS key id, bearer, PEM) in a string. */
+function scrubSecretPatterns(text: string): string {
   let out = text;
   for (const pattern of SECRET_PATTERNS) {
     out = out.replace(pattern, REDACTED);
   }
-  out = out.replace(CC_CANDIDATE, (match) => {
+  return out;
+}
+
+/** Replace secret patterns and Luhn-valid card numbers in a string value. */
+export function scrubText(text: string): string {
+  const out = scrubSecretPatterns(text);
+  return out.replace(CC_CANDIDATE, (match) => {
     const digits = match.replace(/[^0-9]/g, '');
     if (digits.length >= 13 && digits.length <= 19 && luhnOk(digits)) {
       return REDACTED;
     }
     return match;
   });
-  return out;
+}
+
+/**
+ * Scrub a span NAME: run every high-precision secret pattern (JWT, AWS key id, bearer, PEM) but
+ * NOT the credit-card/PAN/Luhn matcher. Span names are low-cardinality operation identifiers (e.g.
+ * `GET /v1/accounts/{id}/balance`), where a long numeric path segment that happens to be Luhn-valid
+ * is an account/order/invoice id, not a cardholder PAN. Running the PAN matcher there false-positives
+ * and corrupts the operation name - hurting trace grouping more than it protects anything. Attribute,
+ * event, and link string VALUES still go through the full `scrubText`, so PAN redaction stays intact
+ * everywhere a real cardholder number could plausibly land.
+ */
+export function scrubTextForName(text: string): string {
+  return scrubSecretPatterns(text);
 }
 
 /**
