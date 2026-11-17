@@ -29,6 +29,13 @@ import org.springframework.validation.annotation.Validated;
  * Serving plaintext on an exposed gRPC port is fail-closed: it requires the explicit opt-in {@code
  * KEEL_GRPC_TLS_INSECURE} ({@code keel.grpc-tls-insecure}), false by default, so a production
  * deployment that forgets to supply the PEM triple fails to start rather than binding in the clear.
+ *
+ * <p>The {@code KEEL_VAULT_*} fields gate the OpenBao {@link io.keel.core.ports.SecretProvider}
+ * backend (ADR-0023): the adapter is wired only when {@code KEEL_VAULT_ADDR} ({@code
+ * keel.vault-addr}) is set, otherwise the dev {@code EnvSecretProvider} is used. {@code
+ * KEEL_VAULT_TOKEN} (static token) or {@code KEEL_VAULT_ROLE} (Kubernetes auth role) authenticates;
+ * {@code KEEL_VAULT_MOUNT}/{@code KEEL_VAULT_PATH} name the KV v2 secret, and the remaining fields
+ * tune the Kubernetes auth mount/JWT path, the Vault namespace, the TLS CA, and the cache TTL.
  */
 @ConfigurationProperties(prefix = "keel")
 @Validated
@@ -47,7 +54,17 @@ public record KeelProperties(
     @DefaultValue("") String grpcTlsCertPem,
     @DefaultValue("") String grpcTlsKeyPem,
     @DefaultValue("") String grpcTlsCaPem,
-    @DefaultValue("false") boolean grpcTlsInsecure) {
+    @DefaultValue("false") boolean grpcTlsInsecure,
+    @DefaultValue("") String vaultAddr,
+    @DefaultValue("") String vaultToken,
+    @DefaultValue("") String vaultRole,
+    @DefaultValue("kubernetes") String vaultK8sMount,
+    @DefaultValue("/var/run/secrets/kubernetes.io/serviceaccount/token") String vaultK8sJwtPath,
+    @DefaultValue("secret") String vaultMount,
+    @DefaultValue("") String vaultPath,
+    @DefaultValue("") String vaultNamespace,
+    @DefaultValue("") String vaultCacert,
+    @DefaultValue("60") int vaultCacheTtlSeconds) {
 
   /**
    * One configured API-key credential (platform.yaml auth: api_key). The key is stored only as its

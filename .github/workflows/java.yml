@@ -86,6 +86,12 @@ jobs:
             curl -sf http://localhost:8080/realms/keel/.well-known/openid-configuration >/dev/null 2>&1 && break
             sleep 3
           done
+      - name: Start OpenBao (dev)
+        # Dev-mode OpenBao for the OpenBaoSecretProvider KV v2 integration test (ADR-0023); started
+        # as a docker run step like NATS/Keycloak so the realm/import timing matches the other lanes.
+        run: |
+          docker run -d --name openbao -p 8200:8200 --cap-add IPC_LOCK -e BAO_DEV_ROOT_TOKEN_ID=root openbao/openbao:2.7.2 server -dev -dev-root-token-id=root -dev-listen-address=0.0.0.0:8200
+          for i in $(seq 1 30); do curl -sf http://localhost:8200/v1/sys/health >/dev/null && break; sleep 1; done
       - name: Verify (spotless, tests, archunit, jacoco)
         env:
           KEEL_NATS_URL: nats://localhost:4222
@@ -94,6 +100,10 @@ jobs:
           KEEL_KEYCLOAK_CLIENT_ID: keel-api
           KEEL_KEYCLOAK_CLIENT_SECRET: test-secret
           KEEL_OIDC_AUDIENCE: keel-api
+          KEEL_VAULT_ADDR: http://localhost:8200
+          KEEL_VAULT_TOKEN: root
+          KEEL_VAULT_MOUNT: secret
+          KEEL_VAULT_PATH: keel-test
         run: mvn -B -Pcoverage-aggregate verify
       - name: Dependency CVEs (Trivy)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
