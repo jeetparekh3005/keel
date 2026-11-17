@@ -46,6 +46,15 @@ services:
     cap_add: ["IPC_LOCK"]
     ports: ["8200:8200"]
 
+  # LocalStack for the AWS Secrets Manager adapter integration tests (ADR-0024). The AWS SDKs
+  # route here via the standard AWS_ENDPOINT_URL_SECRETS_MANAGER env var; dummy creds only. Dev
+  # only. GCP Secret Manager has no official emulator, so it has no local-stack equivalent.
+  localstack:
+    image: localstack/localstack:2026.09.1
+    environment:
+      SERVICES: secretsmanager
+    ports: ["4566:4566"]
+
   reference-service:
     build:
       context: ..
