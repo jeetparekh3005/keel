@@ -81,11 +81,19 @@ func IsSecretKey(key string) bool { return isSecretKey(key) }
 // patterns as the log sink rather than duplicating them.
 func ScrubText(text string) string { return scrubText(text) }
 
+// ScrubTextForName scrubs a low-cardinality identifier (a span/operation name) for secret
+// patterns but deliberately skips the credit-card/PAN/Luhn matcher. Span names are operation
+// identifiers (for example "GET /v1/accounts/{id}/balance"); a Luhn-valid 13-19 digit id
+// embedded in such a name is a route parameter, not a card number, so applying the PAN matcher
+// there corrupts the name (".../[REDACTED]/balance") while protecting nothing a high-cardinality
+// value sink would. Bearer/JWT/AWS-key/PEM patterns still apply, since those remain secrets
+// wherever they appear. Attribute/event/link string VALUES keep full PAN redaction via
+// ScrubText, which is unchanged.
+func ScrubTextForName(name string) string { return scrubPatterns(name) }
+
 // scrubText replaces secret patterns and Luhn-valid card numbers in a string value.
 func scrubText(text string) string {
-	for _, pattern := range secretPatterns {
-		text = pattern.ReplaceAllString(text, redacted)
-	}
+	text = scrubPatterns(text)
 	text = ccCandidate.ReplaceAllStringFunc(text, func(match string) string {
 		var sb strings.Builder
 		for _, r := range match {
@@ -99,5 +107,15 @@ func scrubText(text string) string {
 		}
 		return match
 	})
+	return text
+}
+
+// scrubPatterns applies only the high-precision secret-pattern matchers (bearer/JWT/AWS-key/PEM),
+// not the Luhn/PAN matcher. Shared by scrubText (which then adds PAN redaction) and
+// ScrubTextForName (which stops here).
+func scrubPatterns(text string) string {
+	for _, pattern := range secretPatterns {
+		text = pattern.ReplaceAllString(text, redacted)
+	}
 	return text
 }

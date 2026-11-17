@@ -60,6 +60,27 @@ func TestExportedRedactionAPI(t *testing.T) {
 	}
 }
 
+// TestScrubTextForName asserts the name-specific scrubber runs every secret-pattern matcher
+// except the credit-card/PAN/Luhn one: a Luhn-valid id in a low-cardinality operation name is a
+// route parameter and must survive, while bearer/JWT/AWS-key secrets are still scrubbed. The
+// matching ScrubText call proves the PAN carve-out is name-only and does not touch value scrubbing.
+func TestScrubTextForName(t *testing.T) {
+	const luhnName = "GET /v1/accounts/4532015112830366/balance"
+	if got := ScrubTextForName(luhnName); got != luhnName {
+		t.Errorf("ScrubTextForName redacted a Luhn-valid id in a name: %q", got)
+	}
+	// Control: ScrubText (the value scrubber) does redact the same Luhn id.
+	if got := ScrubText(luhnName); got == luhnName {
+		t.Errorf("ScrubText should redact the Luhn id in a value, left unchanged: %q", got)
+	}
+	if got := ScrubTextForName("job Bearer abcdef1234567890 ran"); got != "job [REDACTED] ran" {
+		t.Errorf("ScrubTextForName did not scrub bearer: %q", got)
+	}
+	if got := ScrubTextForName("key AKIAIOSFODNN7EXAMPLE used"); got != "key [REDACTED] used" {
+		t.Errorf("ScrubTextForName did not scrub AWS key: %q", got)
+	}
+}
+
 func TestLuhn(t *testing.T) {
 	if !luhnOK("4111111111111111") {
 		t.Error("valid Visa test number should pass Luhn")

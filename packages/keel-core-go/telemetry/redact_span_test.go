@@ -186,6 +186,71 @@ func TestSpanExportScrubsSpanName(t *testing.T) {
 	}
 }
 
+// TestSpanExportPreservesLuhnIDInSpanName asserts the redacting exporter does NOT apply the
+// credit-card/PAN/Luhn matcher to the span NAME. A span name is a low-cardinality operation
+// identifier; a Luhn-valid 13-19 digit id embedded in it (for example an account id in a REST
+// path) is a route parameter, not a card number, and must survive export intact. Scrubbing it
+// would corrupt the operation name (".../[REDACTED]/balance") and fracture trace aggregation.
+// This fails before the fix (ScrubText redacts the Luhn id) and passes after (ScrubTextForName
+// skips the PAN matcher).
+func TestSpanExportPreservesLuhnIDInSpanName(t *testing.T) {
+	// 4532015112830366 is a Luhn-valid 16-digit number; here it is an account id in a path.
+	const name = "GET /v1/accounts/4532015112830366/balance"
+
+	inmem := tracetest.NewInMemoryExporter()
+	if got := exportSpanNamed(t, name, newRedactingExporter(inmem), inmem); got != name {
+		t.Errorf("span name with a Luhn-valid id was altered: got %q, want %q", got, name)
+	}
+}
+
+// TestSpanExportScrubsSecretPatternsInSpanName asserts the name-specific scrubber still removes
+// the non-PAN secret patterns from a span name: a bearer token and an AWS access-key id must be
+// replaced by the marker even though the PAN matcher is skipped for names.
+func TestSpanExportScrubsSecretPatternsInSpanName(t *testing.T) {
+	cases := map[string]string{
+		"POST /login Bearer abcdef1234567890": "POST /login [REDACTED]",
+		"job AKIAIOSFODNN7EXAMPLE sync":       "job [REDACTED] sync",
+	}
+	for name, want := range cases {
+		inmem := tracetest.NewInMemoryExporter()
+		if got := exportSpanNamed(t, name, newRedactingExporter(inmem), inmem); got != want {
+			t.Errorf("span name secret not scrubbed: got %q, want %q", got, want)
+		}
+	}
+}
+
+// TestSpanExportRedactsPANInAttributeValue asserts that, unlike the span NAME, an attribute
+// string VALUE still gets full PAN redaction through the unchanged ScrubText: a Luhn-valid card
+// number in a high-cardinality value sink must be replaced by the marker. This guards against a
+// regression where the name-specific carve-out leaks into the value path.
+func TestSpanExportRedactsPANInAttributeValue(t *testing.T) {
+	const panAttr = "payment.card"
+	const panVal = "4532015112830366"
+
+	inmem := tracetest.NewInMemoryExporter()
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+		sdktrace.WithSyncer(newRedactingExporter(inmem)),
+	)
+	_, span := tp.Tracer("test").Start(context.Background(), "op")
+	span.SetAttributes(attribute.String(panAttr, panVal))
+	span.End()
+
+	stubs := inmem.GetSpans()
+	if len(stubs) != 1 {
+		t.Fatalf("expected 1 exported span, got %d", len(stubs))
+	}
+	got := map[string]string{}
+	for _, kv := range stubs[0].Attributes {
+		if kv.Value.Type() == attribute.STRING {
+			got[string(kv.Key)] = kv.Value.AsString()
+		}
+	}
+	if got[panAttr] != "[REDACTED]" {
+		t.Errorf("PAN in attribute value not redacted: %q = %q, want %q", panAttr, got[panAttr], "[REDACTED]")
+	}
+}
+
 // linkSecretVal is the cleartext secret placed on a span link's secret-family attribute; it
 // must never reach the exporter.
 const linkSecretVal = "Bearer linksupersecret5555"
