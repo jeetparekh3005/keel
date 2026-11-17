@@ -229,7 +229,11 @@ class OpenBaoSecretProviderTest {
     provider = new OpenBaoSecretProvider(cfg);
 
     assertEquals(Optional.of("v1"), provider.get("api_key"));
-    waitUntil(() -> provider.readCount() >= 2);
+    // Wait on the observable value, not the read counter: the background refresh bumps the read
+    // count and swaps the cached map as two steps, so a get() taken the instant the counter hits 2
+    // can still see "v1" (the swap has not landed yet). Polling until get() returns "v2" removes
+    // that race and still fails (via waitUntil's 5s deadline) if the refresh never replaces the map.
+    waitUntil(() -> Optional.of("v2").equals(provider.get("api_key")));
     assertEquals(Optional.of("v2"), provider.get("api_key"), "background refresh replaced the map");
   }
 
