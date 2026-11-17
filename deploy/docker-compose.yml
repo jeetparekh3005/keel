@@ -36,6 +36,16 @@ services:
     command: ["--jetstream"]
     ports: ["4222:4222"]
 
+  # OpenBao (the default SecretProvider backend, ADR-0007/0023) in dev mode: auto-unsealed,
+  # KV v2 mounted at secret/, root token "root". Dev only - never run -dev in production.
+  openbao:
+    image: openbao/openbao:2.7.2
+    command: ["server", "-dev", "-dev-root-token-id=root", "-dev-listen-address=0.0.0.0:8200"]
+    environment:
+      BAO_DEV_ROOT_TOKEN_ID: root
+    cap_add: ["IPC_LOCK"]
+    ports: ["8200:8200"]
+
   reference-service:
     build:
       context: ..
