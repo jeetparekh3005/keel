@@ -356,7 +356,7 @@ func TestOpenBaoFailClosedOnMisconfig(t *testing.T) {
 		t.Setenv(envPath, "keel-test")
 		t.Setenv(envCACert, "not a pem")
 		if _, err := NewOpenBaoSecretProvider(context.Background()); err == nil {
-			t.Error("an unparseable KEEL_VAULT_CACERT must fail construction")
+			t.Error("a malformed KEEL_VAULT_CACERT must fail construction")
 		}
 	})
 
