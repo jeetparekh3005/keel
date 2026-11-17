@@ -2,10 +2,10 @@ package adapters
 
 // OpenBaoSecretProvider is the production SecretProvider backend (ADR-0007, ADR-0023): a
 // thin client over the Vault KV v2 HTTP API that serves OpenBao or HashiCorp Vault
-// unchanged. It authenticates (static token or Kubernetes service-account JWT), loads the
-// field map at <mount>/data/<path> into memory once at construction, and serves Get()
-// synchronously from that cache with no I/O. A background goroutine re-reads the path every
-// KEEL_VAULT_CACHE_TTL_SECONDS; a 401/403 during refresh triggers a single re-auth + retry,
+// unchanged. It authenticates (static token or Kubernetes service-account JWT) and loads the
+// field map at <mount>/data/<path>; the shared caching core (secretcache.go) holds that map
+// in memory, serves Get() synchronously with no I/O, and re-invokes this loader every
+// KEEL_SECRET_CACHE_TTL_SECONDS. A 401/403 during a load triggers a single re-auth + retry,
 // and a failed refresh keeps serving the last good field map (a transient outage does not
 // take the service down). Scope here is static KV read only; dynamic credentials, Transit,
 // and PKI are later work (ADR-0023).
@@ -19,10 +19,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -31,7 +29,8 @@ import (
 )
 
 const (
-	// Config env vars (ADR-0023 Protocol table). All KEEL_VAULT_*.
+	// Config env vars (ADR-0023 Protocol table). All KEEL_VAULT_* except the shared cache TTL,
+	// which lives in secretcache.go as KEEL_SECRET_CACHE_TTL_SECONDS (ADR-0024).
 	envAddr      = "KEEL_VAULT_ADDR"
 	envToken     = "KEEL_VAULT_TOKEN"
 	envRole      = "KEEL_VAULT_ROLE"
@@ -41,27 +40,26 @@ const (
 	envPath      = "KEEL_VAULT_PATH"
 	envNamespace = "KEEL_VAULT_NAMESPACE"
 	envCACert    = "KEEL_VAULT_CACERT"
-	envCacheTTL  = "KEEL_VAULT_CACHE_TTL_SECONDS"
 
 	defaultK8sMount = "kubernetes"
 	defaultJWTPath  = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 	defaultMount    = "secret"
-	defaultCacheTTL = 60 * time.Second
 
 	// renewBuffer re-logs in a Kubernetes lease before it fully expires, rather than waiting
 	// for a 401/403 to force a reactive re-auth.
 	renewBuffer = 10 * time.Second
 )
 
-// OpenBaoSecretProvider serves secrets from an in-memory cache of one KV v2 field map,
-// refreshed in the background. The zero value is not usable; construct with
-// NewOpenBaoSecretProvider.
+// OpenBaoSecretProvider authenticates to OpenBao/Vault and loads one KV v2 field map, which
+// the embedded caching core serves and refreshes. The zero value is not usable; construct
+// with NewOpenBaoSecretProvider. The embedded *cachingSecretProvider promotes Get and Close.
 type OpenBaoSecretProvider struct {
+	*cachingSecretProvider
+
 	addr      string
 	mount     string
 	path      string
 	namespace string
-	ttl       time.Duration
 	client    *http.Client
 
 	// Auth configuration (exactly one of staticToken / role is set, per the ADR order).
@@ -70,21 +68,19 @@ type OpenBaoSecretProvider struct {
 	k8sMount    string
 	jwtPath     string
 
-	mu          sync.RWMutex
-	fields      map[string]string
+	// authMu guards the resolved token and its lease expiry (distinct from the core's field
+	// lock, which it embeds).
+	authMu      sync.RWMutex
 	token       string
 	tokenExpiry time.Time // zero for a static token (never auto-renewed)
-
-	cancel    context.CancelFunc
-	done      chan struct{}
-	closeOnce sync.Once
 }
 
-// Compile-time assertions that the provider satisfies the port and is closeable, mirroring
-// the env adapter's assertion.
+// Compile-time assertions that the provider satisfies the port, is closeable, and is a loader
+// over the shared cache.
 var (
 	_ ports.SecretProvider = (*OpenBaoSecretProvider)(nil)
 	_ io.Closer            = (*OpenBaoSecretProvider)(nil)
+	_ secretLoader         = (*OpenBaoSecretProvider)(nil)
 )
 
 // NewOpenBaoSecretProvider constructs the provider from the KEEL_VAULT_* environment,
@@ -102,13 +98,9 @@ func NewOpenBaoSecretProvider(ctx context.Context) (*OpenBaoSecretProvider, erro
 		return nil, fmt.Errorf("%s is set but %s is not", envAddr, envPath)
 	}
 
-	ttl := defaultCacheTTL
-	if raw := strings.TrimSpace(os.Getenv(envCacheTTL)); raw != "" {
-		secs, err := strconv.Atoi(raw)
-		if err != nil || secs <= 0 {
-			return nil, fmt.Errorf("%s=%q is not a positive integer", envCacheTTL, raw)
-		}
-		ttl = time.Duration(secs) * time.Second
+	ttl, err := parseCacheTTL()
+	if err != nil {
+		return nil, err
 	}
 
 	client, err := newVaultHTTPClient(os.Getenv(envCACert))
@@ -121,13 +113,11 @@ func NewOpenBaoSecretProvider(ctx context.Context) (*OpenBaoSecretProvider, erro
 		mount:       getenvDefault(envMount, defaultMount),
 		path:        path,
 		namespace:   strings.TrimSpace(os.Getenv(envNamespace)),
-		ttl:         ttl,
 		client:      client,
 		staticToken: strings.TrimSpace(os.Getenv(envToken)),
 		role:        strings.TrimSpace(os.Getenv(envRole)),
 		k8sMount:    getenvDefault(envK8sMount, defaultK8sMount),
 		jwtPath:     getenvDefault(envJWTPath, defaultJWTPath),
-		fields:      map[string]string{},
 	}
 
 	if p.staticToken == "" && p.role == "" {
@@ -137,72 +127,26 @@ func NewOpenBaoSecretProvider(ctx context.Context) (*OpenBaoSecretProvider, erro
 	if err := p.authenticate(ctx); err != nil {
 		return nil, err
 	}
-	fields, err := p.fetch(ctx)
+
+	core, err := newCachingSecretProvider(ctx, p, ttl)
 	if err != nil {
 		return nil, err
 	}
-	p.setFields(fields)
-
-	loopCtx, cancel := context.WithCancel(ctx)
-	p.cancel = cancel
-	p.done = make(chan struct{})
-	go p.refreshLoop(loopCtx)
-
+	p.cachingSecretProvider = core
 	return p, nil
 }
 
-// Get returns the field value for key from the in-memory cache; ok is false when the field
-// is absent (same semantics as the env adapter). It performs no I/O (ADR-0023: the port's
-// Get is synchronous and Node cannot do synchronous HTTP, so the cache is loaded ahead).
-func (p *OpenBaoSecretProvider) Get(key string) (string, bool) {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	v, ok := p.fields[key]
-	return v, ok
-}
+// name identifies the backend in refresh-failure logs (secretLoader).
+func (p *OpenBaoSecretProvider) name() string { return "openbao" }
 
-// Close stops the background refresh goroutine and waits for it to exit. It is safe to call
-// more than once.
-func (p *OpenBaoSecretProvider) Close() error {
-	p.closeOnce.Do(func() {
-		if p.cancel != nil {
-			p.cancel()
-			<-p.done
-		}
-	})
-	return nil
-}
-
-func (p *OpenBaoSecretProvider) refreshLoop(ctx context.Context) {
-	defer close(p.done)
-	ticker := time.NewTicker(p.ttl)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			fields, err := p.fetch(ctx)
-			if err != nil {
-				// Keep serving the last good field map; a transient OpenBao outage must not
-				// take the service down (ADR-0023).
-				slog.WarnContext(ctx, "openbao field-map refresh failed; serving last good values",
-					"error", err, "mount", p.mount, "path", p.path)
-				continue
-			}
-			p.setFields(fields)
-		}
-	}
-}
-
-// fetch reads the field map once, re-authenticating and retrying a single time on a 401/403
-// (an expired/invalid token). A Kubernetes lease nearing expiry is renewed proactively
-// before the read.
-func (p *OpenBaoSecretProvider) fetch(ctx context.Context) (map[string]string, error) {
+// load reads the field map once, re-authenticating and retrying a single time on a 401/403
+// (an expired/invalid token). A Kubernetes lease nearing expiry is renewed proactively before
+// the read. It is the secretLoader the caching core invokes at construction and every TTL.
+func (p *OpenBaoSecretProvider) load(ctx context.Context) (map[string]string, error) {
 	if p.role != "" {
-		p.mu.RLock()
+		p.authMu.RLock()
 		expiry := p.tokenExpiry
-		p.mu.RUnlock()
+		p.authMu.RUnlock()
 		if !expiry.IsZero() && time.Now().After(expiry.Add(-renewBuffer)) {
 			if err := p.authenticate(ctx); err != nil {
 				return nil, err
@@ -273,10 +217,10 @@ func (p *OpenBaoSecretProvider) read(ctx context.Context, token string) (map[str
 // for Kubernetes, the lease expiry) under the lock.
 func (p *OpenBaoSecretProvider) authenticate(ctx context.Context) error {
 	if p.staticToken != "" {
-		p.mu.Lock()
+		p.authMu.Lock()
 		p.token = p.staticToken
 		p.tokenExpiry = time.Time{}
-		p.mu.Unlock()
+		p.authMu.Unlock()
 		return nil
 	}
 	if p.role == "" {
@@ -331,14 +275,14 @@ func (p *OpenBaoSecretProvider) authenticate(ctx context.Context) error {
 		return fmt.Errorf("openbao kubernetes login %s: response had no client_token", url)
 	}
 
-	p.mu.Lock()
+	p.authMu.Lock()
 	p.token = parsed.Auth.ClientToken
 	if parsed.Auth.LeaseDuration > 0 {
 		p.tokenExpiry = time.Now().Add(time.Duration(parsed.Auth.LeaseDuration) * time.Second)
 	} else {
 		p.tokenExpiry = time.Time{}
 	}
-	p.mu.Unlock()
+	p.authMu.Unlock()
 	return nil
 }
 
@@ -352,15 +296,9 @@ func (p *OpenBaoSecretProvider) setHeaders(req *http.Request, token string) {
 }
 
 func (p *OpenBaoSecretProvider) currentToken() string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
+	p.authMu.RLock()
+	defer p.authMu.RUnlock()
 	return p.token
-}
-
-func (p *OpenBaoSecretProvider) setFields(fields map[string]string) {
-	p.mu.Lock()
-	p.fields = fields
-	p.mu.Unlock()
 }
 
 // parseFieldMap extracts the KV v2 field map at the JSON pointer .data.data. Each value is
@@ -384,33 +322,6 @@ func parseFieldMap(body []byte) (map[string]string, error) {
 		}
 	}
 	return fields, nil
-}
-
-// coerceField maps one raw KV v2 field value to its canonical string, reporting ok=false when
-// the value is non-scalar (object, array, or null) and so has no canonical string. Scalars:
-// a JSON string decodes to its unescaped text, a number keeps its JSON text verbatim, and a
-// boolean becomes "true"/"false".
-func coerceField(raw json.RawMessage) (string, bool) {
-	trimmed := bytes.TrimSpace(raw)
-	if len(trimmed) == 0 {
-		return "", false
-	}
-	switch trimmed[0] {
-	case '"':
-		var s string
-		if err := json.Unmarshal(trimmed, &s); err != nil {
-			return "", false
-		}
-		return s, true
-	case 't':
-		return "true", true
-	case 'f':
-		return "false", true
-	case '{', '[', 'n': // object, array, or null: no canonical scalar string.
-		return "", false
-	default: // number: the JSON text is already the canonical string.
-		return string(trimmed), true
-	}
 }
 
 // newVaultHTTPClient builds the HTTP client, trusting KEEL_VAULT_CACERT (a PEM literal or a
@@ -442,22 +353,4 @@ func newVaultHTTPClient(caCert string) (*http.Client, error) {
 			TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12},
 		},
 	}, nil
-}
-
-func getenvDefault(key, fallback string) string {
-	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
-		return v
-	}
-	return fallback
-}
-
-// SecretProviderFromEnv is the composition-root factory (ADR-0023 selection): it returns the
-// OpenBao provider when KEEL_VAULT_ADDR is set (failing closed on any misconfiguration rather
-// than silently falling back), and the EnvSecretProvider otherwise. The OpenBao provider is
-// an io.Closer; callers that manage lifecycle should type-assert and Close it on shutdown.
-func SecretProviderFromEnv(ctx context.Context) (ports.SecretProvider, error) {
-	if strings.TrimSpace(os.Getenv(envAddr)) == "" {
-		return EnvSecretProvider{}, nil
-	}
-	return NewOpenBaoSecretProvider(ctx)
 }
