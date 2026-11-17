@@ -7,6 +7,7 @@ import java.util.Optional;
 import java.util.concurrent.ScheduledExecutorService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
 import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
@@ -148,11 +149,34 @@ public final class AwsSecretsManagerSecretProvider
 
   private static SecretsManagerClient buildClient(String region) {
     var builder =
-        SecretsManagerClient.builder().httpClientBuilder(UrlConnectionHttpClient.builder());
+        SecretsManagerClient.builder()
+            .httpClientBuilder(
+                UrlConnectionHttpClient.builder()
+                    .connectionTimeout(Duration.ofSeconds(5))
+                    .socketTimeout(Duration.ofSeconds(10)))
+            .overrideConfiguration(hardTimeoutConfiguration());
     if (region != null) {
       builder.region(Region.of(region));
     }
     return builder.build();
+  }
+
+  /**
+   * Bounded HTTP-timeout + capped-retry override for the production client (ADR-0023's
+   * hard-HTTP-timeout rule, as already applied to the OpenBao adapter). {@link
+   * UrlConnectionHttpClient} carries a socket timeout, but under the SDK's default retry budget a
+   * missing or blackholed Secrets Manager endpoint still stalls startup for a multi-attempt
+   * multiple of that timeout rather than failing fast. This caps the whole {@code GetSecretValue}
+   * call at 15s, each attempt at 10s, and the retry budget at 2 total attempts so a wedged endpoint
+   * cannot multiply the per-attempt stall across many retries - the eager first load fails closed
+   * and promptly instead of blocking boot.
+   */
+  static ClientOverrideConfiguration hardTimeoutConfiguration() {
+    return ClientOverrideConfiguration.builder()
+        .apiCallTimeout(Duration.ofSeconds(15))
+        .apiCallAttemptTimeout(Duration.ofSeconds(10))
+        .retryStrategy(r -> r.maxAttempts(2))
+        .build();
   }
 
   private static String requireValue(String value, String name) {

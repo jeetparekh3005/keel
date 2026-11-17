@@ -3,6 +3,7 @@ package io.keel.core.adapters;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -20,6 +21,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.core.SdkBytes;
+import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
+import software.amazon.awssdk.retries.DefaultRetryStrategy;
+import software.amazon.awssdk.retries.api.RetryStrategy;
 import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
 import software.amazon.awssdk.services.secretsmanager.model.GetSecretValueRequest;
 import software.amazon.awssdk.services.secretsmanager.model.GetSecretValueResponse;
@@ -195,6 +199,32 @@ class AwsSecretsManagerSecretProviderTest {
     assertFalse(logged.contains(secret), "the secret value must never appear in any log line");
     assertEquals(
         Optional.of(secret), provider.get("api_key"), "a failed refresh keeps the last good map");
+  }
+
+  @Test
+  void productionClientConfigBoundsTimeoutAndCapsRetries() {
+    // ADR-0023's hard-HTTP-timeout rule: the production client's override must fail a wedged
+    // GetSecretValue fast (bounded call + per-attempt timeout) and cap the retry budget so a
+    // blackholed endpoint cannot multiply the per-attempt stall across many retries at startup.
+    ClientOverrideConfiguration config = AwsSecretsManagerSecretProvider.hardTimeoutConfiguration();
+
+    assertEquals(
+        Optional.of(Duration.ofSeconds(15)),
+        config.apiCallTimeout(),
+        "the whole GetSecretValue call is bounded at 15s");
+    assertEquals(
+        Optional.of(Duration.ofSeconds(10)),
+        config.apiCallAttemptTimeout(),
+        "each attempt is bounded at 10s");
+    // The configurator form mutates the SDK's resolved default strategy at client-build time, so
+    // apply it to a standard strategy builder here and confirm it caps the attempt budget.
+    assertTrue(
+        config.retryStrategyConfigurator().isPresent(), "a bounded retry strategy is configured");
+    var retryBuilder = DefaultRetryStrategy.standardStrategyBuilder();
+    config.retryStrategyConfigurator().orElseThrow().accept(retryBuilder);
+    RetryStrategy retryStrategy = retryBuilder.build();
+    assertEquals(
+        2, retryStrategy.maxAttempts(), "the retry budget is capped at 2 attempts (1 retry)");
   }
 
   @Test
