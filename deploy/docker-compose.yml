@@ -49,8 +49,10 @@ services:
   # LocalStack for the AWS Secrets Manager adapter integration tests (ADR-0024). The AWS SDKs
   # route here via the standard AWS_ENDPOINT_URL_SECRETS_MANAGER env var; dummy creds only. Dev
   # only. GCP Secret Manager has no official emulator, so it has no local-stack equivalent.
+  # Pinned to 4.9.1 (the last token-free Community image) by exception: from the 2026.03 single-image
+  # consolidation, every CalVer (2026.x) tag requires a registered LOCALSTACK_AUTH_TOKEN to start.
   localstack:
-    image: localstack/localstack:2026.09.1
+    image: localstack/localstack:4.9.1
     environment:
       SERVICES: secretsmanager
     ports: ["4566:4566"]
