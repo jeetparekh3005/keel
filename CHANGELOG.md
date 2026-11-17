@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.6.2](https://github.com/jeetparekh3005/keel/compare/v0.6.1...v0.6.2) (2026-11-17)
+
+
+### Bug Fixes
+
+* **go:** scrub span name on export and close telemetry/authz test gaps ([#490](https://github.com/jeetparekh3005/keel/issues/490)) ([6a1d5f7](https://github.com/jeetparekh3005/keel/commit/6a1d5f74db554084fd26e769b82204fe1055d7af))
+* **go:** skip PAN matcher when scrubbing span names ([#495](https://github.com/jeetparekh3005/keel/issues/495)) ([5f4cd6d](https://github.com/jeetparekh3005/keel/commit/5f4cd6dd4e44726c11f64eb94194b6f30d8ba34b))
+* **java:** scrub secrets from exported span name and cover link redaction ([#493](https://github.com/jeetparekh3005/keel/issues/493)) ([8d3abe1](https://github.com/jeetparekh3005/keel/commit/8d3abe13ef2673088238a425edd4c694f0a8f259))
+* **rust:** scrub secrets from exported span names ([#491](https://github.com/jeetparekh3005/keel/issues/491)) ([508c718](https://github.com/jeetparekh3005/keel/commit/508c7185387cc97013be7ec1220be85328af65ef))
+* **security:** keep Luhn-valid ids in span names from PAN false-positives ([#497](https://github.com/jeetparekh3005/keel/issues/497)) ([6a69686](https://github.com/jeetparekh3005/keel/commit/6a69686d8d374e685fe2d6b3c4c3eb7fc16afff8))
+* **security:** redact span link attributes and span name on export ([#492](https://github.com/jeetparekh3005/keel/issues/492)) ([314d2d1](https://github.com/jeetparekh3005/keel/commit/314d2d147365ee613fb21960355016ddf1f0e130))
+* **security:** skip PAN matcher when scrubbing span names ([#494](https://github.com/jeetparekh3005/keel/issues/494)) ([5b56401](https://github.com/jeetparekh3005/keel/commit/5b564019ae32672e22d6f9169558a220f64b0b55))
+* **security:** skip PAN matcher when scrubbing span names ([#498](https://github.com/jeetparekh3005/keel/issues/498)) ([9164b92](https://github.com/jeetparekh3005/keel/commit/9164b926b43350c6cf3119b87c581b091a44711f))
+* **ts:** skip PAN matcher when scrubbing span names ([#496](https://github.com/jeetparekh3005/keel/issues/496)) ([b607f17](https://github.com/jeetparekh3005/keel/commit/b607f175c40da880b0f3f29015fab56f6a9af0f4))
+
+
+### Miscellaneous Chores
+
+* release v0.6.2 (dev to main) ([450e9fa](https://github.com/jeetparekh3005/keel/commit/450e9fa366e82624175435d08081b15ecb2f8b1a))
+
 ## [0.6.1](https://github.com/jeetparekh3005/keel/compare/v0.6.0...v0.6.1) (2026-11-13)
 
 
