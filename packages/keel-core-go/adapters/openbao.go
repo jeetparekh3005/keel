@@ -119,7 +119,7 @@ func NewOpenBaoSecretProvider(ctx context.Context) (*OpenBaoSecretProvider, erro
 	p := &OpenBaoSecretProvider{
 		addr:        strings.TrimRight(addr, "/"),
 		mount:       getenvDefault(envMount, defaultMount),
-		path:        strings.Trim(path, "/"),
+		path:        path,
 		namespace:   strings.TrimSpace(os.Getenv(envNamespace)),
 		ttl:         ttl,
 		client:      client,
@@ -363,9 +363,11 @@ func (p *OpenBaoSecretProvider) setFields(fields map[string]string) {
 	p.mu.Unlock()
 }
 
-// parseFieldMap extracts the KV v2 field map at the JSON pointer .data.data. String fields
-// are preserved exactly; non-string JSON values are kept as their compact JSON text so every
-// field round-trips through the flat-key port.
+// parseFieldMap extracts the KV v2 field map at the JSON pointer .data.data. Each value is
+// coerced to a canonical string so the flat-key port stays string-typed (ADR-0023): a JSON
+// string is preserved exactly, a number is its JSON text, a boolean is "true"/"false". A
+// non-scalar value (object, array, or null) has no canonical string form and is therefore
+// omitted, so Get() reports it absent (ok=false) rather than leaking serialized JSON.
 func parseFieldMap(body []byte) (map[string]string, error) {
 	var parsed struct {
 		Data struct {
@@ -377,14 +379,38 @@ func parseFieldMap(body []byte) (map[string]string, error) {
 	}
 	fields := make(map[string]string, len(parsed.Data.Data))
 	for k, raw := range parsed.Data.Data {
-		var s string
-		if err := json.Unmarshal(raw, &s); err == nil {
-			fields[k] = s
-		} else {
-			fields[k] = string(raw)
+		if v, ok := coerceField(raw); ok {
+			fields[k] = v
 		}
 	}
 	return fields, nil
+}
+
+// coerceField maps one raw KV v2 field value to its canonical string, reporting ok=false when
+// the value is non-scalar (object, array, or null) and so has no canonical string. Scalars:
+// a JSON string decodes to its unescaped text, a number keeps its JSON text verbatim, and a
+// boolean becomes "true"/"false".
+func coerceField(raw json.RawMessage) (string, bool) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return "", false
+	}
+	switch trimmed[0] {
+	case '"':
+		var s string
+		if err := json.Unmarshal(trimmed, &s); err != nil {
+			return "", false
+		}
+		return s, true
+	case 't':
+		return "true", true
+	case 'f':
+		return "false", true
+	case '{', '[', 'n': // object, array, or null: no canonical scalar string.
+		return "", false
+	default: // number: the JSON text is already the canonical string.
+		return string(trimmed), true
+	}
 }
 
 // newVaultHTTPClient builds the HTTP client, trusting KEEL_VAULT_CACERT (a PEM literal or a
