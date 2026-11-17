@@ -30,6 +30,9 @@ nats = [
 # LocalStack in tests, so no custom endpoint config is carried here.
 aws = [
     "boto3>=1.42",
+    # botocore is imported directly for botocore.config.Config (bounded client timeouts/retries).
+    # It ships with boto3, but declare it since we import it (deptry DEP003).
+    "botocore>=1.42",
 ]
 
 [build-system]

@@ -1169,6 +1169,7 @@ dependencies = [
 [package.optional-dependencies]
 aws = [
     { name = "boto3" },
+    { name = "botocore" },
 ]
 grpc = [
     { name = "grpcio" },
@@ -1181,6 +1182,7 @@ nats = [
 [package.metadata]
 requires-dist = [
     { name = "boto3", marker = "extra == 'aws'", specifier = ">=1.42" },
+    { name = "botocore", marker = "extra == 'aws'", specifier = ">=1.42" },
     { name = "fastapi", specifier = ">=0.162.2" },
     { name = "grpcio", marker = "extra == 'grpc'", specifier = ">=1.60" },
     { name = "nats-py", marker = "extra == 'nats'", specifier = ">=2.6" },

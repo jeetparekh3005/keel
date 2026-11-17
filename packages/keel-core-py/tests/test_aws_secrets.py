@@ -21,6 +21,7 @@ from keel_core.adapters.outbound.secrets import (
     OpenBaoSecretProvider,
     secret_provider_from_env,
 )
+from keel_core.adapters.outbound.secrets.aws import _build_client
 
 _SECRET_ID = "keel-test"
 _ACCESS_KEY_CANARY = "AKIA-leak-canary-access-key"
@@ -161,6 +162,40 @@ def test_malformed_json_fails_closed_without_leaking_payload() -> None:
 def test_empty_secret_id_rejected() -> None:
     with pytest.raises(ValueError, match="KEEL_AWS_SECRET_ID must be set"):
         AwsSecretsManagerSecretProvider(secret_id="", client=_client(), start_refresh=False)
+
+
+# -- bounded client timeouts/retries (ADR-0023 hard-HTTP-timeout rule) -------------
+
+
+def test_build_client_applies_bounded_timeouts_and_retry_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The production boto3 client caps connect/read timeouts and retry attempts.
+
+    Without an explicit ``botocore.config.Config`` the client inherits boto3's 60s/60s/
+    ~5-attempt defaults, so a wedged Secrets Manager stalls the eager startup load for
+    minutes. Capture the ``config`` passed to ``boto3.client`` and assert the bound so it
+    cannot silently regress.
+    """
+    captured: dict[str, Any] = {}
+
+    def _spy_client(service_name: str, **kwargs: Any) -> object:
+        captured["service_name"] = service_name
+        captured["config"] = kwargs.get("config")
+        captured["region_name"] = kwargs.get("region_name")
+        return object()  # no network: construction only inspects the passed config
+
+    monkeypatch.setattr(boto3, "client", _spy_client)
+
+    _build_client("us-east-1")
+
+    assert captured["service_name"] == "secretsmanager"
+    assert captured["region_name"] == "us-east-1"
+    config = captured["config"]
+    assert config is not None
+    assert config.connect_timeout == 5
+    assert config.read_timeout == 10
+    assert config.retries == {"max_attempts": 2, "mode": "standard"}
 
 
 # -- no-leak invariant (ADR-0023/0024) --------------------------------------------

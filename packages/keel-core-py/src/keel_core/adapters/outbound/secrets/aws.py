@@ -40,10 +40,21 @@ def _build_client(region: str | None) -> SecretsManagerClient:
     ``region`` is passed through when set; otherwise boto3 resolves it (env,
     ``AWS_REGION``, config). Imported lazily so the ``aws`` extra is only needed when the
     AWS backend is actually constructed.
+
+    A bounded ``botocore.config.Config`` caps the connect/read timeouts and retry attempts
+    so a wedged or unreachable Secrets Manager cannot stall the eager startup load for
+    minutes on boto3's 60s/60s/~5-attempt defaults. This is ADR-0023's hard-HTTP-timeout
+    rule, the same bound already applied to the OpenBao adapter.
     """
     import boto3  # lazy: boto3 is the optional `aws` extra, not required to import this module
+    from botocore.config import Config
 
-    return boto3.client("secretsmanager", region_name=region)
+    config = Config(
+        connect_timeout=5,
+        read_timeout=10,
+        retries={"max_attempts": 2, "mode": "standard"},
+    )
+    return boto3.client("secretsmanager", region_name=region, config=config)
 
 
 class _AwsSecretsManagerLoader:
