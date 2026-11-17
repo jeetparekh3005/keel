@@ -122,13 +122,21 @@ fn luhn_ok(digits: &str) -> bool {
     sum % 10 == 0
 }
 
-/// Scrub secret patterns and Luhn-valid card numbers from a string value.
-fn scrub_text(text: &str) -> String {
+/// Scrub the high-precision secret patterns (JWT, AWS key id, bearer token, PEM header)
+/// from a string, leaving everything else intact. Shared by both value and name scrubbers.
+fn scrub_secret_patterns(text: &str) -> String {
     let mut out = text.to_string();
     for pattern in secret_patterns() {
         out = pattern.replace_all(&out, REDACTED).into_owned();
     }
-    out = cc_candidate()
+    out
+}
+
+/// Scrub secret patterns and Luhn-valid card numbers from a string value (attribute, event,
+/// and link values). Keep the PAN matcher here: a value can carry a real card number.
+fn scrub_text(text: &str) -> String {
+    let out = scrub_secret_patterns(text);
+    cc_candidate()
         .replace_all(&out, |caps: &regex::Captures| {
             let matched = &caps[0];
             let digits: String = matched.chars().filter(char::is_ascii_digit).collect();
@@ -138,8 +146,17 @@ fn scrub_text(text: &str) -> String {
                 matched.to_string()
             }
         })
-        .into_owned();
-    out
+        .into_owned()
+}
+
+/// Scrub a span **name**: run every secret-pattern matcher (JWT, AWS key id, bearer token,
+/// PEM header) but **not** the credit-card/PAN/Luhn one. Span names are low-cardinality
+/// operation identifiers (e.g. `GET /v1/accounts/4532015112830366/balance`); a Luhn-valid
+/// id spliced into a route label is an account/resource id, not a leaked card, so the PAN
+/// matcher false-positives and harms more than it helps there. Values keep full PAN
+/// redaction via [`scrub_text`].
+fn scrub_text_for_name(text: &str) -> String {
+    scrub_secret_patterns(text)
 }
 
 fn truncate(text: String) -> String {
@@ -204,9 +221,12 @@ fn redact_key_value(kv: &mut KeyValue) {
 /// (including inside its name) never reaches the collector.
 fn redact_span_data(span: &mut SpanData) {
     // The span name is operator-chosen free text that can embed a secret (e.g. a bearer
-    // token or AWS key spliced into a route label); scrub it with the same value-scrubber
-    // the log sink and attribute redactor use, matching the TS vertical which scrubs it too.
-    let scrubbed_name = scrub_text(span.name.as_ref());
+    // token or AWS key spliced into a route label); scrub those high-precision patterns.
+    // Use the name-specific scrubber, which omits the credit-card/PAN/Luhn matcher: span
+    // names are low-cardinality operation identifiers (e.g. a route with an account id),
+    // where a Luhn-valid id is a resource id, not a card, so the PAN matcher only false-
+    // positives. Attribute/event/link values still get full PAN redaction via scrub_text.
+    let scrubbed_name = scrub_text_for_name(span.name.as_ref());
     if scrubbed_name.as_str() != span.name.as_ref() {
         span.name = scrubbed_name.into();
     }
@@ -441,7 +461,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::{
-        is_secret_key, redact_value, scrub_text, RedactingJsonLayer, RedactingSpanExporter,
+        is_secret_key, redact_value, scrub_text, scrub_text_for_name, RedactingJsonLayer,
+        RedactingSpanExporter,
     };
     use serde_json::json;
     use std::io;
@@ -478,6 +499,28 @@ mod tests {
         // Luhn-valid card redacted; a random long number is left alone.
         assert_eq!(scrub_text("4111 1111 1111 1111"), "[REDACTED]");
         assert_eq!(scrub_text("1234567890123456"), "1234567890123456");
+    }
+
+    #[test]
+    fn name_scrubber_keeps_luhn_ids_but_still_scrubs_secret_patterns() {
+        // Span names are low-cardinality operation identifiers; a Luhn-valid 13-19 digit id
+        // spliced into a route is a resource id, not a leaked card, so the name scrubber must
+        // leave it intact (the value scrubber would false-positive and redact it here).
+        let route = "GET /v1/accounts/4532015112830366/balance";
+        assert_eq!(scrub_text_for_name(route), route);
+        // The same string run through the value scrubber *does* redact the Luhn id, proving
+        // the two scrubbers diverge only on the PAN matcher.
+        assert_eq!(
+            scrub_text(route),
+            "GET /v1/accounts/[REDACTED]/balance",
+            "value scrubber must still redact a Luhn-valid PAN"
+        );
+        // High-precision secret patterns are still scrubbed from a name.
+        assert_eq!(
+            scrub_text_for_name("fetch AKIAIOSFODNN7EXAMPLE token"),
+            "fetch [REDACTED] token"
+        );
+        assert!(scrub_text_for_name("call Bearer abcdef12345 now").contains("[REDACTED]"));
     }
 
     #[test]
@@ -738,6 +781,12 @@ mod tests {
         tracer.start("fetch AKIAIOSFODNN7EXAMPLE token").end();
         // A benign name must pass through untouched, proving the scrub is targeted.
         tracer.start("GET /users/42").end();
+        // A low-cardinality route whose path segment is a Luhn-valid 13-19 digit account id
+        // must be exported unchanged: it is a resource id, not a leaked card, so the name
+        // path must not run the PAN matcher (this assertion fails before the name-scrubber fix).
+        tracer
+            .start("GET /v1/accounts/4532015112830366/balance")
+            .end();
 
         provider.force_flush().expect("flush spans");
         let spans = sink.get_finished_spans().expect("finished spans");
@@ -750,6 +799,10 @@ mod tests {
         assert!(
             names.contains(&"GET /users/42"),
             "a benign span name must be exported unchanged, got {names:?}"
+        );
+        assert!(
+            names.contains(&"GET /v1/accounts/4532015112830366/balance"),
+            "a span name with a Luhn-valid account id must be exported unchanged, got {names:?}"
         );
         // Non-vacuous: the raw secret must not survive in any exported span name.
         for name in &names {
