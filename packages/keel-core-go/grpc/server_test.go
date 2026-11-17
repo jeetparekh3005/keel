@@ -295,3 +295,20 @@ func TestStream_UnmappedMethod_PermissionDenied(t *testing.T) {
 	err = cs.RecvMsg(&referencev1.Item{})
 	requireCode(t, err, codes.PermissionDenied)
 }
+
+// TestUnary_UnmappedMethod_PermissionDenied is the unary mirror of
+// TestStream_UnmappedMethod_PermissionDenied: an authenticated caller invoking a UNARY method
+// absent from the scope map must be rejected with PermissionDenied, not fall through fail-open.
+// The scope map here lists only CreateItem, so GetItem is unmapped and a valid read token is
+// still denied. The deny-by-default logic is shared in authorize(), but the unary path
+// deserves its own assertion so a regression on either path is caught.
+func TestUnary_UnmappedMethod_PermissionDenied(t *testing.T) {
+	client, stop := bufItemClient(t, stubAuth(), keelgrpc.WithRequiredScopes(keelgrpc.MethodScopes{
+		referencev1.ItemService_CreateItem_FullMethodName: {keelgrpc.ScopeItemsWrite},
+	}))
+	defer stop()
+
+	_, err := client.GetItem(withToken(context.Background(), readerToken),
+		&referencev1.GetItemRequest{Id: "nope"})
+	requireCode(t, err, codes.PermissionDenied)
+}
