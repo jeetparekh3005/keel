@@ -64,11 +64,15 @@ public final class RedactingSpanExporter implements SpanExporter {
     Attributes redactedAttributes = redactAttributes(span.getAttributes());
     List<EventData> redactedEvents = redactEvents(span.getEvents());
     List<LinkData> redactedLinks = redactLinks(span.getLinks());
-    // The span name is operator-chosen text that can carry an interpolated secret just like a
-    // string attribute value, so it is scrubbed with the same value-scrubber (parity with the TS
-    // vertical, which scrubs the span name). Key-based wholesale redaction has no meaning for a
-    // name, which is why only the value scrubber is applied here.
-    String redactedName = Redactor.scrubText(span.getName());
+    // The span name is operator-chosen text that can carry an interpolated secret (bearer/JWT/AWS
+    // key/PEM), so it is scrubbed with the name-specific scrubber. That scrubber deliberately omits
+    // the credit-card/PAN/Luhn matcher: span names are low-cardinality operation identifiers (e.g.
+    // GET /v1/accounts/4532015112830366/balance) where a Luhn-valid id is a route segment, not a
+    // leaked card, so the PAN matcher there false-positives and corrupts legitimate names. String
+    // attribute/event/link VALUES keep full PAN redaction via Redactor.scrubText. Key-based
+    // wholesale redaction has no meaning for a name, which is why only the value scrubber is
+    // applied.
+    String redactedName = Redactor.scrubTextForName(span.getName());
     return new DelegatingSpanData(span) {
       @Override
       public String getName() {

@@ -149,6 +149,47 @@ class RedactingSpanExporterTest {
   }
 
   @Test
+  void preservesLuhnIdInSpanNameButScrubsCredentialOnExport() {
+    // A span name is a low-cardinality operation identifier. A Luhn-valid 13-19 digit route segment
+    // is a resource id, not a leaked card, so the name-specific scrubber must NOT redact it (the
+    // value-scrubber used before this fix did, corrupting the name). Credential patterns in a name
+    // (here an AWS access key id) must STILL be scrubbed.
+    String nameWithLuhnId = "GET /v1/accounts/4532015112830366/balance";
+    String nameWithAwsKey = "sync AKIAIOSFODNN7EXAMPLE";
+
+    InMemorySpanExporter collected = InMemorySpanExporter.create();
+    SdkTracerProvider provider =
+        SdkTracerProvider.builder()
+            .addSpanProcessor(SimpleSpanProcessor.create(new RedactingSpanExporter(collected)))
+            .build();
+    try {
+      Tracer tracer = provider.get("redaction-test");
+      tracer.spanBuilder(nameWithLuhnId).startSpan().end();
+      tracer.spanBuilder(nameWithAwsKey).startSpan().end();
+
+      List<SpanData> spans = collected.getFinishedSpanItems();
+      assertEquals(2, spans.size(), "both spans should be exported");
+
+      // The Luhn-valid account id survives byte-for-byte; the name is not corrupted by PAN
+      // redaction.
+      assertTrue(
+          spans.stream().anyMatch(s -> s.getName().equals(nameWithLuhnId)),
+          "span name with a Luhn-valid id must survive redaction unchanged");
+
+      // The AWS key inside the other name is still scrubbed by the name-specific scrubber.
+      String awsName =
+          spans.stream()
+              .map(SpanData::getName)
+              .filter(n -> n.startsWith("sync "))
+              .findFirst()
+              .orElseThrow(() -> new AssertionError("aws-key span name missing"));
+      assertEquals("sync " + Redactor.REDACTED, awsName);
+    } finally {
+      provider.close();
+    }
+  }
+
+  @Test
   void redactsLinkAttributesOnExport() {
     // A secret carried on a span link (secret-family key and a pattern secret in a string value)
     // must be scrubbed the same as a span attribute. getLinks/redactLinks implement this; this is

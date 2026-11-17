@@ -43,6 +43,23 @@ class RedactorTest {
   }
 
   @Test
+  void scrubTextForNamePreservesLuhnIdButScrubsCredentials() {
+    // A span name is a low-cardinality operation identifier; a Luhn-valid 13-19 digit route segment
+    // is an id, not a leaked card, so scrubTextForName leaves it intact where scrubText would
+    // redact.
+    String nameWithLuhnId = "GET /v1/accounts/4532015112830366/balance";
+    assertEquals(nameWithLuhnId, Redactor.scrubTextForName(nameWithLuhnId));
+    assertEquals(Redactor.REDACTED, Redactor.scrubText("4532015112830366"));
+
+    // The high-precision credential patterns still apply to names.
+    assertTrue(
+        Redactor.scrubTextForName("fetch Bearer abcdef0123456789").contains(Redactor.REDACTED));
+    assertEquals(
+        "pull " + Redactor.REDACTED + " now",
+        Redactor.scrubTextForName("pull AKIAIOSFODNN7EXAMPLE now"));
+  }
+
+  @Test
   void redactsNestedSecretKeysAndValues() {
     Object redacted =
         Redactor.redactValue(
