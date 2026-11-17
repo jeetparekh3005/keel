@@ -11,6 +11,7 @@ from __future__ import annotations
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import Link, SpanContext, TraceFlags
 
 from keel_core.adapters.outbound.telemetry import RedactingSpanExporter
 
@@ -69,3 +70,75 @@ def test_negative_control_bare_exporter_leaks():
 
     assert span.attributes["password"] == _PLAINTEXT
     assert _AWS_KEY in span.attributes["note"]
+
+
+# A linked span's context plus a link attribute bag carrying a secret-family key and a
+# secret-pattern string value, exactly as a cross-trace link would carry them.
+_LINK_CONTEXT = SpanContext(
+    trace_id=0x0123456789ABCDEF0123456789ABCDEF,
+    span_id=0x0123456789ABCDEF,
+    is_remote=True,
+    trace_flags=TraceFlags(TraceFlags.SAMPLED),
+)
+_LINK_SECRET = "hunter2-link-secret"
+_LINK_BEARER = "Bearer abcdef1234567890"
+
+
+def _export_with_link(exporter: InMemorySpanExporter):
+    """Export a span carrying a link whose attributes mix a secret key and a secret pattern."""
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(RedactingSpanExporter(exporter)))
+    tracer = provider.get_tracer("test-span-redaction")
+    link = Link(
+        _LINK_CONTEXT,
+        attributes={
+            "db.user.password": _LINK_SECRET,  # secret-family key
+            "http.url": f"https://api/x?auth={_LINK_BEARER}",  # secret pattern in value
+            "peer.service": "billing",  # non-secret control
+        },
+    )
+    with tracer.start_as_current_span("op", links=[link]):
+        pass
+    provider.force_flush()
+    spans = exporter.get_finished_spans()
+    assert len(spans) == 1
+    return spans[0]
+
+
+def test_exported_span_link_attributes_are_redacted():
+    span = _export_with_link(InMemorySpanExporter())
+
+    (link,) = span.links
+    # The linked SpanContext is preserved verbatim.
+    assert link.context.trace_id == _LINK_CONTEXT.trace_id
+    assert link.context.span_id == _LINK_CONTEXT.span_id
+
+    # Secret-family KEY -> fully redacted, plaintext gone.
+    assert link.attributes["db.user.password"] == "[REDACTED]"
+    assert _LINK_SECRET not in str(link.attributes["db.user.password"])
+
+    # Secret PATTERN inside a non-secret value -> scrubbed in place.
+    assert "abcdef1234567890" not in link.attributes["http.url"]
+    assert "[REDACTED]" in link.attributes["http.url"]
+
+    # Negative control: a non-secret link attribute survives unchanged.
+    assert link.attributes["peer.service"] == "billing"
+
+
+def test_secret_in_span_name_is_scrubbed():
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(RedactingSpanExporter(exporter)))
+    tracer = provider.get_tracer("test-span-redaction")
+    # An operation name built from user input that embeds a bearer token must not reach
+    # the collector in the clear.
+    with tracer.start_as_current_span(f"GET /proxy?auth={_LINK_BEARER}"):
+        pass
+    with tracer.start_as_current_span("GET /items"):  # normal name, must be untouched
+        pass
+    provider.force_flush()
+    tainted, normal = exporter.get_finished_spans()
+
+    assert "abcdef1234567890" not in tainted.name
+    assert "[REDACTED]" in tainted.name
+    assert normal.name == "GET /items"

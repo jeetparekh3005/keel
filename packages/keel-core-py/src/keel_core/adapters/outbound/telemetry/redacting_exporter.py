@@ -21,11 +21,13 @@ from typing import TYPE_CHECKING
 
 from opentelemetry.sdk.trace import Event, ReadableSpan
 from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
+from opentelemetry.trace import Link
 
 from keel_core.adapters.outbound.redaction import (
     REDACTED,
     is_secret_key,
     sanitize,
+    scrub_text,
 )
 
 if TYPE_CHECKING:
@@ -71,15 +73,28 @@ def _redact_events(events: Sequence[Event]) -> list[Event]:
     ]
 
 
+def _redact_links(links: Sequence[Link]) -> list[Link]:
+    """Rebuild span links with redacted attributes, preserving each link's SpanContext.
+
+    A link carries its own attribute bag (e.g. ``db.user.password`` or an ``http.url``
+    with a bearer token), which otherwise reaches the collector in the clear just like
+    a span or event attribute would. Only the attributes change; the linked
+    :class:`SpanContext` is preserved verbatim.
+    """
+    return [
+        Link(context=link.context, attributes=_redact_attributes(link.attributes)) for link in links
+    ]
+
+
 def _redact_span(span: ReadableSpan) -> ReadableSpan:
     return ReadableSpan(
-        name=span.name,
+        name=scrub_text(span.name),
         context=span.context,
         parent=span.parent,
         resource=span.resource,
         attributes=_redact_attributes(span.attributes),
         events=_redact_events(span.events),
-        links=span.links,
+        links=_redact_links(span.links),
         kind=span.kind,
         status=span.status,
         start_time=span.start_time,
