@@ -128,6 +128,7 @@ jobs:
           KEEL_VAULT_PATH: keel-test
           AWS_ENDPOINT_URL_SECRETS_MANAGER: http://localhost:4566
           AWS_REGION: us-east-1
+          AWS_DEFAULT_REGION: us-east-1
           AWS_ACCESS_KEY_ID: test
           AWS_SECRET_ACCESS_KEY: test
           KEEL_AWS_SECRET_ID: keel-test
