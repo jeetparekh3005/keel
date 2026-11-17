@@ -55,6 +55,10 @@ jobs:
       KEEL_KEYCLOAK_CLIENT_ID: keel-api
       KEEL_KEYCLOAK_CLIENT_SECRET: test-secret
       KEEL_OIDC_AUDIENCE: keel-api
+      KEEL_VAULT_ADDR: http://localhost:8200
+      KEEL_VAULT_TOKEN: root
+      KEEL_VAULT_MOUNT: secret
+      KEEL_VAULT_PATH: keel-test
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -87,6 +91,14 @@ jobs:
             curl -sf http://localhost:8080/realms/keel/.well-known/openid-configuration >/dev/null 2>&1 && break
             sleep 3
           done
+      - name: Start OpenBao (dev)
+        # A dev-mode server auto-unseals and enables a KV v2 mount at `secret`, so run it as a
+        # step with a known root token. The adapters package integration test writes a KV v2
+        # secret and reads it back through the OpenBao SecretProvider; it skips when
+        # KEEL_VAULT_ADDR is unset.
+        run: |
+          docker run -d --name openbao -p 8200:8200 --cap-add IPC_LOCK -e BAO_DEV_ROOT_TOKEN_ID=root openbao/openbao:2.7.2 server -dev -dev-root-token-id=root -dev-listen-address=0.0.0.0:8200
+          for i in $(seq 1 30); do curl -sf http://localhost:8200/v1/sys/health >/dev/null && break; sleep 1; done
       - name: Format check
         run: |
           # templates/ holds Copier templates (<< >> placeholders), not valid Go, so exclude them
