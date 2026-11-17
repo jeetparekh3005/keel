@@ -1,13 +1,19 @@
 // Unit tests for the OpenBao SecretProvider adapter (ADR-0023), against an in-process node:http
 // mock Vault on 127.0.0.1:0. Asserts request shape (paths, headers, bodies) and that a known secret
 // round-trips: token auth, Kubernetes login+read, field-map caching + TTL expiry refetch, 404 as
-// empty, 403 re-auth+retry, the X-Vault-Namespace header, and fail-closed on misconfig.
+// empty, 403 re-auth+retry, the X-Vault-Namespace header, and fail-closed on misconfig. Also covers
+// the hardening surface: per-request HTTP timeouts on both paths, the KEEL_VAULT_CACERT node:https
+// custom-CA path (with a self-signed CA), proactive lease renewal, ADR-0023 field coercion, the
+// positive-integer TTL rule, and that neither the secret value nor the token ever reaches a log.
+import { generateKeyPairSync } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { createServer as createHttpsServer } from 'node:https';
 import type { AddressInfo } from 'node:net';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import forge from 'node-forge';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
@@ -73,6 +79,99 @@ function kvData(fields: Record<string, unknown>): unknown {
 }
 
 const dataPath = (p = 'keel-test') => `/v1/secret/data/${p}`;
+
+// --- In-process PKI for the KEEL_VAULT_CACERT (node:https) tests. RSA keys are generated with Node's
+// native crypto and the certificates built/signed with node-forge, so no key is committed (mirrors
+// the gRPC TLS tests). The leaf carries a 127.0.0.1 IP SAN so hostname verification passes. ---
+interface Pem {
+  certPem: string;
+  keyPem: string;
+}
+interface Ca {
+  pem: Pem;
+  key: forge.pki.rsa.PrivateKey;
+  cert: forge.pki.Certificate;
+}
+
+function keyPair(): {
+  priv: forge.pki.rsa.PrivateKey;
+  pub: forge.pki.rsa.PublicKey;
+  keyPem: string;
+} {
+  const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const keyPem = privateKey.export({ type: 'pkcs1', format: 'pem' }).toString();
+  const pubPem = publicKey.export({ type: 'spki', format: 'pem' }).toString();
+  return {
+    priv: forge.pki.privateKeyFromPem(keyPem),
+    pub: forge.pki.publicKeyFromPem(pubPem),
+    keyPem,
+  };
+}
+
+function withValidity(cert: forge.pki.Certificate, serial: string): void {
+  cert.serialNumber = serial;
+  cert.validity.notBefore = new Date(Date.now() - 60_000);
+  cert.validity.notAfter = new Date(Date.now() + 3_600_000);
+}
+
+function makeCa(cn: string): Ca {
+  const { priv, pub, keyPem } = keyPair();
+  const cert = forge.pki.createCertificate();
+  cert.publicKey = pub;
+  withValidity(cert, '01');
+  const attrs = [{ name: 'commonName', value: cn }];
+  cert.setSubject(attrs);
+  cert.setIssuer(attrs);
+  cert.setExtensions([
+    { name: 'basicConstraints', cA: true },
+    { name: 'keyUsage', keyCertSign: true, digitalSignature: true },
+  ]);
+  cert.sign(priv, forge.md.sha256.create());
+  return { pem: { certPem: forge.pki.certificateToPem(cert), keyPem }, key: priv, cert };
+}
+
+function makeLeaf(ca: Ca): Pem {
+  const { pub, keyPem } = keyPair();
+  const cert = forge.pki.createCertificate();
+  cert.publicKey = pub;
+  withValidity(cert, '02');
+  cert.setSubject([{ name: 'commonName', value: '127.0.0.1' }]);
+  cert.setIssuer(ca.cert.subject.attributes);
+  cert.setExtensions([
+    { name: 'basicConstraints', cA: false },
+    { name: 'keyUsage', digitalSignature: true, keyEncipherment: true },
+    { name: 'extKeyUsage', serverAuth: true },
+    { name: 'subjectAltName', altNames: [{ type: 7, ip: '127.0.0.1' }] },
+  ]);
+  cert.sign(ca.key, forge.md.sha256.create());
+  return { certPem: forge.pki.certificateToPem(cert), keyPem };
+}
+
+async function startHttpsVault(
+  route: Route,
+  tls: { key: string; cert: string },
+): Promise<MockVault> {
+  const requests: CapturedRequest[] = [];
+  const server = createHttpsServer(tls, (req, res) => {
+    void (async () => {
+      const captured: CapturedRequest = {
+        method: req.method ?? '',
+        url: req.url ?? '',
+        headers: req.headers,
+        body: await readBody(req),
+      };
+      requests.push(captured);
+      route(captured, res);
+    })();
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as AddressInfo;
+  return {
+    url: `https://127.0.0.1:${port}`,
+    requests,
+    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+  };
+}
 
 describe('OpenBaoSecretProvider', () => {
   const cleanups: (() => Promise<void> | void)[] = [];
@@ -181,22 +280,27 @@ describe('OpenBaoSecretProvider', () => {
     });
     cleanups.push(vault.close);
 
-    // A tiny TTL (50ms) so the background refresh fires promptly without fake timers.
+    // The smallest valid TTL (1s, the positive-integer floor) so the background refresh fires
+    // promptly without fake timers.
     const provider = await createOpenBaoSecretProvider({
       KEEL_VAULT_ADDR: vault.url,
       KEEL_VAULT_TOKEN: 'root-token',
       KEEL_VAULT_PATH: 'keel-test',
-      KEEL_VAULT_CACHE_TTL_SECONDS: '0.05',
+      KEEL_VAULT_CACHE_TTL_SECONDS: '1',
     });
     cleanups.push(() => provider.close());
 
     expect(provider.get('counter')).toBe('1');
-    for (let i = 0; i < 100 && reads < 2; i++) {
+    // Poll the adapter's own cached value (not the server-side counter) so the assertion cannot race
+    // a refresh that has incremented `reads` but not yet stored the new field map.
+    let latest = provider.get('counter');
+    for (let i = 0; i < 300 && latest === '1'; i++) {
       await new Promise((r) => setTimeout(r, 20));
+      latest = provider.get('counter');
     }
     expect(reads).toBeGreaterThanOrEqual(2);
-    expect(provider.get('counter')).toBe(String(reads));
-  });
+    expect(Number(latest)).toBeGreaterThanOrEqual(2);
+  }, 10_000);
 
   it('treats a 404 at the path as an empty field map, not an error', async () => {
     const vault = await startVault((req, res) => {
@@ -328,11 +432,274 @@ describe('OpenBaoSecretProvider', () => {
     ).rejects.toThrow();
   });
 
+  it('coerces field values per ADR-0023 (string verbatim, number/boolean canonical, structured absent)', async () => {
+    const vault = await startVault((req, res) => {
+      if (req.method === 'GET' && req.url === dataPath()) {
+        sendJson(
+          res,
+          200,
+          kvData({
+            str: 'verbatim',
+            num: 42,
+            float: 1.5,
+            boolTrue: true,
+            boolFalse: false,
+            obj: { nested: 'x' },
+            arr: [1, 2, 3],
+            nul: null,
+          }),
+        );
+        return;
+      }
+      sendJson(res, 500, { errors: ['unexpected'] });
+    });
+    cleanups.push(vault.close);
+
+    const provider = await createOpenBaoSecretProvider({
+      KEEL_VAULT_ADDR: vault.url,
+      KEEL_VAULT_TOKEN: 'root-token',
+      KEEL_VAULT_PATH: 'keel-test',
+    });
+    cleanups.push(() => provider.close());
+
+    expect(provider.get('str')).toBe('verbatim');
+    expect(provider.get('num')).toBe('42');
+    expect(provider.get('float')).toBe('1.5');
+    expect(provider.get('boolTrue')).toBe('true');
+    expect(provider.get('boolFalse')).toBe('false');
+    // Structured values are reported absent, never stringified to "[object Object]" or "1,2,3".
+    expect(provider.get('obj')).toBeUndefined();
+    expect(provider.get('arr')).toBeUndefined();
+    expect(provider.get('nul')).toBeUndefined();
+  });
+
+  it.each(['0', '-1', '0.05', '1.5', 'abc', 'NaN'])(
+    'fails closed when KEEL_VAULT_CACHE_TTL_SECONDS=%j is not a positive integer',
+    async (ttl) => {
+      await expect(
+        createOpenBaoSecretProvider({
+          // Rejected in config resolution before any network call, so the address is never contacted.
+          KEEL_VAULT_ADDR: 'http://127.0.0.1:1',
+          KEEL_VAULT_TOKEN: 'root-token',
+          KEEL_VAULT_PATH: 'keel-test',
+          KEEL_VAULT_CACHE_TTL_SECONDS: ttl,
+        }),
+      ).rejects.toThrow(/positive integer/);
+    },
+  );
+
+  it('rejects within the timeout when the server never responds (fetch path)', async () => {
+    // Accept the socket but never call res.end(): the request hangs until the timeout aborts it.
+    const vault = await startVault(() => {});
+    cleanups.push(vault.close);
+
+    const start = Date.now();
+    await expect(
+      createOpenBaoSecretProvider(
+        {
+          KEEL_VAULT_ADDR: vault.url,
+          KEEL_VAULT_TOKEN: 'root-token',
+          KEEL_VAULT_PATH: 'keel-test',
+        },
+        { timeoutMs: 150 },
+      ),
+    ).rejects.toThrow();
+    // The key property: it rejects promptly rather than hanging init forever.
+    expect(Date.now() - start).toBeLessThan(2_000);
+  }, 10_000);
+
+  it('rejects within the timeout when the custom-CA server never responds (node:https path)', async () => {
+    const ca = makeCa('keel-test-ca');
+    const leaf = makeLeaf(ca);
+    const vault = await startHttpsVault(() => {}, { key: leaf.keyPem, cert: leaf.certPem });
+    cleanups.push(vault.close);
+
+    const start = Date.now();
+    await expect(
+      createOpenBaoSecretProvider(
+        {
+          KEEL_VAULT_ADDR: vault.url,
+          KEEL_VAULT_TOKEN: 'root-token',
+          KEEL_VAULT_PATH: 'keel-test',
+          KEEL_VAULT_CACERT: ca.pem.certPem,
+        },
+        { timeoutMs: 150 },
+      ),
+    ).rejects.toThrow(/timed out/);
+    expect(Date.now() - start).toBeLessThan(2_000);
+  }, 10_000);
+
+  it('round-trips a secret over the KEEL_VAULT_CACERT node:https custom-CA path', async () => {
+    const ca = makeCa('keel-test-ca');
+    const leaf = makeLeaf(ca);
+    const vault = await startHttpsVault(
+      (req, res) => {
+        if (req.method === 'GET' && req.url === dataPath()) {
+          sendJson(res, 200, kvData({ 'api-key-hash': 'sha256:ca' }));
+          return;
+        }
+        sendJson(res, 500, { errors: ['unexpected'] });
+      },
+      { key: leaf.keyPem, cert: leaf.certPem },
+    );
+    cleanups.push(vault.close);
+
+    const provider = await createOpenBaoSecretProvider({
+      KEEL_VAULT_ADDR: vault.url,
+      KEEL_VAULT_TOKEN: 'root-token',
+      KEEL_VAULT_PATH: 'keel-test',
+      KEEL_VAULT_CACERT: ca.pem.certPem,
+    });
+    cleanups.push(() => provider.close());
+
+    expect(provider.get('api-key-hash')).toBe('sha256:ca');
+    // The read reached the TLS server over the pinned-CA channel and carried the token.
+    expect(vault.requests[0].headers['x-vault-token']).toBe('root-token');
+  });
+
+  it('fails TLS verification against the self-signed server when KEEL_VAULT_CACERT is absent', async () => {
+    const ca = makeCa('keel-test-ca');
+    const leaf = makeLeaf(ca);
+    const vault = await startHttpsVault(
+      (_req, res) => sendJson(res, 200, kvData({ secret: 'unreachable' })),
+      { key: leaf.keyPem, cert: leaf.certPem },
+    );
+    cleanups.push(vault.close);
+
+    // No KEEL_VAULT_CACERT: the global-fetch path verifies against the system trust store, which does
+    // not contain this ad-hoc CA, so the connection is refused (verification stays on, fail-closed).
+    await expect(
+      createOpenBaoSecretProvider({
+        KEEL_VAULT_ADDR: vault.url,
+        KEEL_VAULT_TOKEN: 'root-token',
+        KEEL_VAULT_PATH: 'keel-test',
+      }),
+    ).rejects.toThrow();
+  });
+
+  it('rejects when KEEL_VAULT_CACERT pins a different CA than the server cert (verification stays on)', async () => {
+    const serverCa = makeCa('keel-server-ca');
+    const leaf = makeLeaf(serverCa);
+    const otherCa = makeCa('keel-other-ca');
+    const vault = await startHttpsVault(
+      (_req, res) => sendJson(res, 200, kvData({ secret: 'unreachable' })),
+      { key: leaf.keyPem, cert: leaf.certPem },
+    );
+    cleanups.push(vault.close);
+
+    // A valid-but-wrong CA must still fail: the node:https path keeps rejectUnauthorized on.
+    await expect(
+      createOpenBaoSecretProvider({
+        KEEL_VAULT_ADDR: vault.url,
+        KEEL_VAULT_TOKEN: 'root-token',
+        KEEL_VAULT_PATH: 'keel-test',
+        KEEL_VAULT_CACERT: otherCa.pem.certPem,
+      }),
+    ).rejects.toThrow();
+  });
+
+  it('proactively re-logs in before a Kubernetes lease expires (ahead of the TTL refresh)', async () => {
+    const jwtPath = await tmpJwt('jwt');
+    let logins = 0;
+    const vault = await startVault((req, res) => {
+      if (req.method === 'POST' && req.url === '/v1/auth/kubernetes/login') {
+        logins += 1;
+        // An 11s lease with the adapter's 10s renew skew means the first background refresh (at the
+        // 1s TTL) is already inside the renewal window, so a re-login fires ~10s ahead of expiry.
+        sendJson(res, 200, { auth: { client_token: `token-${logins}`, lease_duration: 11 } });
+        return;
+      }
+      if (req.method === 'GET' && req.url === dataPath()) {
+        sendJson(res, 200, kvData({ secret: 'leased' }));
+        return;
+      }
+      sendJson(res, 500, { errors: ['unexpected'] });
+    });
+    cleanups.push(vault.close);
+
+    const provider = await createOpenBaoSecretProvider({
+      KEEL_VAULT_ADDR: vault.url,
+      KEEL_VAULT_ROLE: 'keel-role',
+      KEEL_VAULT_K8S_JWT_PATH: jwtPath,
+      KEEL_VAULT_PATH: 'keel-test',
+      KEEL_VAULT_CACHE_TTL_SECONDS: '1',
+    });
+    cleanups.push(() => provider.close());
+
+    expect(logins).toBe(1);
+    const start = Date.now();
+    for (let i = 0; i < 300 && logins < 2; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    const elapsed = Date.now() - start;
+    expect(logins).toBeGreaterThanOrEqual(2);
+    // The re-login landed well ahead of the 11s lease expiry (proactive, not post-expiry recovery).
+    expect(elapsed).toBeLessThan(5_000);
+  }, 10_000);
+
+  it('never logs the secret value or the vault token when a refresh fails', async () => {
+    let fail = false;
+    const vault = await startVault((req, res) => {
+      if (req.method === 'GET' && req.url === dataPath()) {
+        if (fail) {
+          sendJson(res, 500, { errors: ['boom'] });
+          return;
+        }
+        sendJson(res, 200, kvData({ 'db-password': 'cached-swordfish-value' }));
+        return;
+      }
+      sendJson(res, 500, { errors: ['unexpected'] });
+    });
+    cleanups.push(vault.close);
+
+    const captured: unknown[] = [];
+    const logger = {
+      warn: (obj: Record<string, unknown>, msg: string) => captured.push(obj, msg),
+      error: (obj: Record<string, unknown>, msg: string) => captured.push(obj, msg),
+    };
+
+    const provider = await createOpenBaoSecretProvider(
+      {
+        KEEL_VAULT_ADDR: vault.url,
+        KEEL_VAULT_TOKEN: 'super-secret-vault-token',
+        KEEL_VAULT_PATH: 'keel-test',
+        KEEL_VAULT_CACHE_TTL_SECONDS: '1',
+      },
+      { logger },
+    );
+    cleanups.push(() => provider.close());
+
+    expect(provider.get('db-password')).toBe('cached-swordfish-value');
+
+    // Flip the upstream to 500 and wait for a background refresh to fail and log a diagnostic.
+    fail = true;
+    for (let i = 0; i < 300 && captured.length === 0; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    expect(captured.length).toBeGreaterThan(0);
+
+    // The last good value still serves (a transient outage does not blank the cache)...
+    expect(provider.get('db-password')).toBe('cached-swordfish-value');
+    // ...and neither the secret value nor the token appears anywhere in what was logged.
+    const dump = JSON.stringify(captured);
+    expect(dump).not.toContain('cached-swordfish-value');
+    expect(dump).not.toContain('super-secret-vault-token');
+  }, 10_000);
+
   describe('secretProviderFromEnv', () => {
     it('returns the EnvSecretProvider when KEEL_VAULT_ADDR is unset', async () => {
       const provider = await secretProviderFromEnv({ SOME_SECRET: 'from-env' });
       expect(provider.get('SOME_SECRET')).toBe('from-env');
       expect(provider.get('absent')).toBeUndefined();
+    });
+
+    it('treats a whitespace-only KEEL_VAULT_ADDR as unset (EnvSecretProvider)', async () => {
+      const provider = await secretProviderFromEnv({
+        KEEL_VAULT_ADDR: '   ',
+        SOME_SECRET: 'from-env',
+      });
+      expect(provider).not.toBeInstanceOf(OpenBaoSecretProvider);
+      expect(provider.get('SOME_SECRET')).toBe('from-env');
     });
 
     it('returns the OpenBao provider (fail-closed) when KEEL_VAULT_ADDR is set', async () => {

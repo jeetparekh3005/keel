@@ -25,6 +25,12 @@ export interface SecretProviderLogger {
 /** Optional construction seams (a logger for refresh diagnostics); all have production defaults. */
 export interface OpenBaoOptions {
   logger?: SecretProviderLogger;
+  /**
+   * Hard per-request HTTP timeout in milliseconds (default {@link DEFAULT_TIMEOUT_MS}). Bounds both
+   * request paths so a wedged OpenBao that accepts the socket but never responds cannot hang startup
+   * forever; a request that exceeds it rejects (fail-closed). Primarily a test seam.
+   */
+  timeoutMs?: number;
 }
 
 /** Resolved, validated OpenBao configuration (the `KEEL_VAULT_*` surface from ADR-0023). */
@@ -39,12 +45,15 @@ interface OpenBaoConfig {
   namespace?: string;
   cacert?: string;
   ttlMs: number;
+  timeoutMs: number;
 }
 
 const DEFAULT_K8S_MOUNT = 'kubernetes';
 const DEFAULT_K8S_JWT_PATH = '/var/run/secrets/kubernetes.io/serviceaccount/token';
 const DEFAULT_MOUNT = 'secret';
 const DEFAULT_TTL_SECONDS = 60;
+// Hard per-request HTTP timeout: a wedged OpenBao that never replies must not hang startup forever.
+const DEFAULT_TIMEOUT_MS = 10_000;
 // Re-login this many ms before a Kubernetes lease expires, so a refresh never races the expiry.
 const LEASE_RENEW_SKEW_MS = 10_000;
 
@@ -79,9 +88,12 @@ function resolveConfig(env: NodeJS.ProcessEnv): OpenBaoConfig {
   }
   const ttlRaw = trimmed(env['KEEL_VAULT_CACHE_TTL_SECONDS']);
   const ttlSeconds = ttlRaw !== undefined ? Number(ttlRaw) : DEFAULT_TTL_SECONDS;
-  if (!Number.isFinite(ttlSeconds) || ttlSeconds <= 0) {
+  // ADR-0023: the TTL must parse to a positive integer number of seconds. A non-positive, fractional,
+  // or unparseable value fails closed (the factory rejects) rather than quietly picking a surprise
+  // refresh cadence.
+  if (!Number.isInteger(ttlSeconds) || ttlSeconds <= 0) {
     throw new Error(
-      'OpenBaoSecretProvider: KEEL_VAULT_CACHE_TTL_SECONDS must be a positive number',
+      'OpenBaoSecretProvider: KEEL_VAULT_CACHE_TTL_SECONDS must be a positive integer number of seconds',
     );
   }
   return {
@@ -94,7 +106,8 @@ function resolveConfig(env: NodeJS.ProcessEnv): OpenBaoConfig {
     path,
     namespace: trimmed(env['KEEL_VAULT_NAMESPACE']),
     cacert: trimmed(env['KEEL_VAULT_CACERT']),
-    ttlMs: Math.round(ttlSeconds * 1000),
+    ttlMs: ttlSeconds * 1000,
+    timeoutMs: DEFAULT_TIMEOUT_MS,
   };
 }
 
@@ -120,12 +133,16 @@ async function httpRequest(
   headers: Record<string, string>,
   body: string | undefined,
   caPem: string | undefined,
+  timeoutMs: number,
 ): Promise<HttpResponse> {
   const target = new URL(url);
   if (caPem !== undefined && target.protocol === 'https:') {
-    return httpsWithCa(method, target, headers, body, caPem);
+    return httpsWithCa(method, target, headers, body, caPem, timeoutMs);
   }
-  const res = await fetch(url, { method, headers, body });
+  // A hard deadline on the whole request: a wedged OpenBao that accepts the socket but never
+  // responds aborts here rather than hanging init forever. AbortSignal.timeout fires a TimeoutError
+  // (no token/secret in its message).
+  const res = await fetch(url, { method, headers, body, signal: AbortSignal.timeout(timeoutMs) });
   return { status: res.status, body: await res.text() };
 }
 
@@ -135,14 +152,21 @@ function httpsWithCa(
   headers: Record<string, string>,
   body: string | undefined,
   caPem: string,
+  timeoutMs: number,
 ): Promise<HttpResponse> {
   return new Promise<HttpResponse>((resolve, reject) => {
-    const req = httpsRequest(url, { method, headers, ca: caPem }, (res) => {
+    // `timeout` arms a socket inactivity timer; node:https does not abort on its own, so on the
+    // 'timeout' event we destroy the request, which surfaces as an 'error' and rejects below. The
+    // message is deliberately generic (never echoes the token or any secret).
+    const req = httpsRequest(url, { method, headers, ca: caPem, timeout: timeoutMs }, (res) => {
       const chunks: Buffer[] = [];
       res.on('data', (chunk: Buffer) => chunks.push(chunk));
       res.on('end', () =>
         resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString('utf8') }),
       );
+    });
+    req.on('timeout', () => {
+      req.destroy(new Error('OpenBaoSecretProvider: request timed out'));
     });
     req.on('error', reject);
     if (body !== undefined) {
@@ -187,6 +211,11 @@ export class OpenBaoSecretProvider implements SecretProvider {
     }
   }
 
+  /**
+   * ADR-0023 coercion: a JSON string is returned verbatim; a JSON number or boolean is coerced to
+   * its canonical string (`42`, `true`/`false`); a JSON object, array, or null (and any absent key)
+   * is reported absent (`undefined`) so structured values never leak out as `[object Object]`.
+   */
   get(key: string): string | undefined {
     const value = this.fields[key];
     if (typeof value === 'string') {
@@ -242,6 +271,7 @@ export class OpenBaoSecretProvider implements SecretProvider {
       headers,
       JSON.stringify({ role: this.config.role, jwt }),
       this.config.cacert,
+      this.config.timeoutMs,
     );
     if (res.status < 200 || res.status >= 300) {
       throw new Error(`OpenBaoSecretProvider: Kubernetes login failed (HTTP ${res.status})`);
@@ -281,7 +311,14 @@ export class OpenBaoSecretProvider implements SecretProvider {
 
   private readPath(): Promise<HttpResponse> {
     const url = `${this.config.addr}/v1/${this.config.mount}/data/${this.config.path}`;
-    return httpRequest('GET', url, this.baseHeaders(), undefined, this.config.cacert);
+    return httpRequest(
+      'GET',
+      url,
+      this.baseHeaders(),
+      undefined,
+      this.config.cacert,
+      this.config.timeoutMs,
+    );
   }
 
   /**
@@ -335,7 +372,9 @@ export async function createOpenBaoSecretProvider(
   env: NodeJS.ProcessEnv = process.env,
   options: OpenBaoOptions = {},
 ): Promise<OpenBaoSecretProvider> {
-  const config = await resolveCaPem(resolveConfig(env));
+  const resolved = await resolveCaPem(resolveConfig(env));
+  const config: OpenBaoConfig =
+    options.timeoutMs !== undefined ? { ...resolved, timeoutMs: options.timeoutMs } : resolved;
   const logger = options.logger ?? createLogger('info');
   const provider = new OpenBaoSecretProvider(config, logger);
   await provider.init();
