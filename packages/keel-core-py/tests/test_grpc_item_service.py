@@ -137,6 +137,23 @@ async def test_create_with_empty_name_is_invalid_argument():
         await server.stop(grace=None)
 
 
+async def test_create_with_whitespace_only_name_is_invalid_argument():
+    # Parity with the Go/Rust/TS verticals, which reject a trimmed-empty name: a name
+    # that is only whitespace carries no content and must be INVALID_ARGUMENT, not an
+    # item stored under a blank label.
+    server, port = await _serve()
+    try:
+        async with create_channel(f"127.0.0.1:{port}") as channel:
+            stub = item_pb2_grpc.ItemServiceStub(channel)
+            with pytest.raises(grpc.aio.AioRpcError) as exc:
+                await stub.CreateItem(
+                    item_pb2.CreateItemRequest(name="   \t\n  "), metadata=_auth("write-tok")
+                )
+            assert exc.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+    finally:
+        await server.stop(grace=None)
+
+
 async def test_list_items_honors_limit_and_offset():
     server, port = await _serve()
     try:

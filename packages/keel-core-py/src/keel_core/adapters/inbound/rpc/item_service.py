@@ -94,7 +94,7 @@ class ItemServiceServicer(item_pb2_grpc.ItemServiceServicer):  # type: ignore[mi
     ) -> item_pb2.CreateItemResponse:
         """Create a new item. Requires scope items:write; INVALID_ARGUMENT on empty name."""
         await self._require_principal(context)
-        if not request.name:
+        if not request.name.strip():
             await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "name is required")
         with self._lock:
             item = item_pb2.Item(id=f"item-{next(self._ids)}", name=request.name)
