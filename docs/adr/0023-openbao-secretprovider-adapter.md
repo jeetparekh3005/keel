@@ -117,6 +117,33 @@ bean conditional on `keel.vault-addr`; the other verticals expose the factory fo
 composition root (mirroring how the env adapter is constructed today). The runtime consumers that
 already read through the port (mTLS PEM loading, api_key hashes) transparently gain the backend.
 
+## Clarifications (normative; pin behaviors the first implementation left to chance)
+
+A cross-vertical review found the five adapters agreed on the core protocol but diverged on edges
+the ADR had not specified. These are now normative and identical in all five:
+
+- **Field value coercion.** `get(name)` returns the field only if it is a JSON string, number, or
+  boolean, coerced to its canonical string form (number -> its JSON number text; boolean ->
+  `true`/`false` lowercase). A field that is a JSON object, array, or null is treated as **absent**
+  (a secret is a scalar). No language-specific rendering (no Python `repr`, no `True`/`False`).
+- **Cache TTL.** `KEEL_VAULT_CACHE_TTL_SECONDS` must parse to a positive integer; a non-positive or
+  unparseable value **fails construction** (fail-closed misconfig). Unset -> `60`. No clamping, no
+  silent coercion, no "0 disables refresh".
+- **Path verbatim.** `KEEL_VAULT_PATH` is used exactly as given in the URL; no slash trimming or
+  normalization. A stray slash is the operator's error, surfaced as a 404 (-> empty), not hidden.
+- **Whitespace addr = unset.** An empty or whitespace-only `KEEL_VAULT_ADDR` is treated as unset and
+  selects the `EnvSecretProvider`; it never activates the OpenBao adapter and then crashes.
+- **Lease renewal is mandatory in every vertical.** The adapter reads `.auth.lease_duration` from the
+  auth response and proactively re-logins a renew-skew before the Kubernetes token expires, so a
+  refresh never has to fail first to recover. Reactive-only (401/403-driven) renewal is not
+  sufficient.
+- **Hard HTTP timeouts.** Every request sets connect and read timeouts, so an unreachable or wedged
+  OpenBao fails fast rather than hanging service startup (the eager init load is blocking).
+- **No-leak invariant.** The client token, the Kubernetes JWT, and secret values never appear in any
+  log line or error/exception/panic message. Error context is limited to method, path/mount, and
+  HTTP status - never a response body on the read path. Each vertical carries a regression test
+  asserting a known secret value is absent from captured refresh-failure log output.
+
 ## Testing
 
 - **Unit (non-gated):** each vertical tests its client against an in-process mock HTTP server -
