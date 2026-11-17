@@ -121,7 +121,7 @@ jobs:
         # (ADR-0024) gated on KEEL_AWS_SECRET_ID. Run as a step (like OpenBao/NATS/Keycloak) so the
         # Secrets Manager emulator is reachable at localhost:4566 before the test runs.
         run: |
-          docker run -d --name localstack -p 4566:4566 -e SERVICES=secretsmanager localstack/localstack:2026.09.1
+          docker run -d --name localstack -p 4566:4566 -e SERVICES=secretsmanager localstack/localstack:4.9.1
           for i in $(seq 1 60); do curl -sf http://localhost:4566/_localstack/health >/dev/null && break; sleep 1; done
       - name: Test with coverage floor (85% lines)
         # Runs the full suite under cargo-llvm-cov and fails the job if line coverage
