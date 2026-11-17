@@ -11,6 +11,7 @@ import {
   ResourceNotFoundException,
   SecretsManagerClient,
 } from '@aws-sdk/client-secrets-manager';
+import { NodeHttpHandler } from '@smithy/node-http-handler';
 
 import { createLogger } from '../logging/logger.js';
 import {
@@ -21,6 +22,15 @@ import {
   type SecretProviderLogger,
   trimmed,
 } from './caching-secret-provider.js';
+
+// Bound a wedged or unreachable Secrets Manager endpoint so the eager startup load - the factory
+// below awaits the first GetSecretValue - cannot hang forever. This mirrors ADR-0023's hard-HTTP-
+// timeout rule as applied to the OpenBao adapter: connectionTimeout bounds the TCP/TLS connect,
+// requestTimeout bounds time-to-first-byte, and maxAttempts caps SDK retries so a persistent failure
+// fails fast (fail-closed) instead of multiplying the deadline.
+const CONNECTION_TIMEOUT_MS = 5000;
+const REQUEST_TIMEOUT_MS = 10000;
+const MAX_ATTEMPTS = 2;
 
 /** Optional construction seams (a logger for refresh diagnostics); all have production defaults. */
 export interface AwsSecretsManagerOptions {
@@ -135,10 +145,16 @@ export async function createAwsSecretsManagerSecretProvider(
   options: AwsSecretsManagerOptions = {},
 ): Promise<AwsSecretsManagerSecretProvider> {
   const config = resolveConfig(env);
-  // region undefined -> let the SDK resolve it (env, shared config, instance metadata).
-  const client = new SecretsManagerClient(
-    config.region !== undefined ? { region: config.region } : {},
-  );
+  // region undefined -> let the SDK resolve it (env, shared config, instance metadata). The bounded
+  // request handler and capped retries keep an unreachable endpoint from hanging the awaited first load.
+  const client = new SecretsManagerClient({
+    ...(config.region !== undefined ? { region: config.region } : {}),
+    requestHandler: new NodeHttpHandler({
+      connectionTimeout: CONNECTION_TIMEOUT_MS,
+      requestTimeout: REQUEST_TIMEOUT_MS,
+    }),
+    maxAttempts: MAX_ATTEMPTS,
+  });
   const logger = options.logger ?? createLogger('info');
   const provider = new AwsSecretsManagerSecretProvider(
     client,
