@@ -10,7 +10,7 @@
 import type { Attributes } from '@opentelemetry/api';
 import type { ReadableSpan, SpanExporter } from '@opentelemetry/sdk-trace-base';
 
-import { isSecretKey, REDACTED, scrubText } from '../logging/redact.js';
+import { isSecretKey, REDACTED, scrubText, scrubTextForName } from '../logging/redact.js';
 
 // The second argument of SpanExporter.export is a result callback; derive its type from the
 // interface so we neither restate ExportResult nor import it from a transitive-only package.
@@ -83,7 +83,9 @@ function redactLinks(links: ReadableSpan['links']): ReadableSpan['links'] {
  */
 function redactSpan(span: ReadableSpan): ReadableSpan {
   const overrides: Partial<ReadableSpan> = {
-    name: scrubText(span.name),
+    // Span names are low-cardinality operation ids; scrub bearer/JWT/AWS-key/PEM but NOT the
+    // PAN/Luhn matcher, which false-positives on a legitimate numeric id segment in a route.
+    name: scrubTextForName(span.name),
     attributes: redactAttributes(span.attributes),
     events: redactEvents(span.events),
     links: redactLinks(span.links),
