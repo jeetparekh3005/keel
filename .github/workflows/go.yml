@@ -59,6 +59,14 @@ jobs:
       KEEL_VAULT_TOKEN: root
       KEEL_VAULT_MOUNT: secret
       KEEL_VAULT_PATH: keel-test
+      # AWS Secrets Manager adapter integration test (ADR-0024). The SDK honors
+      # AWS_ENDPOINT_URL_SECRETS_MANAGER, pointing it at the LocalStack step below; the dummy
+      # credentials are what LocalStack expects. KEEL_AWS_SECRET_ID gates the test.
+      AWS_ENDPOINT_URL_SECRETS_MANAGER: http://localhost:4566
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      KEEL_AWS_SECRET_ID: keel-test
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -99,6 +107,13 @@ jobs:
         run: |
           docker run -d --name openbao -p 8200:8200 --cap-add IPC_LOCK -e BAO_DEV_ROOT_TOKEN_ID=root openbao/openbao:2.7.2 server -dev -dev-root-token-id=root -dev-listen-address=0.0.0.0:8200
           for i in $(seq 1 30); do curl -sf http://localhost:8200/v1/sys/health >/dev/null && break; sleep 1; done
+      - name: Start LocalStack (Secrets Manager)
+        # The AWS Secrets Manager SecretProvider integration test (adapters package) creates a
+        # JSON secret and reads it back through the adapter; it skips when KEEL_AWS_SECRET_ID is
+        # unset. The SDK reaches this container via AWS_ENDPOINT_URL_SECRETS_MANAGER (job env).
+        run: |
+          docker run -d --name localstack -p 4566:4566 -e SERVICES=secretsmanager localstack/localstack:2026.09.1
+          for i in $(seq 1 60); do curl -sf http://localhost:4566/_localstack/health >/dev/null && break; sleep 1; done
       - name: Format check
         run: |
           # templates/ holds Copier templates (<< >> placeholders), not valid Go, so exclude them

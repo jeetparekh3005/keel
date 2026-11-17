@@ -24,13 +24,17 @@ import (
 	"time"
 )
 
-// clearVaultEnv blanks every KEEL_VAULT_* variable so a test starts from a known state even
-// when the CI integration job sets some of them globally. t.Setenv restores originals.
+// clearVaultEnv blanks every secret-backend variable so a test starts from a known state even
+// when the CI integration job sets some of them globally (it sets both KEEL_VAULT_ADDR and
+// KEEL_AWS_SECRET_ID). It clears the AWS gating vars too so the selection factory does not see
+// an ambient second backend and fail "multiple backends configured". t.Setenv restores
+// originals.
 func clearVaultEnv(t *testing.T) {
 	t.Helper()
 	for _, k := range []string{
 		envAddr, envToken, envRole, envK8sMount, envJWTPath,
 		envMount, envPath, envNamespace, envCACert, envCacheTTL,
+		envAWSSecretID, envAWSRegion,
 	} {
 		t.Setenv(k, "")
 	}
@@ -394,8 +398,9 @@ func TestOpenBaoFailClosedOnMisconfig(t *testing.T) {
 		}
 	})
 
-	// KEEL_VAULT_CACHE_TTL_SECONDS must parse to a POSITIVE integer (ADR-0023); unparseable,
-	// zero, and negative values all fail construction rather than defaulting silently.
+	// KEEL_SECRET_CACHE_TTL_SECONDS must parse to a POSITIVE integer (ADR-0024 shared TTL);
+	// unparseable, zero, and negative values all fail construction rather than defaulting
+	// silently.
 	for _, bad := range []string{"zero", "0", "-5", "1.5"} {
 		t.Run("bad ttl "+bad, func(t *testing.T) {
 			clearVaultEnv(t)
@@ -404,7 +409,7 @@ func TestOpenBaoFailClosedOnMisconfig(t *testing.T) {
 			t.Setenv(envPath, "keel-test")
 			t.Setenv(envCacheTTL, bad)
 			if _, err := NewOpenBaoSecretProvider(context.Background()); err == nil {
-				t.Errorf("KEEL_VAULT_CACHE_TTL_SECONDS=%q must fail construction (positive integer required)", bad)
+				t.Errorf("KEEL_SECRET_CACHE_TTL_SECONDS=%q must fail construction (positive integer required)", bad)
 			}
 		})
 	}
@@ -722,6 +727,17 @@ func TestSecretProviderFromEnvSelection(t *testing.T) {
 		t.Setenv(envPath, "keel-test")
 		if _, err := SecretProviderFromEnv(context.Background()); err == nil {
 			t.Error("must fail closed, not silently return the env adapter")
+		}
+	})
+
+	t.Run("multiple backends configured fails construction", func(t *testing.T) {
+		clearVaultEnv(t)
+		// Both the OpenBao and AWS gating vars set is an ambiguous misconfiguration (ADR-0024
+		// decision 5): construction must fail rather than silently pick one.
+		t.Setenv(envAddr, "http://127.0.0.1:1")
+		t.Setenv(envAWSSecretID, "keel-test")
+		if _, err := SecretProviderFromEnv(context.Background()); err == nil {
+			t.Error("setting both KEEL_VAULT_ADDR and KEEL_AWS_SECRET_ID must fail construction")
 		}
 	})
 }
