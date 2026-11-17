@@ -8,10 +8,12 @@ import io.keel.core.logging.Redactor;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanContext;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter;
 import io.opentelemetry.sdk.trace.SdkTracerProvider;
 import io.opentelemetry.sdk.trace.data.EventData;
+import io.opentelemetry.sdk.trace.data.LinkData;
 import io.opentelemetry.sdk.trace.data.SpanData;
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
 import io.opentelemetry.sdk.trace.export.SpanExporter;
@@ -104,6 +106,102 @@ class RedactingSpanExporterTest {
               .reduce("", (a, b) -> a + "\n" + b);
       assertFalse(allEventText.contains(BEARER), "BEARER leaked via an exported event attribute");
       assertTrue(allEventText.contains(Redactor.REDACTED), "redaction marker absent from events");
+    } finally {
+      provider.close();
+    }
+  }
+
+  @Test
+  void redactsSecretPatternInSpanNameOnExport() {
+    // The span name is operator-chosen text that can interpolate a secret (e.g. a URL or query
+    // containing a bearer token). The TS vertical scrubs the name; this proves the Java decorator
+    // scrubs it with the same value-scrubber while leaving a benign name untouched.
+    InMemorySpanExporter collected = InMemorySpanExporter.create();
+    SdkTracerProvider provider =
+        SdkTracerProvider.builder()
+            .addSpanProcessor(SimpleSpanProcessor.create(new RedactingSpanExporter(collected)))
+            .build();
+    try {
+      Tracer tracer = provider.get("redaction-test");
+      tracer.spanBuilder("fetch token=" + BEARER).startSpan().end();
+      tracer.spanBuilder("GET /orders").startSpan().end();
+
+      List<SpanData> spans = collected.getFinishedSpanItems();
+      assertEquals(2, spans.size(), "both spans should be exported");
+
+      String secretName =
+          spans.stream()
+              .map(SpanData::getName)
+              .filter(n -> n.startsWith("fetch "))
+              .findFirst()
+              .orElseThrow(() -> new AssertionError("secret-bearing span name missing"));
+      // The bearer pattern inside the name is scrubbed in place; no cleartext survives.
+      assertEquals("fetch token=" + Redactor.REDACTED, secretName);
+      assertFalse(secretName.contains(BEARER), "BEARER leaked in exported span name");
+
+      // A name with no secret pattern is exported byte-for-byte unchanged.
+      assertTrue(
+          spans.stream().anyMatch(s -> s.getName().equals("GET /orders")),
+          "benign span name must survive redaction unchanged");
+    } finally {
+      provider.close();
+    }
+  }
+
+  @Test
+  void redactsLinkAttributesOnExport() {
+    // A secret carried on a span link (secret-family key and a pattern secret in a string value)
+    // must be scrubbed the same as a span attribute. getLinks/redactLinks implement this; this is
+    // its proof, with a benign link attribute as the negative control that survives.
+    InMemorySpanExporter collected = InMemorySpanExporter.create();
+    SdkTracerProvider provider =
+        SdkTracerProvider.builder()
+            .addSpanProcessor(SimpleSpanProcessor.create(new RedactingSpanExporter(collected)))
+            .build();
+    try {
+      Tracer tracer = provider.get("redaction-test");
+      // Start and end a span purely to obtain a valid, sampled span context to link to.
+      Span upstream = tracer.spanBuilder("upstream").startSpan();
+      SpanContext linkedContext = upstream.getSpanContext();
+      upstream.end();
+
+      tracer
+          .spanBuilder("operation")
+          .addLink(
+              linkedContext,
+              Attributes.of(PASSWORD, "hunter2", NOTE, "token=" + BEARER, USER, "alice"))
+          .startSpan()
+          .end();
+
+      List<SpanData> spans = collected.getFinishedSpanItems();
+      SpanData operation =
+          spans.stream()
+              .filter(s -> s.getName().equals("operation"))
+              .findFirst()
+              .orElseThrow(() -> new AssertionError("operation span missing"));
+
+      List<LinkData> links = operation.getLinks();
+      assertEquals(1, links.size(), "the operation span should carry exactly one link");
+      Attributes linkAttrs = links.get(0).getAttributes();
+
+      // Secret-family link-attribute key redacted wholesale.
+      assertEquals(Redactor.REDACTED, linkAttrs.get(PASSWORD));
+      // Pattern secret inside a non-secret-keyed link attribute scrubbed in place.
+      assertEquals("token=" + Redactor.REDACTED, linkAttrs.get(NOTE));
+      // Benign link attribute survives untouched (negative control).
+      assertEquals("alice", linkAttrs.get(USER));
+      // The linked span context itself is preserved; only attributes are rewritten.
+      assertEquals(linkedContext, links.get(0).getSpanContext());
+
+      // No cleartext bearer token survives in ANY exported link attribute value, and the marker is
+      // present.
+      String allLinkText =
+          links.stream()
+              .flatMap(l -> l.getAttributes().asMap().values().stream())
+              .map(String::valueOf)
+              .reduce("", (a, b) -> a + "\n" + b);
+      assertFalse(allLinkText.contains(BEARER), "BEARER leaked via an exported link attribute");
+      assertTrue(allLinkText.contains(Redactor.REDACTED), "redaction marker absent from links");
     } finally {
       provider.close();
     }

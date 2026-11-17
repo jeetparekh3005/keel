@@ -26,7 +26,8 @@ import java.util.List;
  * instrumentation anywhere in the service, including library-emitted spans, is covered without each
  * call site having to remember to scrub. Each {@link SpanData} is wrapped in a {@link
  * DelegatingSpanData} that rewrites the attributes on the span itself and, with the same {@link
- * Redactor} families, the attributes carried on every span event (including the {@code exception.*}
+ * Redactor} families, the span name (scrubbed for secret patterns the same way a string attribute
+ * value is), the attributes carried on every span event (including the {@code exception.*}
  * attributes of a recorded exception) and every link; trace/span ids, timing, status, event names
  * and timestamps, link span contexts, and resource are left untouched so the exported span is
  * otherwise identical. The pattern families themselves live solely in {@link Redactor}; this class
@@ -63,7 +64,17 @@ public final class RedactingSpanExporter implements SpanExporter {
     Attributes redactedAttributes = redactAttributes(span.getAttributes());
     List<EventData> redactedEvents = redactEvents(span.getEvents());
     List<LinkData> redactedLinks = redactLinks(span.getLinks());
+    // The span name is operator-chosen text that can carry an interpolated secret just like a
+    // string attribute value, so it is scrubbed with the same value-scrubber (parity with the TS
+    // vertical, which scrubs the span name). Key-based wholesale redaction has no meaning for a
+    // name, which is why only the value scrubber is applied here.
+    String redactedName = Redactor.scrubText(span.getName());
     return new DelegatingSpanData(span) {
+      @Override
+      public String getName() {
+        return redactedName;
+      }
+
       @Override
       public Attributes getAttributes() {
         return redactedAttributes;
