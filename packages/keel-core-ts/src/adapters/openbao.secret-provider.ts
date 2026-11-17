@@ -1,8 +1,9 @@
-// OpenBao (Vault KV v2) SecretProvider adapter (ADR-0023). The SecretProvider port's `get` is
-// synchronous in every vertical and Node cannot do synchronous HTTP, so `get()` must never perform
-// I/O: the adapter authenticates and loads the KV v2 field map into memory once at init (awaited by
-// the async factory below), then serves `get()` synchronously from that cache. A background refresh
-// re-reads the path every TTL; a transient outage keeps serving the last good field map.
+// OpenBao (Vault KV v2) SecretProvider adapter (ADR-0023), refactored onto the shared caching core
+// (ADR-0024 decision 3). The SecretProvider port's `get` is synchronous in every vertical and Node
+// cannot do synchronous HTTP, so `get()` must never perform I/O: the loader authenticates and loads
+// the KV v2 field map into memory once at init (awaited by the async factory below), then the core
+// serves `get()` synchronously from that cache and re-invokes the loader every TTL; a transient
+// outage keeps serving the last good field map.
 //
 // The identical Vault HTTP API serves OpenBao and HashiCorp Vault, so this one adapter covers
 // either endpoint. Token and Kubernetes auth only (ADR-0023); no vault SDK dependency - the client
@@ -13,14 +14,16 @@ import { readFile } from 'node:fs/promises';
 import { request as httpsRequest } from 'node:https';
 
 import { createLogger } from '../logging/logger.js';
-import type { SecretProvider } from '../ports/index.js';
-import { EnvSecretProvider } from './index.js';
+import {
+  asRecord,
+  CachingSecretProvider,
+  resolveCacheTtlMs,
+  type SecretLoader,
+  type SecretProviderLogger,
+  trimmed,
+} from './caching-secret-provider.js';
 
-/** Minimal structured logger surface used for refresh diagnostics (pino's Logger satisfies it). */
-export interface SecretProviderLogger {
-  warn(obj: Record<string, unknown>, msg: string): void;
-  error(obj: Record<string, unknown>, msg: string): void;
-}
+export type { SecretProviderLogger };
 
 /** Optional construction seams (a logger for refresh diagnostics); all have production defaults. */
 export interface OpenBaoOptions {
@@ -51,24 +54,15 @@ interface OpenBaoConfig {
 const DEFAULT_K8S_MOUNT = 'kubernetes';
 const DEFAULT_K8S_JWT_PATH = '/var/run/secrets/kubernetes.io/serviceaccount/token';
 const DEFAULT_MOUNT = 'secret';
-const DEFAULT_TTL_SECONDS = 60;
 // Hard per-request HTTP timeout: a wedged OpenBao that never replies must not hang startup forever.
 const DEFAULT_TIMEOUT_MS = 10_000;
 // Re-login this many ms before a Kubernetes lease expires, so a refresh never races the expiry.
 const LEASE_RENEW_SKEW_MS = 10_000;
 
-function trimmed(value: string | undefined): string | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  const t = value.trim();
-  return t.length > 0 ? t : undefined;
-}
-
 /**
  * Resolve and validate the `KEEL_VAULT_*` environment into a config. Fail-closed (ADR-0023): with
  * `KEEL_VAULT_ADDR` set, a missing path or missing auth throws here rather than falling back to the
- * environment.
+ * environment. The cache TTL comes from the shared `KEEL_SECRET_CACHE_TTL_SECONDS` (ADR-0024).
  */
 function resolveConfig(env: NodeJS.ProcessEnv): OpenBaoConfig {
   const addr = trimmed(env['KEEL_VAULT_ADDR']);
@@ -86,16 +80,6 @@ function resolveConfig(env: NodeJS.ProcessEnv): OpenBaoConfig {
       'OpenBaoSecretProvider: no auth configured (set KEEL_VAULT_TOKEN or KEEL_VAULT_ROLE)',
     );
   }
-  const ttlRaw = trimmed(env['KEEL_VAULT_CACHE_TTL_SECONDS']);
-  const ttlSeconds = ttlRaw !== undefined ? Number(ttlRaw) : DEFAULT_TTL_SECONDS;
-  // ADR-0023: the TTL must parse to a positive integer number of seconds. A non-positive, fractional,
-  // or unparseable value fails closed (the factory rejects) rather than quietly picking a surprise
-  // refresh cadence.
-  if (!Number.isInteger(ttlSeconds) || ttlSeconds <= 0) {
-    throw new Error(
-      'OpenBaoSecretProvider: KEEL_VAULT_CACHE_TTL_SECONDS must be a positive integer number of seconds',
-    );
-  }
   return {
     addr: addr.replace(/\/+$/, ''),
     token,
@@ -106,15 +90,9 @@ function resolveConfig(env: NodeJS.ProcessEnv): OpenBaoConfig {
     path,
     namespace: trimmed(env['KEEL_VAULT_NAMESPACE']),
     cacert: trimmed(env['KEEL_VAULT_CACERT']),
-    ttlMs: ttlSeconds * 1000,
+    ttlMs: resolveCacheTtlMs(env),
     timeoutMs: DEFAULT_TIMEOUT_MS,
   };
-}
-
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
 }
 
 interface HttpResponse {
@@ -176,68 +154,49 @@ function httpsWithCa(
   });
 }
 
+function parseJson(body: string): unknown {
+  try {
+    return JSON.parse(body) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
- * Static KV v2 SecretProvider backed by OpenBao/Vault (ADR-0023). Construct via
- * {@link createOpenBaoSecretProvider}, which awaits the first field-map load before the provider is
- * used; `get()` then reads synchronously from the in-memory cache and performs no I/O.
+ * The OpenBao {@link SecretLoader}: authenticates (static token or Kubernetes login), reads the KV v2
+ * path, and returns the field map. Holds the token and Kubernetes lease across calls so the shared
+ * cache core can re-invoke it every TTL. Proactively re-logs in before a near-expiry lease and
+ * re-authenticates once on a 401/403 (ADR-0023).
  */
-export class OpenBaoSecretProvider implements SecretProvider {
+class OpenBaoLoader implements SecretLoader {
+  readonly label = 'openbao';
   private readonly config: OpenBaoConfig;
-  private readonly logger: SecretProviderLogger;
-  private fields: Record<string, unknown> = {};
   private token: string | undefined;
   // Epoch ms when a Kubernetes lease expires (0 = no lease / static token, never proactively renew).
   private leaseExpiresAt = 0;
-  private timer: ReturnType<typeof setInterval> | undefined;
 
-  constructor(config: OpenBaoConfig, logger: SecretProviderLogger) {
+  constructor(config: OpenBaoConfig) {
     this.config = config;
-    this.logger = logger;
   }
 
-  /**
-   * Authenticate and load the field map once, then start the background TTL refresh. Awaited by the
-   * factory so the provider is fully warmed before first use; a load failure rejects (fail-closed).
-   */
-  async init(): Promise<void> {
-    await this.authenticate();
-    await this.load();
-    this.timer = setInterval(() => {
-      void this.refresh();
-    }, this.config.ttlMs);
-    // Do not keep the event loop (and thus the process) alive just for the refresh ticker.
-    if (typeof this.timer.unref === 'function') {
-      this.timer.unref();
+  async load(): Promise<Record<string, unknown>> {
+    if (this.token === undefined) {
+      // First load: authenticate before the initial read.
+      await this.authenticate();
+    } else if (this.needsLeaseRenewal()) {
+      // A background refresh inside the Kubernetes lease renewal window: re-login proactively so a
+      // read never races the lease expiry.
+      await this.authenticate();
     }
+    return this.readFieldMap();
   }
 
-  /**
-   * ADR-0023 coercion: a JSON string is returned verbatim; a JSON number or boolean is coerced to
-   * its canonical string (`42`, `true`/`false`); a JSON object, array, or null (and any absent key)
-   * is reported absent (`undefined`) so structured values never leak out as `[object Object]`.
-   */
-  get(key: string): string | undefined {
-    const value = this.fields[key];
-    if (typeof value === 'string') {
-      return value;
-    }
-    if (typeof value === 'number' || typeof value === 'boolean') {
-      return String(value);
-    }
-    return undefined;
-  }
-
-  /** Stop the background refresh. Idempotent; call at shutdown so the process can exit cleanly. */
-  close(): void {
-    if (this.timer !== undefined) {
-      clearInterval(this.timer);
-      this.timer = undefined;
-    }
-  }
-
-  /** Alias for {@link close}, for callers that dispose resources by convention. */
-  dispose(): void {
-    this.close();
+  private needsLeaseRenewal(): boolean {
+    return (
+      this.config.role !== undefined &&
+      this.leaseExpiresAt > 0 &&
+      Date.now() >= this.leaseExpiresAt - LEASE_RENEW_SKEW_MS
+    );
   }
 
   private baseHeaders(): Record<string, string> {
@@ -286,8 +245,8 @@ export class OpenBaoSecretProvider implements SecretProvider {
     this.leaseExpiresAt = typeof lease === 'number' && lease > 0 ? Date.now() + lease * 1000 : 0;
   }
 
-  /** Read the KV v2 path into the cache, re-authenticating once on 401/403 (ADR-0023). */
-  private async load(): Promise<void> {
+  /** Read the KV v2 path into a field map, re-authenticating once on 401/403 (ADR-0023). */
+  private async readFieldMap(): Promise<Record<string, unknown>> {
     let res = await this.readPath();
     if (res.status === 401 || res.status === 403) {
       // The token was rejected (expired lease, rotated token). Re-login and retry once; a static
@@ -297,8 +256,7 @@ export class OpenBaoSecretProvider implements SecretProvider {
     }
     if (res.status === 404) {
       // No secret at the path: an empty field map, every get() is absent - the same as an empty env.
-      this.fields = {};
-      return;
+      return {};
     }
     if (res.status < 200 || res.status >= 300) {
       throw new Error(
@@ -306,7 +264,7 @@ export class OpenBaoSecretProvider implements SecretProvider {
       );
     }
     const data = asRecord(asRecord(parseJson(res.body))?.['data'])?.['data'];
-    this.fields = asRecord(data) ?? {};
+    return asRecord(data) ?? {};
   }
 
   private readPath(): Promise<HttpResponse> {
@@ -320,36 +278,17 @@ export class OpenBaoSecretProvider implements SecretProvider {
       this.config.timeoutMs,
     );
   }
-
-  /**
-   * Background refresh: proactively re-login a near-expiry Kubernetes lease, then reload. On failure
-   * the last good field map continues to serve and the error is logged (a transient outage does not
-   * take the service down).
-   */
-  private async refresh(): Promise<void> {
-    try {
-      if (
-        this.config.role !== undefined &&
-        this.leaseExpiresAt > 0 &&
-        Date.now() >= this.leaseExpiresAt - LEASE_RENEW_SKEW_MS
-      ) {
-        await this.authenticate();
-      }
-      await this.load();
-    } catch (err) {
-      this.logger.warn(
-        { path: this.config.path, err: err instanceof Error ? err.message : String(err) },
-        'OpenBao secret refresh failed; serving last good field map',
-      );
-    }
-  }
 }
 
-function parseJson(body: string): unknown {
-  try {
-    return JSON.parse(body) as unknown;
-  } catch {
-    return undefined;
+/**
+ * Static KV v2 SecretProvider backed by OpenBao/Vault (ADR-0023), over the shared caching core
+ * (ADR-0024). Construct via {@link createOpenBaoSecretProvider}, which awaits the first field-map
+ * load before the provider is used; `get()` then reads synchronously from the in-memory cache and
+ * performs no I/O.
+ */
+export class OpenBaoSecretProvider extends CachingSecretProvider {
+  constructor(config: OpenBaoConfig, logger: SecretProviderLogger) {
+    super(new OpenBaoLoader(config), { ttlMs: config.ttlMs, logger });
   }
 }
 
@@ -379,19 +318,4 @@ export async function createOpenBaoSecretProvider(
   const provider = new OpenBaoSecretProvider(config, logger);
   await provider.init();
   return provider;
-}
-
-/**
- * Select the SecretProvider from the environment (ADR-0023 gating): the OpenBao provider when
- * `KEEL_VAULT_ADDR` is set (fail-closed), otherwise the dev `EnvSecretProvider`. The SECRET_PROVIDER
- * DI token is bound by the service composition root; this factory is what that root calls.
- */
-export async function secretProviderFromEnv(
-  env: NodeJS.ProcessEnv = process.env,
-  options: OpenBaoOptions = {},
-): Promise<SecretProvider> {
-  if (trimmed(env['KEEL_VAULT_ADDR']) !== undefined) {
-    return createOpenBaoSecretProvider(env, options);
-  }
-  return new EnvSecretProvider(env);
 }

@@ -16,11 +16,8 @@ import { join } from 'node:path';
 import forge from 'node-forge';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import {
-  createOpenBaoSecretProvider,
-  OpenBaoSecretProvider,
-  secretProviderFromEnv,
-} from './openbao.secret-provider.js';
+import { createOpenBaoSecretProvider, OpenBaoSecretProvider } from './openbao.secret-provider.js';
+import { secretProviderFromEnv } from './secret-provider.factory.js';
 
 interface CapturedRequest {
   method: string;
@@ -286,7 +283,7 @@ describe('OpenBaoSecretProvider', () => {
       KEEL_VAULT_ADDR: vault.url,
       KEEL_VAULT_TOKEN: 'root-token',
       KEEL_VAULT_PATH: 'keel-test',
-      KEEL_VAULT_CACHE_TTL_SECONDS: '1',
+      KEEL_SECRET_CACHE_TTL_SECONDS: '1',
     });
     cleanups.push(() => provider.close());
 
@@ -474,7 +471,7 @@ describe('OpenBaoSecretProvider', () => {
   });
 
   it.each(['0', '-1', '0.05', '1.5', 'abc', 'NaN'])(
-    'fails closed when KEEL_VAULT_CACHE_TTL_SECONDS=%j is not a positive integer',
+    'fails closed when KEEL_SECRET_CACHE_TTL_SECONDS=%j is not a positive integer',
     async (ttl) => {
       await expect(
         createOpenBaoSecretProvider({
@@ -482,7 +479,7 @@ describe('OpenBaoSecretProvider', () => {
           KEEL_VAULT_ADDR: 'http://127.0.0.1:1',
           KEEL_VAULT_TOKEN: 'root-token',
           KEEL_VAULT_PATH: 'keel-test',
-          KEEL_VAULT_CACHE_TTL_SECONDS: ttl,
+          KEEL_SECRET_CACHE_TTL_SECONDS: ttl,
         }),
       ).rejects.toThrow(/positive integer/);
     },
@@ -622,7 +619,7 @@ describe('OpenBaoSecretProvider', () => {
       KEEL_VAULT_ROLE: 'keel-role',
       KEEL_VAULT_K8S_JWT_PATH: jwtPath,
       KEEL_VAULT_PATH: 'keel-test',
-      KEEL_VAULT_CACHE_TTL_SECONDS: '1',
+      KEEL_SECRET_CACHE_TTL_SECONDS: '1',
     });
     cleanups.push(() => provider.close());
 
@@ -663,7 +660,7 @@ describe('OpenBaoSecretProvider', () => {
         KEEL_VAULT_ADDR: vault.url,
         KEEL_VAULT_TOKEN: 'super-secret-vault-token',
         KEEL_VAULT_PATH: 'keel-test',
-        KEEL_VAULT_CACHE_TTL_SECONDS: '1',
+        KEEL_SECRET_CACHE_TTL_SECONDS: '1',
       },
       { logger },
     );
