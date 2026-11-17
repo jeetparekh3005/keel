@@ -1,6 +1,7 @@
 package io.keel.core;
 
 import io.keel.core.adapters.EnvSecretProvider;
+import io.keel.core.adapters.OpenBaoSecretProvider;
 import io.keel.core.adapters.SystemClock;
 import io.keel.core.auth.SecurityConfig;
 import io.keel.core.config.KeelProperties;
@@ -15,6 +16,7 @@ import io.keel.core.web.RequestIdFilter;
 import io.keel.core.web.SecurityHeadersFilter;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
@@ -76,6 +78,30 @@ public class KeelCoreAutoConfiguration {
   @ConditionalOnMissingBean
   public Clock clock() {
     return new SystemClock();
+  }
+
+  /**
+   * The production OpenBao/Vault secret backend (ADR-0023), wired only when {@code keel.vault-addr}
+   * (env {@code KEEL_VAULT_ADDR}) is set. Declared before the env fallback so, when a Vault address
+   * is configured, the {@code @ConditionalOnMissingBean} env bean backs off and this provider wins
+   * - fail-closed, no silent fall-through to the environment. {@code destroyMethod = "close"} stops
+   * the background refresh thread at shutdown.
+   */
+  @Bean(destroyMethod = "close")
+  @ConditionalOnProperty(prefix = "keel", name = "vault-addr")
+  public SecretProvider openBaoSecretProvider(KeelProperties properties) {
+    return new OpenBaoSecretProvider(
+        new OpenBaoSecretProvider.Config(
+            properties.vaultAddr(),
+            properties.vaultToken(),
+            properties.vaultRole(),
+            properties.vaultK8sMount(),
+            properties.vaultK8sJwtPath(),
+            properties.vaultMount(),
+            properties.vaultPath(),
+            properties.vaultNamespace(),
+            properties.vaultCacert(),
+            java.time.Duration.ofSeconds(properties.vaultCacheTtlSeconds())));
   }
 
   @Bean
