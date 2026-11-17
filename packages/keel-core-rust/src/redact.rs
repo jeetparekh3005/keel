@@ -200,8 +200,16 @@ fn redact_key_value(kv: &mut KeyValue) {
 }
 
 /// Apply [`redact_key_value`] to every attribute on a span and on each of its events and
-/// links, so a secret recorded anywhere on a span never reaches the collector.
+/// links, and [`scrub_text`] to the span name, so a secret recorded anywhere on a span
+/// (including inside its name) never reaches the collector.
 fn redact_span_data(span: &mut SpanData) {
+    // The span name is operator-chosen free text that can embed a secret (e.g. a bearer
+    // token or AWS key spliced into a route label); scrub it with the same value-scrubber
+    // the log sink and attribute redactor use, matching the TS vertical which scrubs it too.
+    let scrubbed_name = scrub_text(span.name.as_ref());
+    if scrubbed_name.as_str() != span.name.as_ref() {
+        span.name = scrubbed_name.into();
+    }
     for kv in &mut span.attributes {
         redact_key_value(kv);
     }
@@ -708,6 +716,48 @@ mod tests {
             .force_flush()
             .expect("force_flush delegates to inner");
         direct.shutdown().expect("shutdown delegates to inner");
+
+        provider.shutdown().expect("provider shutdown");
+    }
+
+    #[test]
+    fn exported_span_name_is_scrubbed() {
+        use opentelemetry::trace::{Span, Tracer, TracerProvider as _};
+        use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
+
+        // Same wiring as the attribute test: the in-memory exporter wrapped by the redactor,
+        // exported synchronously by the simple processor, so the finished spans hold exactly
+        // what the collector would have seen.
+        let sink = InMemorySpanExporter::default();
+        let provider = SdkTracerProvider::builder()
+            .with_simple_exporter(RedactingSpanExporter::new(sink.clone()))
+            .build();
+        let tracer = provider.tracer("test");
+
+        // A secret spliced into the span name must be scrubbed, surrounding text preserved.
+        tracer.start("fetch AKIAIOSFODNN7EXAMPLE token").end();
+        // A benign name must pass through untouched, proving the scrub is targeted.
+        tracer.start("GET /users/42").end();
+
+        provider.force_flush().expect("flush spans");
+        let spans = sink.get_finished_spans().expect("finished spans");
+
+        let names: Vec<&str> = spans.iter().map(|s| s.name.as_ref()).collect();
+        assert!(
+            names.contains(&"fetch [REDACTED] token"),
+            "span name must have its embedded secret scrubbed, got {names:?}"
+        );
+        assert!(
+            names.contains(&"GET /users/42"),
+            "a benign span name must be exported unchanged, got {names:?}"
+        );
+        // Non-vacuous: the raw secret must not survive in any exported span name.
+        for name in &names {
+            assert!(
+                !name.contains("AKIAIOSFODNN7EXAMPLE"),
+                "raw AWS key leaked in span name: {name}"
+            );
+        }
 
         provider.shutdown().expect("provider shutdown");
     }
