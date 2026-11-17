@@ -92,7 +92,7 @@ jobs:
         # integration test (@keel/core), gated on KEEL_AWS_SECRET_ID below. The SDK reaches it via
         # AWS_ENDPOINT_URL_SECRETS_MANAGER (set on the Test step), so no custom-endpoint knob.
         run: |
-          docker run -d --name localstack -p 4566:4566 -e SERVICES=secretsmanager localstack/localstack:2026.09.1
+          docker run -d --name localstack -p 4566:4566 -e SERVICES=secretsmanager localstack/localstack:4.9.1
           for i in $(seq 1 60); do curl -sf http://localhost:4566/_localstack/health >/dev/null && break; sleep 1; done
       - name: Start Keycloak (import realm)
         # A service container cannot pass `start-dev --import-realm`, so run it as a step. The
