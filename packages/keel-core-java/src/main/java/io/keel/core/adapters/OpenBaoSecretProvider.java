@@ -21,6 +21,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -42,10 +43,12 @@ import tools.jackson.databind.node.ObjectNode;
  * 401/403}, re-authenticates and retries once. A failed refresh keeps serving the last good field
  * map and is logged, so a transient OpenBao outage does not take the service down.
  *
- * <p>Fail-closed: once configured (a non-empty {@code KEEL_VAULT_ADDR}), a misconfiguration (no
- * auth, unreachable server, missing path) fails loudly at construction rather than silently falling
- * back to the environment. Selection lives in {@code KeelCoreAutoConfiguration}: this adapter wins
- * over {@link EnvSecretProvider} when {@code keel.vault-addr} is set.
+ * <p>Fail-closed: once configured (a non-blank {@code KEEL_VAULT_ADDR}), a misconfiguration (no
+ * auth, unreachable server, missing path, non-positive cache TTL) fails loudly at construction
+ * rather than silently falling back to the environment. Selection lives in {@code
+ * KeelCoreAutoConfiguration}: this adapter wins over {@link EnvSecretProvider} when {@code
+ * keel.vault-addr} is non-blank; a blank or whitespace-only address is treated as unset and falls
+ * back to the environment rather than crashing startup.
  */
 public final class OpenBaoSecretProvider implements SecretProvider, AutoCloseable {
 
@@ -89,6 +92,21 @@ public final class OpenBaoSecretProvider implements SecretProvider, AutoCloseabl
   private volatile String clientToken;
   private volatile Map<String, String> cache = Map.of();
 
+  // Kubernetes-login token-expiry instant (nanoTime basis) for proactive renewal (ADR-0023).
+  // authenticate() derives it from the login's lease_duration; a self-rescheduling renewal task
+  // re-logs in a renew-skew before this instant so the token never lapses between the (potentially
+  // much longer) cache-TTL refreshes. Zero means "no lease" (a static token or a login that
+  // returned no lease_duration), which disables proactive renewal.
+  private volatile long tokenExpiryNanos;
+
+  // Renew once roughly a third of the lease remains: early enough to absorb a failed attempt and a
+  // retry, late enough to avoid churning the auth backend.
+  private static final long RENEW_SKEW_DIVISOR = 3;
+
+  // Fixed backoff between failed renewal attempts so a persistent auth outage cannot busy-loop the
+  // scheduler thread (the reactive 401/403 path still re-authenticates on the next read).
+  private static final long RENEW_RETRY_BACKOFF_MILLIS = 1_000L;
+
   public OpenBaoSecretProvider(Config config) {
     this.addr = stripTrailingSlash(requireValue(config.addr(), "KEEL_VAULT_ADDR"));
     this.token = trimToNull(config.token());
@@ -99,10 +117,17 @@ public final class OpenBaoSecretProvider implements SecretProvider, AutoCloseabl
     this.mount = orDefault(config.mount(), "secret");
     this.path = requireValue(config.path(), "KEEL_VAULT_PATH");
     this.namespace = trimToNull(config.namespace());
-    Duration ttl =
-        config.cacheTtl() == null || config.cacheTtl().isZero() || config.cacheTtl().isNegative()
-            ? Duration.ofSeconds(60)
-            : config.cacheTtl();
+    // TTL is normative (ADR-0023): unset -> 60s; a non-positive value is a misconfiguration and
+    // fails construction rather than being silently coerced to a default (an unparseable value is
+    // already rejected earlier by the int binding in KeelProperties).
+    Duration ttl;
+    if (config.cacheTtl() == null) {
+      ttl = Duration.ofSeconds(60);
+    } else if (config.cacheTtl().isZero() || config.cacheTtl().isNegative()) {
+      throw new IllegalStateException("KEEL_VAULT_CACHE_TTL_SECONDS must be a positive integer");
+    } else {
+      ttl = config.cacheTtl();
+    }
 
     if (this.token == null && this.role == null) {
       throw new IllegalStateException(
@@ -130,6 +155,10 @@ public final class OpenBaoSecretProvider implements SecretProvider, AutoCloseabl
         });
     long ttlMillis = ttl.toMillis();
     this.scheduler.scheduleAtFixedRate(this::refresh, ttlMillis, ttlMillis, TimeUnit.MILLISECONDS);
+    // Proactive Kubernetes-lease renewal runs on its own schedule, independent of (and typically
+    // earlier than) the cache-TTL refresh, so the token is renewed before it expires rather than
+    // only reactively on a 401/403 (ADR-0023).
+    scheduleRenewal();
   }
 
   @Override
@@ -170,6 +199,8 @@ public final class OpenBaoSecretProvider implements SecretProvider, AutoCloseabl
    */
   private String authenticate() {
     if (token != null) {
+      // A static token carries no lease: disable proactive renewal (a 401/403 still re-surfaces).
+      this.tokenExpiryNanos = 0L;
       return token;
     }
     String jwt = readJwt();
@@ -195,7 +226,51 @@ public final class OpenBaoSecretProvider implements SecretProvider, AutoCloseabl
     if (!clientTokenNode.isTextual() || clientTokenNode.asText().isEmpty()) {
       throw new IllegalStateException("OpenBao Kubernetes login returned no auth.client_token");
     }
+    // Track the lease so the renewal task can re-login before the token expires. A missing or
+    // non-positive lease_duration means a non-expiring token: no proactive renewal.
+    JsonNode leaseNode = root.path("auth").path("lease_duration");
+    long lease = leaseNode.isNumber() ? leaseNode.asLong() : 0L;
+    this.tokenExpiryNanos = lease > 0 ? System.nanoTime() + lease * 1_000_000_000L : 0L;
     return clientTokenNode.asText();
+  }
+
+  /**
+   * Schedule the next proactive re-login a renew-skew before the current token's expiry (ADR-0023).
+   * A no-op for a static token or a lease-less login; otherwise fires at roughly two-thirds of the
+   * remaining lease and reschedules itself from the renewed lease.
+   */
+  private void scheduleRenewal() {
+    long expiry = this.tokenExpiryNanos;
+    if (role == null || expiry == 0L) {
+      return;
+    }
+    long remainingMillis = Math.max(0L, (expiry - System.nanoTime()) / 1_000_000L);
+    long delayMillis = remainingMillis - (remainingMillis / RENEW_SKEW_DIVISOR);
+    scheduleRenewalAfter(delayMillis);
+  }
+
+  private void scheduleRenewalAfter(long delayMillis) {
+    try {
+      scheduler.schedule(this::renewToken, Math.max(0L, delayMillis), TimeUnit.MILLISECONDS);
+    } catch (RejectedExecutionException ignored) {
+      // The scheduler is shutting down (close()): there is nothing left to renew.
+    }
+  }
+
+  /**
+   * Re-login to refresh the lease, then reschedule from the new lease. A failed attempt keeps the
+   * current token and retries after a fixed backoff (not immediately), so a persistent auth outage
+   * cannot spin the scheduler thread; the reactive 401/403 path still covers an expired token.
+   */
+  private void renewToken() {
+    try {
+      this.clientToken = authenticate();
+      scheduleRenewal();
+    } catch (RuntimeException ex) {
+      // Never leak secret material in the failure log (ADR-0023); the exception carries none.
+      log.warn("OpenBao token renewal failed; will retry shortly", ex);
+      scheduleRenewalAfter(RENEW_RETRY_BACKOFF_MILLIS);
+    }
   }
 
   private String readJwt() {
@@ -232,7 +307,13 @@ public final class OpenBaoSecretProvider implements SecretProvider, AutoCloseabl
     if (data.isObject()) {
       for (Map.Entry<String, JsonNode> entry : data.properties()) {
         JsonNode value = entry.getValue();
-        fields.put(entry.getKey(), value.isTextual() ? value.asText() : value.toString());
+        // Only JSON scalars are secrets (ADR-0023 coercion): a string is used verbatim, a number is
+        // its JSON text, a boolean is "true"/"false". An object, array, or null has no canonical
+        // scalar form, so it is dropped and get() returns empty rather than leaking a serialized
+        // blob into a field meant to hold a credential.
+        if (value.isTextual() || value.isNumber() || value.isBoolean()) {
+          fields.put(entry.getKey(), value.asText());
+        }
       }
     }
     return Map.copyOf(fields);
@@ -262,7 +343,15 @@ public final class OpenBaoSecretProvider implements SecretProvider, AutoCloseabl
   }
 
   private JsonNode parse(String body) {
-    return mapper.readTree(body);
+    try {
+      return mapper.readTree(body);
+    } catch (RuntimeException ex) {
+      // The parser's exception can echo the response body (which may carry secret material) into
+      // its
+      // message; refresh() logs the exception, so re-throw a sanitized error with neither the body
+      // nor the original cause chain (ADR-0023: no secret value in any log/error).
+      throw new IllegalStateException("OpenBao returned a malformed JSON response");
+    }
   }
 
   /**

@@ -14,9 +14,9 @@ import io.keel.core.web.ProblemExceptionHandler;
 import io.keel.core.web.ReadinessCheck;
 import io.keel.core.web.RequestIdFilter;
 import io.keel.core.web.SecurityHeadersFilter;
+import java.time.Duration;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
@@ -81,15 +81,23 @@ public class KeelCoreAutoConfiguration {
   }
 
   /**
-   * The production OpenBao/Vault secret backend (ADR-0023), wired only when {@code keel.vault-addr}
-   * (env {@code KEEL_VAULT_ADDR}) is set. Declared before the env fallback so, when a Vault address
-   * is configured, the {@code @ConditionalOnMissingBean} env bean backs off and this provider wins
-   * - fail-closed, no silent fall-through to the environment. {@code destroyMethod = "close"} stops
-   * the background refresh thread at shutdown.
+   * The secret backend (ADR-0023). A single factory chooses the provider so a blank or
+   * whitespace-only {@code KEEL_VAULT_ADDR} ({@code keel.vault-addr}) falls back to the dev {@link
+   * EnvSecretProvider} rather than activating OpenBao and crashing startup: a bound-but-empty
+   * address is treated as unset, matching the other verticals. Only a non-blank address selects the
+   * production {@link OpenBaoSecretProvider}, which then fails loudly on misconfiguration
+   * (fail-closed, no silent fall-through to the environment). {@code @ConditionalOnMissingBean}
+   * lets a service supply its own provider. The inferred destroy method stops the OpenBao
+   * background refresh thread at shutdown (it is {@link AutoCloseable}); the env provider has
+   * nothing to close.
    */
-  @Bean(destroyMethod = "close")
-  @ConditionalOnProperty(prefix = "keel", name = "vault-addr")
-  public SecretProvider openBaoSecretProvider(KeelProperties properties) {
+  @Bean
+  @ConditionalOnMissingBean
+  public SecretProvider secretProvider(KeelProperties properties) {
+    String addr = properties.vaultAddr();
+    if (addr == null || addr.isBlank()) {
+      return new EnvSecretProvider();
+    }
     return new OpenBaoSecretProvider(
         new OpenBaoSecretProvider.Config(
             properties.vaultAddr(),
@@ -101,12 +109,6 @@ public class KeelCoreAutoConfiguration {
             properties.vaultPath(),
             properties.vaultNamespace(),
             properties.vaultCacert(),
-            java.time.Duration.ofSeconds(properties.vaultCacheTtlSeconds())));
-  }
-
-  @Bean
-  @ConditionalOnMissingBean
-  public SecretProvider secretProvider() {
-    return new EnvSecretProvider();
+            Duration.ofSeconds(properties.vaultCacheTtlSeconds())));
   }
 }
