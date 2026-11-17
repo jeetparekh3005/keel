@@ -120,12 +120,16 @@ impl AwsLoader {
         Ok(loader)
     }
 
-    /// Build the SDK client once, from the default credential chain and the resolved region.
+    /// Build the SDK client once, from the default credential chain and the resolved region. The
+    /// HTTP client is set explicitly (not a default/legacy connector) so the whole SDK and the
+    /// credential providers run over the modern hyper-1 + rustls-ring stack - see
+    /// [`ring_https_client`].
     fn ensure_client(&mut self) -> Result<&Client, AwsError> {
         if self.client.is_none() {
             let region = self.config.region.clone();
             let client = self.runtime.block_on(async move {
-                let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest());
+                let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest())
+                    .http_client(ring_https_client());
                 if let Some(region) = region {
                     loader = loader.region(aws_sdk_secretsmanager::config::Region::new(region));
                 }
@@ -136,6 +140,18 @@ impl AwsLoader {
         }
         Ok(self.client.as_ref().expect("client built above"))
     }
+}
+
+/// Build the modern (hyper 1.x) smithy HTTP client with rustls + ring. Used instead of any
+/// default/legacy connector so the crypto backend stays on `ring` (no aws-lc-sys C build) and the
+/// HTTP/2 stack resolves to the patched `h2` 0.4.x rather than the legacy hyper-0.14 / h2 0.3 path
+/// (RUSTSEC-2026-0258).
+fn ring_https_client() -> aws_sdk_secretsmanager::config::SharedHttpClient {
+    aws_smithy_http_client::Builder::new()
+        .tls_provider(aws_smithy_http_client::tls::Provider::Rustls(
+            aws_smithy_http_client::tls::rustls_provider::CryptoMode::Ring,
+        ))
+        .build_https()
 }
 
 impl SecretLoader for AwsLoader {

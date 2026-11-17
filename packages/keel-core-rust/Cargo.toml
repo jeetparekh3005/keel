@@ -57,20 +57,27 @@ tonic-prost = { version = "0.14", optional = true }
 # instance profile, SSO), which ADR-0024 deliberately prefers over hand-rolled HTTP; off by
 # default so the default `cargo build` pulls in neither, mirroring the `vault` feature.
 #
-# `default-features = false` + the ring-backed legacy rustls client (and NOT the default
-# aws-lc-rs HTTPS client) keeps the crypto backend on `ring`, matching reqwest's `rustls-tls`
-# already in the tree: no aws-lc-sys C build, one crypto provider, and no extra RUSTSEC surface
-# for the audit gate. `BehaviorVersion::latest()` is pinned in code, so the SDK's
-# behavior-version-latest feature is intentionally omitted.
+# Crypto backend is pinned to `ring` to match reqwest's `rustls-tls` already in the tree: no
+# aws-lc-sys C build, one crypto provider, and no extra RUSTSEC surface for the audit gate. Both
+# the SDK and aws-config run with `default-features = false` and NO TLS/default-client feature,
+# so neither the aws-lc-rs HTTPS client nor the legacy hyper-0.14 client (which pulls the
+# RUSTSEC-2026-0258-affected h2 0.3) is compiled. Instead the adapter builds an explicit modern
+# hyper-1 + rustls-ring client via `aws-smithy-http-client` (which resolves h2 to the patched
+# 0.4.x already in the tree) and hands it to the config loader. `BehaviorVersion::latest()` is
+# pinned in code, so the SDK's behavior-version-latest feature is intentionally omitted.
 aws-config = { version = "1", optional = true, default-features = false, features = [
     "rt-tokio",
     "credentials-process",
     "sso",
-    "legacy-client",
 ] }
 aws-sdk-secretsmanager = { version = "1", optional = true, default-features = false, features = [
-    "rustls",
     "rt-tokio",
+] }
+# The modern (hyper 1.x) smithy HTTP client with rustls + ring: the explicit client the adapter
+# builds and passes to aws-config, replacing any default/legacy connector so h2 stays on the
+# patched 0.4.x and aws-lc-sys is never pulled in.
+aws-smithy-http-client = { version = "1", optional = true, default-features = false, features = [
+    "rustls-ring",
 ] }
 
 [features]
@@ -111,6 +118,7 @@ vault = ["reqwest/blocking"]
 aws = [
     "dep:aws-config",
     "dep:aws-sdk-secretsmanager",
+    "dep:aws-smithy-http-client",
     "tokio/net",
     "tokio/rt",
     "tokio/time",

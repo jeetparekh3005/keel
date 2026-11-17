@@ -39,7 +39,15 @@ fn writes_then_reads_back_a_json_secret_through_the_adapter() {
         .build()
         .expect("build setup runtime");
     runtime.block_on(async {
-        let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest());
+        // Match the adapter: an explicit modern hyper-1 + rustls-ring client (no default/legacy
+        // connector is compiled in).
+        let http_client = aws_smithy_http_client::Builder::new()
+            .tls_provider(aws_smithy_http_client::tls::Provider::Rustls(
+                aws_smithy_http_client::tls::rustls_provider::CryptoMode::Ring,
+            ))
+            .build_https();
+        let mut loader =
+            aws_config::defaults(aws_config::BehaviorVersion::latest()).http_client(http_client);
         if let Some(region) = &region {
             loader = loader.region(aws_sdk_secretsmanager::config::Region::new(region.clone()));
         }
