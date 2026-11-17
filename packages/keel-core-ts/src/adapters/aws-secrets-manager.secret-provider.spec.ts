@@ -157,4 +157,58 @@ describe('AwsSecretsManagerSecretProvider', () => {
     // ...and the secret value never appears anywhere in what was logged.
     expect(JSON.stringify(captured)).not.toContain('cached-swordfish-value');
   }, 10_000);
+
+  it('fails closed on a malformed payload without leaking the secret value into the error', async () => {
+    // A SecretString that is not valid JSON but embeds a known secret value: the generic fail-closed
+    // throw must reject AND must not echo the raw payload (the canary) back in its message.
+    const canary = 'hunter2-malformed-aws-canary';
+    sm.on(GetSecretValueCommand).resolves({ SecretString: `not-json-but-secret ${canary}` });
+
+    let caught: unknown;
+    try {
+      await createAwsSecretsManagerSecretProvider(baseEnv);
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(Error);
+    const message = caught instanceof Error ? caught.message : String(caught);
+    expect(message).toMatch(/not a JSON object/);
+    expect(message).not.toContain(canary);
+    // No stringification of the error (message, name, or stack) exposes the raw payload.
+    expect(String(caught)).not.toContain(canary);
+  });
+
+  it('never logs the secret value when a refresh returns a malformed payload', async () => {
+    // First load is a valid field map; the refresh returns a payload that is not a JSON object but
+    // embeds the canary. The generic fail-closed throw is logged, and the canary must be absent.
+    const canary = 'swordfish-refresh-canary';
+    sm.on(GetSecretValueCommand)
+      .resolvesOnce({ SecretString: JSON.stringify({ token: 'good-token-value' }) })
+      .resolves({ SecretString: `still-not-json ${canary}` });
+
+    const captured: unknown[] = [];
+    const logger = {
+      warn: (obj: Record<string, unknown>, msg: string) => captured.push(obj, msg),
+      error: (obj: Record<string, unknown>, msg: string) => captured.push(obj, msg),
+    };
+
+    const provider = await createAwsSecretsManagerSecretProvider(
+      { ...baseEnv, KEEL_SECRET_CACHE_TTL_SECONDS: '1' },
+      { logger },
+    );
+    cleanups.push(() => provider.close());
+
+    expect(provider.get('token')).toBe('good-token-value');
+
+    // Wait for a background refresh to fail on the malformed payload and log a diagnostic.
+    for (let i = 0; i < 300 && captured.length === 0; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    expect(captured.length).toBeGreaterThan(0);
+
+    // The last good value still serves, and the canary-bearing payload never reaches the log.
+    expect(provider.get('token')).toBe('good-token-value');
+    expect(JSON.stringify(captured)).not.toContain(canary);
+  }, 10_000);
 });
