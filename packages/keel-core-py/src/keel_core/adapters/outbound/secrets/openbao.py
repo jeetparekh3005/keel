@@ -44,6 +44,24 @@ _HTTP_NOT_FOUND = 404
 _REAUTH_STATUSES = (401, 403)
 
 
+def _coerce_field(value: object) -> str | None:
+    """Coerce a KV v2 field to its canonical secret string, or None if not a scalar.
+
+    ADR-0023 field coercion: a JSON string is returned verbatim; a JSON number is
+    rendered as its JSON number text (``3`` -> ``"3"``, ``3.5`` -> ``"3.5"``); a JSON
+    boolean becomes lowercase ``"true"``/``"false"``. A JSON object, array, or null is
+    not a secret scalar and is reported as absent (``None``). ``bool`` is tested before
+    the numeric branch because it is a subclass of ``int``.
+    """
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (int, float)):
+        return json.dumps(value)
+    return None
+
+
 class _VaultHttpError(Exception):
     """A non-success HTTP status from the Vault API, carrying the status code."""
 
@@ -90,6 +108,9 @@ class OpenBaoSecretProvider:
         if not token and not role:
             msg = "no Vault auth configured: set KEEL_VAULT_TOKEN or KEEL_VAULT_ROLE"
             raise ValueError(msg)
+        if cache_ttl_seconds <= 0:  # fail-closed: no "0 disables refresh", no silent clamp
+            msg = "KEEL_VAULT_CACHE_TTL_SECONDS must be a positive integer"
+            raise ValueError(msg)
 
         self._addr = addr.rstrip("/")
         self._path = path
@@ -114,7 +135,7 @@ class OpenBaoSecretProvider:
 
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
-        if start_refresh and self._ttl > 0:
+        if start_refresh:  # TTL is guaranteed positive; the refresh thread always runs
             self._thread = threading.Thread(
                 target=self._refresh_loop,
                 name="keel-openbao-refresh",
@@ -209,7 +230,12 @@ class OpenBaoSecretProvider:
             raise
         data = cast("Mapping[str, object]", payload.get("data") or {})
         inner = cast("Mapping[str, object]", data.get("data") or {})
-        return {str(k): str(v) for k, v in inner.items()}
+        coerced: dict[str, str] = {}
+        for key, value in inner.items():
+            field = _coerce_field(value)
+            if field is not None:  # object/array/null fields are not scalar secrets => absent
+                coerced[str(key)] = field
+        return coerced
 
     def _refresh_loop(self) -> None:
         """Re-read the field map every TTL until stopped (daemon thread body)."""
@@ -276,6 +302,7 @@ class OpenBaoSecretProvider:
                 context=self._ssl_context,
             ) as response:
                 raw = response.read()
+                status = response.status
         except urllib.error.HTTPError as exc:
             detail = ""
             try:
@@ -285,7 +312,31 @@ class OpenBaoSecretProvider:
             raise _VaultHttpError(exc.code, detail) from exc
         if not raw:
             return {}
-        return cast("Mapping[str, object]", json.loads(raw))
+        try:
+            return cast("Mapping[str, object]", json.loads(raw))
+        except ValueError:
+            # A 2xx body that is not valid JSON may hold the secret payload; the error
+            # must carry only status + path, never the body (ADR-0023 no-leak, read path).
+            raise _VaultHttpError(status, path) from None
+
+
+def _parse_cache_ttl(raw: str | None) -> float:
+    """Parse ``KEEL_VAULT_CACHE_TTL_SECONDS`` to a positive integer, or default when unset.
+
+    ADR-0023: a non-positive or unparseable value fails construction (fail-closed misconfig);
+    only a truly unset value falls back to the 60-second default.
+    """
+    if raw is None:
+        return _DEFAULT_CACHE_TTL_SECONDS
+    try:
+        ttl = int(raw)
+    except ValueError:
+        msg = "KEEL_VAULT_CACHE_TTL_SECONDS must be a positive integer"
+        raise ValueError(msg) from None
+    if ttl <= 0:
+        msg = "KEEL_VAULT_CACHE_TTL_SECONDS must be a positive integer"
+        raise ValueError(msg)
+    return float(ttl)
 
 
 def secret_provider_from_env(
@@ -300,7 +351,6 @@ def secret_provider_from_env(
     addr = environ.get("KEEL_VAULT_ADDR")
     if not addr:
         return EnvSecretProvider(environ=environ)
-    ttl_raw = environ.get("KEEL_VAULT_CACHE_TTL_SECONDS")
     return OpenBaoSecretProvider(
         addr=addr,
         path=environ.get("KEEL_VAULT_PATH", ""),
@@ -311,5 +361,5 @@ def secret_provider_from_env(
         mount=environ.get("KEEL_VAULT_MOUNT", _DEFAULT_MOUNT),
         namespace=environ.get("KEEL_VAULT_NAMESPACE"),
         cacert=environ.get("KEEL_VAULT_CACERT"),
-        cache_ttl_seconds=float(ttl_raw) if ttl_raw else _DEFAULT_CACHE_TTL_SECONDS,
+        cache_ttl_seconds=_parse_cache_ttl(environ.get("KEEL_VAULT_CACHE_TTL_SECONDS")),
     )
