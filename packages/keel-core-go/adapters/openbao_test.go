@@ -7,14 +7,18 @@ package adapters
 // header, custom-CA TLS, and fail-closed construction on misconfiguration.
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"encoding/pem"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -74,6 +78,36 @@ func TestOpenBaoTokenAuthRead(t *testing.T) {
 	}
 	if _, ok := p.Get("absent"); ok {
 		t.Error("Get(absent) should be ok=false")
+	}
+}
+
+func TestOpenBaoPathIsVerbatim(t *testing.T) {
+	clearVaultEnv(t)
+
+	// A nested path with a trailing slash proves the adapter uses KEEL_VAULT_PATH verbatim in
+	// the read URL (no slash trimming), matching the other verticals. The old code trimmed the
+	// trailing slash, which would request /v1/secret/data/team/app instead.
+	const path = "team/app/"
+
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		_, _ = io.WriteString(w, kvBody(map[string]any{"api_key": "v"}))
+	}))
+	defer srv.Close()
+
+	t.Setenv(envAddr, srv.URL)
+	t.Setenv(envToken, "root")
+	t.Setenv(envPath, path)
+
+	p, err := NewOpenBaoSecretProvider(context.Background())
+	if err != nil {
+		t.Fatalf("construct: %v", err)
+	}
+	defer func() { _ = p.Close() }()
+
+	if want := "/v1/secret/data/team/app/"; gotPath != want {
+		t.Errorf("read path = %q; want %q (path used verbatim, no slash trimming)", gotPath, want)
 	}
 }
 
@@ -360,25 +394,35 @@ func TestOpenBaoFailClosedOnMisconfig(t *testing.T) {
 		}
 	})
 
-	t.Run("bad ttl", func(t *testing.T) {
-		clearVaultEnv(t)
-		t.Setenv(envAddr, "http://127.0.0.1:1")
-		t.Setenv(envToken, "root")
-		t.Setenv(envPath, "keel-test")
-		t.Setenv(envCacheTTL, "zero")
-		if _, err := NewOpenBaoSecretProvider(context.Background()); err == nil {
-			t.Error("a non-numeric KEEL_VAULT_CACHE_TTL_SECONDS must fail construction")
-		}
-	})
+	// KEEL_VAULT_CACHE_TTL_SECONDS must parse to a POSITIVE integer (ADR-0023); unparseable,
+	// zero, and negative values all fail construction rather than defaulting silently.
+	for _, bad := range []string{"zero", "0", "-5", "1.5"} {
+		t.Run("bad ttl "+bad, func(t *testing.T) {
+			clearVaultEnv(t)
+			t.Setenv(envAddr, "http://127.0.0.1:1")
+			t.Setenv(envToken, "root")
+			t.Setenv(envPath, "keel-test")
+			t.Setenv(envCacheTTL, bad)
+			if _, err := NewOpenBaoSecretProvider(context.Background()); err == nil {
+				t.Errorf("KEEL_VAULT_CACHE_TTL_SECONDS=%q must fail construction (positive integer required)", bad)
+			}
+		})
+	}
 }
 
-func TestOpenBaoNonStringFieldRoundTrips(t *testing.T) {
+func TestOpenBaoScalarFieldsCoerceToCanonicalString(t *testing.T) {
 	clearVaultEnv(t)
 
+	// A string round-trips exactly; a number keeps its JSON text; booleans become "true"/"false"
+	// (ADR-0023 canonical coercion) so the flat-key port stays string-typed.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// A numeric field exercises the non-string branch of parseFieldMap: it is kept as its
-		// compact JSON text so the flat-key port still returns a string.
-		_, _ = io.WriteString(w, kvBody(map[string]any{"name": "plain", "replicas": 3}))
+		_, _ = io.WriteString(w, kvBody(map[string]any{
+			"name":     "plain",
+			"replicas": 3,
+			"ratio":    1.5,
+			"enabled":  true,
+			"disabled": false,
+		}))
 	}))
 	defer srv.Close()
 
@@ -392,11 +436,51 @@ func TestOpenBaoNonStringFieldRoundTrips(t *testing.T) {
 	}
 	defer func() { _ = p.Close() }()
 
-	if v, ok := p.Get("name"); !ok || v != "plain" {
-		t.Errorf("Get(name) = %q,%v; want plain,true", v, ok)
+	for _, tc := range []struct{ key, want string }{
+		{"name", "plain"},
+		{"replicas", "3"},
+		{"ratio", "1.5"},
+		{"enabled", "true"},
+		{"disabled", "false"},
+	} {
+		if v, ok := p.Get(tc.key); !ok || v != tc.want {
+			t.Errorf("Get(%s) = %q,%v; want %q,true", tc.key, v, ok, tc.want)
+		}
 	}
-	if v, ok := p.Get("replicas"); !ok || v != "3" {
-		t.Errorf("Get(replicas) = %q,%v; want 3,true", v, ok)
+}
+
+func TestOpenBaoNonScalarFieldsAbsent(t *testing.T) {
+	clearVaultEnv(t)
+
+	// Object, array, and null have no canonical scalar string, so they must be omitted (ok=false)
+	// rather than serialized to JSON. A sibling scalar confirms the map is otherwise populated.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, kvBody(map[string]any{
+			"scalar": "kept",
+			"obj":    map[string]any{"nested": 1},
+			"arr":    []any{1, 2, 3},
+			"empty":  nil,
+		}))
+	}))
+	defer srv.Close()
+
+	t.Setenv(envAddr, srv.URL)
+	t.Setenv(envToken, "root")
+	t.Setenv(envPath, "keel-test")
+
+	p, err := NewOpenBaoSecretProvider(context.Background())
+	if err != nil {
+		t.Fatalf("construct: %v", err)
+	}
+	defer func() { _ = p.Close() }()
+
+	if v, ok := p.Get("scalar"); !ok || v != "kept" {
+		t.Errorf("Get(scalar) = %q,%v; want kept,true", v, ok)
+	}
+	for _, key := range []string{"obj", "arr", "empty"} {
+		if v, ok := p.Get(key); ok {
+			t.Errorf("Get(%s) = %q,%v; want absent (ok=false) for a non-scalar value", key, v, ok)
+		}
 	}
 }
 
@@ -462,6 +546,140 @@ func TestOpenBaoRefreshFailureServesLastGood(t *testing.T) {
 	time.Sleep(1500 * time.Millisecond)
 	if v, ok := p.Get("api_key"); !ok || v != "good" {
 		t.Errorf("Get(api_key) = %q,%v after a failed refresh; want the last good value good,true", v, ok)
+	}
+}
+
+func TestOpenBaoLeaseRenewedBeforeRefresh(t *testing.T) {
+	clearVaultEnv(t)
+
+	jwtFile := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(jwtFile, []byte("sa-jwt"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// A single refresh goroutine drives these requests sequentially, so appending to events
+	// under the lock records their true order. reads is polled by the test to await background
+	// cycles. A lease_duration inside renewBuffer (10s) keeps the token perpetually near expiry,
+	// so each refresh must re-login proactively rather than waiting for a reactive 401/403.
+	var (
+		mu     sync.Mutex
+		events []string
+		reads  atomic.Int64
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/auth/kubernetes/login":
+			mu.Lock()
+			events = append(events, "login")
+			mu.Unlock()
+			_, _ = io.WriteString(w, `{"auth":{"client_token":"k8s-token","lease_duration":1}}`)
+		case "/v1/secret/data/keel-test":
+			mu.Lock()
+			events = append(events, "read")
+			mu.Unlock()
+			reads.Add(1)
+			_, _ = io.WriteString(w, kvBody(map[string]any{"api_key": "v"}))
+		default:
+			t.Errorf("unexpected %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	t.Setenv(envAddr, srv.URL)
+	t.Setenv(envRole, "keel-role")
+	t.Setenv(envJWTPath, jwtFile)
+	t.Setenv(envPath, "keel-test")
+	t.Setenv(envCacheTTL, "1")
+
+	p, err := NewOpenBaoSecretProvider(context.Background())
+	if err != nil {
+		t.Fatalf("construct: %v", err)
+	}
+
+	// Await at least two background refresh reads beyond the one at construction.
+	deadline := time.Now().Add(5 * time.Second)
+	for reads.Load() < 3 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	_ = p.Close() // stop the loop so events has no concurrent writer.
+
+	mu.Lock()
+	defer mu.Unlock()
+	if reads.Load() < 3 {
+		t.Fatalf("saw only %d reads; background refresh did not run as expected: %v", reads.Load(), events)
+	}
+	logins := 0
+	for i, e := range events {
+		if e == "read" {
+			// Each read must be immediately preceded by a login: the proactive renewal fires
+			// before the field-map refresh, never after it.
+			if i == 0 || events[i-1] != "login" {
+				t.Errorf("read at index %d not immediately preceded by a proactive login: %v", i, events)
+			}
+			continue
+		}
+		logins++
+	}
+	// The server never returns 401/403, so every login is proactive. More than one proves the
+	// background refresh renews the lease on its own rather than waiting for a rejection.
+	if logins < 2 {
+		t.Errorf("logins = %d; want >= 2 (proactive lease renewal before refresh): %v", logins, events)
+	}
+}
+
+func TestOpenBaoRefreshFailureDoesNotLeakSecretsOrToken(t *testing.T) {
+	clearVaultEnv(t)
+
+	const (
+		secretValue = "sekret-value-must-not-be-logged"
+		vaultToken  = "super-secret-token-must-not-be-logged"
+	)
+
+	var fail atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if fail.Load() {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		_, _ = io.WriteString(w, kvBody(map[string]any{"api_key": secretValue}))
+	}))
+	defer srv.Close()
+
+	t.Setenv(envAddr, srv.URL)
+	t.Setenv(envToken, vaultToken)
+	t.Setenv(envPath, "keel-test")
+	t.Setenv(envCacheTTL, "1")
+
+	p, err := NewOpenBaoSecretProvider(context.Background())
+	if err != nil {
+		t.Fatalf("construct: %v", err)
+	}
+	defer func() { _ = p.Close() }()
+
+	// Capture slog only after a clean construction, so the buffer holds the refresh-failure
+	// warning. It is read after Close, when the refresh goroutine has exited (no data race).
+	var buf bytes.Buffer
+	prev := slog.Default()
+	defer slog.SetDefault(prev)
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+
+	fail.Store(true)
+	time.Sleep(1500 * time.Millisecond)
+	_ = p.Close()
+
+	logged := buf.String()
+	if !strings.Contains(logged, "refresh failed") {
+		t.Fatalf("expected a refresh-failure warning in the logs; got %q", logged)
+	}
+	if strings.Contains(logged, secretValue) {
+		t.Errorf("the cached secret value leaked into the logs: %q", logged)
+	}
+	if strings.Contains(logged, vaultToken) {
+		t.Errorf("the vault token leaked into the logs: %q", logged)
+	}
+	// The cache must still serve the last good value after the failed refresh.
+	if v, ok := p.Get("api_key"); !ok || v != secretValue {
+		t.Errorf("Get(api_key) = %q,%v after a failed refresh; want the last good value", v, ok)
 	}
 }
 
