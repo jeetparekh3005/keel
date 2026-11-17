@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	smtypes "github.com/aws/aws-sdk-go-v2/service/secretsmanager/types"
@@ -70,7 +71,14 @@ func NewAwsSecretsManagerSecretProvider(ctx context.Context) (*AwsSecretsManager
 		return nil, err
 	}
 
-	var opts []func(*awsconfig.LoadOptions) error
+	// Bound every Secrets Manager call: a ~10s per-request HTTP timeout plus a hard retry cap so
+	// a wedged or unreachable endpoint cannot hang the eager startup load (ADR-0023 hard-timeout
+	// rule), mirroring the OpenBao adapter's 15s HTTP client. The HTTP timeout bounds a stuck
+	// connection even when the caller's ctx has no deadline.
+	opts := []func(*awsconfig.LoadOptions) error{
+		awsconfig.WithRetryMaxAttempts(2),
+		awsconfig.WithHTTPClient(awshttp.NewBuildableClient().WithTimeout(10 * time.Second)),
+	}
 	if region := strings.TrimSpace(os.Getenv(envAWSRegion)); region != "" {
 		opts = append(opts, awsconfig.WithRegion(region))
 	}
@@ -121,7 +129,11 @@ func (p *AwsSecretsManagerSecretProvider) load(ctx context.Context) (map[string]
 
 	fields, err := coerceObjectFields([]byte(*out.SecretString))
 	if err != nil {
-		return nil, fmt.Errorf("aws secret %s is not a JSON object of fields: %w", p.secretID, err)
+		// Deliberately drop the decoder error: a malformed SecretString can embed the secret
+		// value, and encoding/json echoes payload bytes into its messages, which would reach a
+		// refresh-failure log. Report only the secret id, matching the other backends' no-leak
+		// contract (ADR-0024).
+		return nil, fmt.Errorf("aws secret %s is not a JSON object of fields", p.secretID)
 	}
 	return fields, nil
 }

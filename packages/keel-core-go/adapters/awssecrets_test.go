@@ -192,3 +192,82 @@ func TestAwsMissingSecretIDFailsConstruction(t *testing.T) {
 		t.Error("KEEL_AWS_SECRET_ID unset must fail construction")
 	}
 }
+
+// TestAwsMalformedPayloadDoesNotLeakOnConstruct feeds a SecretString that is not valid JSON but
+// embeds a secret canary. Construction must fail closed, and the returned error must carry
+// neither the canary nor the raw decoder error (the "decode JSON object" chain), since a
+// construction error can surface in a startup log (ADR-0024 no-leak contract).
+func TestAwsMalformedPayloadDoesNotLeakOnConstruct(t *testing.T) {
+	clearVaultEnv(t)
+
+	const canary = "sekret-canary-must-not-leak-98765"
+	// Starts with '{' so it clears the object guard and reaches the JSON decoder, then breaks
+	// mid-value so the decoder fails with the canary still in the payload.
+	stub := &stubSecretsManager{get: func(context.Context, *secretsmanager.GetSecretValueInput) (*secretsmanager.GetSecretValueOutput, error) {
+		return secretStringOutput(`{"api_key": "` + canary + `" BROKEN`), nil
+	}}
+
+	_, err := newAwsSecretsManagerProvider(context.Background(), stub, "keel-prod/app", time.Hour)
+	if err == nil {
+		t.Fatal("a malformed SecretString must fail construction")
+	}
+	msg := err.Error()
+	if strings.Contains(msg, canary) {
+		t.Errorf("construction error leaked the secret payload: %q", msg)
+	}
+	if strings.Contains(msg, "decode JSON object") {
+		t.Errorf("construction error leaked the raw JSON decoder error: %q", msg)
+	}
+}
+
+// TestAwsMalformedRefreshDoesNotLeak constructs cleanly, then flips the backend to a malformed
+// payload carrying a canary. The refresh-failure warning must mention the failure but leak
+// neither the canary nor the raw decoder error into the captured slog output.
+func TestAwsMalformedRefreshDoesNotLeak(t *testing.T) {
+	clearVaultEnv(t)
+
+	const (
+		canary   = "sekret-canary-must-not-leak-13579"
+		secretID = "keel-prod/app-arn-must-not-leak-a-value"
+	)
+
+	var fail atomic.Bool
+	stub := &stubSecretsManager{get: func(context.Context, *secretsmanager.GetSecretValueInput) (*secretsmanager.GetSecretValueOutput, error) {
+		if fail.Load() {
+			// A malformed payload (not a generic service error) that embeds the canary: the
+			// decoder must not echo it into the refresh-failure log.
+			return secretStringOutput(`{"api_key": "` + canary + `" BROKEN`), nil
+		}
+		return secretStringOutput(`{"api_key": "good-value"}`), nil
+	}}
+
+	p, err := newAwsSecretsManagerProvider(context.Background(), stub, secretID, time.Second)
+	if err != nil {
+		t.Fatalf("construct: %v", err)
+	}
+	defer func() { _ = p.Close() }()
+
+	var buf bytes.Buffer
+	prev := slog.Default()
+	defer slog.SetDefault(prev)
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+
+	fail.Store(true)
+	time.Sleep(1500 * time.Millisecond)
+	_ = p.Close()
+
+	logged := buf.String()
+	if !strings.Contains(logged, "refresh failed") {
+		t.Fatalf("expected a refresh-failure warning in the logs; got %q", logged)
+	}
+	if strings.Contains(logged, canary) {
+		t.Errorf("the malformed payload leaked into the logs: %q", logged)
+	}
+	if strings.Contains(logged, "decode JSON object") {
+		t.Errorf("the raw JSON decoder error leaked into the logs: %q", logged)
+	}
+	// The cache keeps serving the last good value after the failed refresh.
+	if v, ok := p.Get("api_key"); !ok || v != "good-value" {
+		t.Errorf("Get(api_key) = %q,%v after a failed refresh; want the last good value", v, ok)
+	}
+}
