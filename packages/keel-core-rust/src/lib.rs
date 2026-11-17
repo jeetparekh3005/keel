@@ -8,6 +8,11 @@
 pub mod adapters;
 pub mod api_key;
 pub mod auth;
+/// AWS Secrets Manager `SecretProvider` adapter (ADR-0024), a loader over the shared
+/// [`secret`] caching core. Opt-in: enable the `aws` feature so the default build pulls in
+/// neither the AWS SDK nor an async IO driver, mirroring the `vault` feature gating OpenBao.
+#[cfg(feature = "aws")]
+pub mod aws;
 pub mod config;
 pub mod domain;
 /// Generated gRPC stubs for the `keel.reference.v1` contract (ADR-0022). Opt-in:
@@ -30,6 +35,12 @@ pub mod messaging;
 pub mod persistence;
 pub mod ports;
 pub mod redact;
+/// Shared caching core for the production `SecretProvider` backends (ADR-0024): the cache,
+/// background refresh, fail-closed construction, no-leak serving, and the fail-closed
+/// `secret_provider_from_env` selector, parameterized by a per-backend loader. Compiled only
+/// when a production backend feature (`vault` or `aws`) is enabled.
+#[cfg(any(feature = "vault", feature = "aws"))]
+pub mod secret;
 pub mod telemetry;
 pub mod testkit;
 /// OpenBao (and HashiCorp Vault) `SecretProvider` adapter over the KV v2 HTTP API

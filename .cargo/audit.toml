@@ -14,4 +14,10 @@ ignore = [
     # production connects to Postgres and never opens a SQLite datasource, so the vulnerable
     # code is never exercised. No in-range fix (needs >=0.39.0 via a future sqlx release).
     "RUSTSEC-2026-0459",
+    # chrono "unmaintained" (informational, not a vulnerability). Pulled DEV-only via
+    # aws-smithy-mocks -> aws-smithy-http-client[test-util] -> aws-smithy-protocol-test ->
+    # cbor-diag -> chrono (the AWS SDK mocking stack for the ADR-0024 `aws` unit tests); it is
+    # not in the shipped binary (the production `aws-smithy-http-client` uses only rustls-ring).
+    # No action available until the AWS smithy test crates drop chrono.
+    "RUSTSEC-2026-0543",
 ]

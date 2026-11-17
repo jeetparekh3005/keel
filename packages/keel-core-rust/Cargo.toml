@@ -52,6 +52,33 @@ bytes = { version = "1", optional = true }
 prost = { version = "0.14", optional = true }
 tonic = { version = "0.14", optional = true }
 tonic-prost = { version = "0.14", optional = true }
+# Opt-in AWS Secrets Manager SecretProvider adapter (the `aws` feature, ADR-0024). The
+# official SDK carries correct SigV4 signing + the default credential chain (env, IRSA,
+# instance profile, SSO), which ADR-0024 deliberately prefers over hand-rolled HTTP; off by
+# default so the default `cargo build` pulls in neither, mirroring the `vault` feature.
+#
+# Crypto backend is pinned to `ring` to match reqwest's `rustls-tls` already in the tree: no
+# aws-lc-sys C build, one crypto provider, and no extra RUSTSEC surface for the audit gate. Both
+# the SDK and aws-config run with `default-features = false` and NO TLS/default-client feature,
+# so neither the aws-lc-rs HTTPS client nor the legacy hyper-0.14 client (which pulls the
+# RUSTSEC-2026-0258-affected h2 0.3) is compiled. Instead the adapter builds an explicit modern
+# hyper-1 + rustls-ring client via `aws-smithy-http-client` (which resolves h2 to the patched
+# 0.4.x already in the tree) and hands it to the config loader. `BehaviorVersion::latest()` is
+# pinned in code, so the SDK's behavior-version-latest feature is intentionally omitted.
+aws-config = { version = "1", optional = true, default-features = false, features = [
+    "rt-tokio",
+    "credentials-process",
+    "sso",
+] }
+aws-sdk-secretsmanager = { version = "1", optional = true, default-features = false, features = [
+    "rt-tokio",
+] }
+# The modern (hyper 1.x) smithy HTTP client with rustls + ring: the explicit client the adapter
+# builds and passes to aws-config, replacing any default/legacy connector so h2 stays on the
+# patched 0.4.x and aws-lc-sys is never pulled in.
+aws-smithy-http-client = { version = "1", optional = true, default-features = false, features = [
+    "rustls-ring",
+] }
 
 [features]
 # Opt-in NATS JetStream adapter. Off by default so `cargo build` stays broker-free,
@@ -82,6 +109,20 @@ grpc = [
 # does all HTTP on a dedicated std::thread, so no new HTTP/TLS stack is pulled in - reqwest
 # with rustls-tls is already in the tree). Mirrors the `nats` feature gating the broker.
 vault = ["reqwest/blocking"]
+# Opt-in AWS Secrets Manager SecretProvider adapter (ADR-0024). Off by default so the default
+# `cargo build` pulls in neither the AWS SDK nor an async IO driver; enabling it turns on the
+# official aws-config/aws-sdk-secretsmanager crates and the tokio `net` feature so the adapter
+# can drive the async SDK on a dedicated current-thread runtime inside its blocking refresh
+# thread (never on the app's async runtime). Mirrors the `vault` feature gating OpenBao; both
+# share the ADR-0024 caching core in `crate::secret`.
+aws = [
+    "dep:aws-config",
+    "dep:aws-sdk-secretsmanager",
+    "dep:aws-smithy-http-client",
+    "tokio/net",
+    "tokio/rt",
+    "tokio/time",
+]
 
 [dev-dependencies]
 figment = { version = "0.10", features = ["env", "toml", "test"] }
@@ -103,3 +144,7 @@ tokio-stream = { version = "0.1", features = ["net"] }
 # Ephemeral CA + leaf certs for the mTLS handshake tests; ring-backed to match tls-ring,
 # and (like the OIDC keys) generated in-test so no key material is committed.
 rcgen = { version = "0.14", default-features = false, features = ["pem", "ring"] }
+# The official AWS SDK mocking crate: intercepts the Secrets Manager operation at the SDK
+# boundary so the `aws` unit tests assert field-map round-trip, coercion, not-found-as-empty,
+# fail-closed, and the no-leak invariant with no network (ADR-0024 "AWS unit (non-gated)").
+aws-smithy-mocks = "0.3"
