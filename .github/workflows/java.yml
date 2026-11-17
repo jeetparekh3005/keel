@@ -97,7 +97,7 @@ jobs:
         # (ADR-0024); started as a docker run step like the others. The SDK routes here via the
         # standard AWS_ENDPOINT_URL_SECRETS_MANAGER env var below.
         run: |
-          docker run -d --name localstack -p 4566:4566 -e SERVICES=secretsmanager localstack/localstack:2026.09.1
+          docker run -d --name localstack -p 4566:4566 -e SERVICES=secretsmanager localstack/localstack:4.9.1
           for i in $(seq 1 60); do curl -sf http://localhost:4566/_localstack/health >/dev/null && break; sleep 1; done
       - name: Verify (spotless, tests, archunit, jacoco)
         env:
