@@ -288,6 +288,8 @@ impl SecretProvider for AwsSecretsManagerSecretProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aws_sdk_secretsmanager::config::retry::RetryConfig;
+    use aws_sdk_secretsmanager::config::timeout::TimeoutConfig;
     use aws_sdk_secretsmanager::config::{BehaviorVersion, Credentials, Region};
     use aws_sdk_secretsmanager::operation::get_secret_value::GetSecretValueError;
     use aws_sdk_secretsmanager::primitives::Blob;
@@ -312,22 +314,41 @@ mod tests {
     }
 
     /// Build an SDK client whose Secrets Manager operation is served entirely by `rule`, with no
-    /// network. Avoids the `mock_client!` macro (which needs the SDK's `test-util` feature) by
-    /// wiring the mock HTTP client + interceptor onto a plain config with static test credentials.
+    /// network and no dependence on the ambient environment. Avoids the `mock_client!` macro
+    /// (which needs the SDK's `test-util` feature) by wiring the mock HTTP client + interceptor
+    /// onto a fully-pinned config:
+    ///
+    /// - static credentials that carry an `account_id`, so account-id-based endpoint resolution is
+    ///   satisfied locally and never falls through to the default credential chain (which, when an
+    ///   ambient `~/.aws` profile or a reachable `169.254.169.254` exists - e.g. on the
+    ///   Azure-backed GitHub runners - would otherwise hang the "preferred" account-id resolution
+    ///   on a non-mocked network call; that was the 50-minute CI hang),
+    /// - an explicit region, retries disabled, and a short operation timeout, so even a misrouted
+    ///   request fails fast instead of hanging.
+    ///
+    /// Everything is set on the config (never via `std::env::set_var`, which would race the AWS
+    /// SDK's concurrent `std::env::var` reads on other test threads - itself a hang), so the tests
+    /// stay hermetic under parallelism.
     fn mock_client(rule: &Rule) -> Client {
         let interceptor = MockResponseInterceptor::new()
             .rule_mode(RuleMode::Sequential)
             .with_rule(rule);
+        let credentials = Credentials::builder()
+            .access_key_id("AKIDEXAMPLE")
+            .secret_access_key("test-secret-access-key-canary")
+            .account_id("000000000000")
+            .provider_name("mock")
+            .build();
         let config = aws_sdk_secretsmanager::config::Config::builder()
             .behavior_version(BehaviorVersion::latest())
-            .credentials_provider(Credentials::new(
-                "AKIDEXAMPLE",
-                "test-secret-access-key-canary",
-                None,
-                None,
-                "mock",
-            ))
+            .credentials_provider(credentials)
             .region(Region::new(CANARY_REGION.to_string()))
+            .retry_config(RetryConfig::disabled())
+            .timeout_config(
+                TimeoutConfig::builder()
+                    .operation_timeout(Duration::from_secs(5))
+                    .build(),
+            )
             .http_client(create_mock_http_client())
             .interceptor(interceptor)
             .build();

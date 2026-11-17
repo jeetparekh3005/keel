@@ -152,6 +152,18 @@ jobs:
           KEEL_KEYCLOAK_CLIENT_SECRET: test-secret
           KEEL_OIDC_AUDIENCE: keel-api
           KEEL_NATS_URL: nats://localhost:4222
+          # AWS belt-and-suspenders for the whole Rust test step (the AWS unit tests are already
+          # hermetic via config, but the gated LocalStack integration test and any AWS SDK code
+          # path run here too). Static creds + an explicit region keep the default credential chain
+          # off the network; disabling IMDS and the account-id endpoint mode stops the SDK from
+          # probing 169.254.169.254 / resolving an account-id endpoint on the Azure-backed runner
+          # (the account-id "preferred" resolution was the 50-minute hang). These are process-level
+          # env, set before the test binary starts, so they never race the SDK's std::env reads.
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_REGION: us-east-1
+          AWS_EC2_METADATA_DISABLED: "true"
+          AWS_ACCOUNT_ID_ENDPOINT_MODE: disabled
         # --ignore-filename-regex genproto drops the committed buf stubs (prost/tonic
         # generated code under src/genproto) from the denominator: they are not held to the
         # crate's lint/style/coverage bar (see genproto.rs and the Python genproto excludes),
