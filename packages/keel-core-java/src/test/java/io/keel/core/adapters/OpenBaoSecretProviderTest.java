@@ -457,7 +457,7 @@ class OpenBaoSecretProviderTest {
     IllegalStateException ex =
         assertThrows(IllegalStateException.class, () -> new OpenBaoSecretProvider(zero));
     assertTrue(
-        ex.getMessage().contains("KEEL_VAULT_CACHE_TTL_SECONDS"),
+        ex.getMessage().contains("KEEL_SECRET_CACHE_TTL_SECONDS"),
         "a zero TTL fails construction rather than being coerced to a default");
 
     OpenBaoSecretProvider.Config negative =

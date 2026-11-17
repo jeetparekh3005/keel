@@ -92,6 +92,13 @@ jobs:
         run: |
           docker run -d --name openbao -p 8200:8200 --cap-add IPC_LOCK -e BAO_DEV_ROOT_TOKEN_ID=root openbao/openbao:2.7.2 server -dev -dev-root-token-id=root -dev-listen-address=0.0.0.0:8200
           for i in $(seq 1 30); do curl -sf http://localhost:8200/v1/sys/health >/dev/null && break; sleep 1; done
+      - name: Start LocalStack (Secrets Manager)
+        # LocalStack Secrets Manager for the AwsSecretsManagerSecretProvider integration test
+        # (ADR-0024); started as a docker run step like the others. The SDK routes here via the
+        # standard AWS_ENDPOINT_URL_SECRETS_MANAGER env var below.
+        run: |
+          docker run -d --name localstack -p 4566:4566 -e SERVICES=secretsmanager localstack/localstack:4.9.1
+          for i in $(seq 1 60); do curl -sf http://localhost:4566/_localstack/health >/dev/null && break; sleep 1; done
       - name: Verify (spotless, tests, archunit, jacoco)
         env:
           KEEL_NATS_URL: nats://localhost:4222
@@ -104,6 +111,11 @@ jobs:
           KEEL_VAULT_TOKEN: root
           KEEL_VAULT_MOUNT: secret
           KEEL_VAULT_PATH: keel-test
+          AWS_ENDPOINT_URL_SECRETS_MANAGER: http://localhost:4566
+          AWS_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          KEEL_AWS_SECRET_ID: keel-test
         run: mvn -B -Pcoverage-aggregate verify
       - name: Dependency CVEs (Trivy)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0

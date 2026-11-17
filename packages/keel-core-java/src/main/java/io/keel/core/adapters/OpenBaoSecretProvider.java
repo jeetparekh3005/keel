@@ -17,10 +17,8 @@ import java.security.KeyStore;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.time.Duration;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -37,11 +35,13 @@ import tools.jackson.databind.node.ObjectNode;
  * Production {@link SecretProvider} backed by OpenBao (or HashiCorp Vault) over the Vault KV v2
  * HTTP API (ADR-0023). A tiny hand-written client on the JDK {@link HttpClient} - no vault SDK -
  * that authenticates (static token or Kubernetes service-account JWT), then reads one KV v2 path's
- * field map into memory once at construction and serves {@link #get(String)} synchronously from
- * that cache. The port's {@code get} is synchronous, so it must never perform I/O; a daemon
- * background refresh re-reads the path every {@code KEEL_VAULT_CACHE_TTL_SECONDS} and, on a {@code
- * 401/403}, re-authenticates and retries once. A failed refresh keeps serving the last good field
- * map and is logged, so a transient OpenBao outage does not take the service down.
+ * field map. It is a {@link SecretCache.Loader} over the shared {@link SecretCache} (ADR-0024): the
+ * cache serves {@link #get(String)} synchronously from memory and re-invokes {@link #load()} every
+ * {@code KEEL_SECRET_CACHE_TTL_SECONDS}; on a {@code 401/403} this loader re-authenticates and
+ * retries once. Unlike AWS/GCP, this loader carries Kubernetes-lease renewal: {@link
+ * #start(ScheduledExecutorService)} schedules a proactive re-login a renew-skew before the token
+ * expires, on the cache's own daemon thread. A failed refresh keeps serving the last good field map
+ * and is logged, so a transient OpenBao outage does not take the service down.
  *
  * <p>Fail-closed: once configured (a non-blank {@code KEEL_VAULT_ADDR}), a misconfiguration (no
  * auth, unreachable server, missing path, non-positive cache TTL) fails loudly at construction
@@ -50,7 +50,8 @@ import tools.jackson.databind.node.ObjectNode;
  * keel.vault-addr} is non-blank; a blank or whitespace-only address is treated as unset and falls
  * back to the environment rather than crashing startup.
  */
-public final class OpenBaoSecretProvider implements SecretProvider, AutoCloseable {
+public final class OpenBaoSecretProvider
+    implements SecretProvider, AutoCloseable, SecretCache.Loader {
 
   private static final Logger log = LoggerFactory.getLogger(OpenBaoSecretProvider.class);
 
@@ -58,7 +59,7 @@ public final class OpenBaoSecretProvider implements SecretProvider, AutoCloseabl
    * Resolved {@code KEEL_VAULT_*} configuration. {@code addr} and {@code path} are required;
    * exactly one of {@code token}/{@code role} authenticates. Empty strings are treated as absent by
    * {@link #trimToNull(String)} at the call site so Spring's {@code @DefaultValue("")} binding maps
-   * cleanly to "unset".
+   * cleanly to "unset". {@code cacheTtl} is the shared {@code KEEL_SECRET_CACHE_TTL_SECONDS}.
    */
   public record Config(
       String addr,
@@ -82,7 +83,12 @@ public final class OpenBaoSecretProvider implements SecretProvider, AutoCloseabl
   private final String mount;
   private final String path;
   private final String namespace;
-  private final ScheduledExecutorService scheduler;
+
+  // The shared caching core: owns the in-memory map, the refresh schedule, and the daemon thread.
+  private final SecretCache cache;
+
+  // Set in start() to the cache's scheduler so lease renewal runs on the same single daemon thread.
+  private volatile ScheduledExecutorService scheduler;
 
   // The upstream reads actually performed (data-path GETs), so a test can prove get() serves from
   // cache without I/O and that a TTL refresh refetches. Reauth retries count as the same logical
@@ -90,7 +96,6 @@ public final class OpenBaoSecretProvider implements SecretProvider, AutoCloseabl
   private final AtomicInteger readCount = new AtomicInteger();
 
   private volatile String clientToken;
-  private volatile Map<String, String> cache = Map.of();
 
   // Kubernetes-login token-expiry instant (nanoTime basis) for proactive renewal (ADR-0023).
   // authenticate() derives it from the login's lease_duration; a self-rescheduling renewal task
@@ -117,17 +122,6 @@ public final class OpenBaoSecretProvider implements SecretProvider, AutoCloseabl
     this.mount = orDefault(config.mount(), "secret");
     this.path = requireValue(config.path(), "KEEL_VAULT_PATH");
     this.namespace = trimToNull(config.namespace());
-    // TTL is normative (ADR-0023): unset -> 60s; a non-positive value is a misconfiguration and
-    // fails construction rather than being silently coerced to a default (an unparseable value is
-    // already rejected earlier by the int binding in KeelProperties).
-    Duration ttl;
-    if (config.cacheTtl() == null) {
-      ttl = Duration.ofSeconds(60);
-    } else if (config.cacheTtl().isZero() || config.cacheTtl().isNegative()) {
-      throw new IllegalStateException("KEEL_VAULT_CACHE_TTL_SECONDS must be a positive integer");
-    } else {
-      ttl = config.cacheTtl();
-    }
 
     if (this.token == null && this.role == null) {
       throw new IllegalStateException(
@@ -142,29 +136,15 @@ public final class OpenBaoSecretProvider implements SecretProvider, AutoCloseabl
     }
     this.http = builder.build();
 
-    // Eager first load (may block): authenticate, then populate the cache. Any failure here is
-    // fatal - fail-closed, no fall-through to the environment.
-    this.clientToken = authenticate();
-    this.cache = loadFieldMap();
-
-    this.scheduler =
-        Executors.newSingleThreadScheduledExecutor(runnable -> {
-          Thread thread = new Thread(runnable, "keel-vault-refresh");
-          thread.setDaemon(true);
-          return thread;
-        });
-    long ttlMillis = ttl.toMillis();
-    this.scheduler.scheduleAtFixedRate(this::refresh, ttlMillis, ttlMillis, TimeUnit.MILLISECONDS);
-    // Proactive Kubernetes-lease renewal runs on its own schedule, independent of (and typically
-    // earlier than) the cache-TTL refresh, so the token is renewed before it expires rather than
-    // only reactively on a 401/403 (ADR-0023).
-    scheduleRenewal();
+    // The cache validates the TTL (fail-closed), performs the eager first load via load() below,
+    // then starts lease renewal (start()) and the TTL refresh on one daemon thread. Constructed
+    // last so every field this loader uses is already assigned when the cache calls back.
+    this.cache = new SecretCache(log, "vault", this, config.cacheTtl());
   }
 
   @Override
   public Optional<String> get(String key) {
-    // No I/O: serve synchronously from the in-memory field map (ADR-0023).
-    return Optional.ofNullable(cache.get(key));
+    return cache.get(key);
   }
 
   /** Visible for tests: the number of upstream KV reads performed (proves cache hits avoid I/O). */
@@ -174,22 +154,26 @@ public final class OpenBaoSecretProvider implements SecretProvider, AutoCloseabl
 
   @Override
   public void close() {
-    scheduler.shutdownNow();
+    cache.close();
   }
 
   /**
-   * Background refresh: on failure keep the last good field map and log, never crash the service.
+   * The {@link SecretCache.Loader} load: authenticate on the first call, then read the KV v2 field
+   * map (re-authenticating once on a 401/403). Re-invoked by the cache on every TTL refresh.
    */
-  private void refresh() {
-    try {
-      this.cache = loadFieldMap();
-    } catch (RuntimeException ex) {
-      log.warn(
-          "OpenBao secret refresh failed for {}/{}; serving the last good field map",
-          mount,
-          path,
-          ex);
+  @Override
+  public Map<String, String> load() {
+    if (clientToken == null) {
+      this.clientToken = authenticate();
     }
+    return loadFieldMap();
+  }
+
+  /** Register proactive Kubernetes-lease renewal on the cache's scheduler (ADR-0023). */
+  @Override
+  public void start(ScheduledExecutorService scheduler) {
+    this.scheduler = scheduler;
+    scheduleRenewal();
   }
 
   /**
@@ -250,8 +234,12 @@ public final class OpenBaoSecretProvider implements SecretProvider, AutoCloseabl
   }
 
   private void scheduleRenewalAfter(long delayMillis) {
+    ScheduledExecutorService s = this.scheduler;
+    if (s == null) {
+      return;
+    }
     try {
-      scheduler.schedule(this::renewToken, Math.max(0L, delayMillis), TimeUnit.MILLISECONDS);
+      s.schedule(this::renewToken, Math.max(0L, delayMillis), TimeUnit.MILLISECONDS);
     } catch (RejectedExecutionException ignored) {
       // The scheduler is shutting down (close()): there is nothing left to renew.
     }
@@ -303,20 +291,7 @@ public final class OpenBaoSecretProvider implements SecretProvider, AutoCloseabl
           "OpenBao read of " + mount + "/data/" + path + " failed with HTTP " + status);
     }
     JsonNode data = parse(response.body()).path("data").path("data");
-    Map<String, String> fields = new LinkedHashMap<>();
-    if (data.isObject()) {
-      for (Map.Entry<String, JsonNode> entry : data.properties()) {
-        JsonNode value = entry.getValue();
-        // Only JSON scalars are secrets (ADR-0023 coercion): a string is used verbatim, a number is
-        // its JSON text, a boolean is "true"/"false". An object, array, or null has no canonical
-        // scalar form, so it is dropped and get() returns empty rather than leaking a serialized
-        // blob into a field meant to hold a credential.
-        if (value.isTextual() || value.isNumber() || value.isBoolean()) {
-          fields.put(entry.getKey(), value.asText());
-        }
-      }
-    }
-    return Map.copyOf(fields);
+    return SecretCache.coerceFieldMap(data);
   }
 
   private HttpResponse<String> readPath(String vaultToken) {
@@ -347,9 +322,8 @@ public final class OpenBaoSecretProvider implements SecretProvider, AutoCloseabl
       return mapper.readTree(body);
     } catch (RuntimeException ex) {
       // The parser's exception can echo the response body (which may carry secret material) into
-      // its
-      // message; refresh() logs the exception, so re-throw a sanitized error with neither the body
-      // nor the original cause chain (ADR-0023: no secret value in any log/error).
+      // its message; refresh() logs the exception, so re-throw a sanitized error with neither the
+      // body nor the original cause chain (ADR-0023: no secret value in any log/error).
       throw new IllegalStateException("OpenBao returned a malformed JSON response");
     }
   }
