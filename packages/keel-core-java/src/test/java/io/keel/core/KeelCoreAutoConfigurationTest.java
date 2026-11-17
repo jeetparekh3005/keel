@@ -2,6 +2,7 @@ package io.keel.core;
 
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.keel.core.adapters.EnvSecretProvider;
 import io.keel.core.config.KeelProperties;
@@ -10,18 +11,28 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
- * Covers the {@link SecretProvider} selection factory (ADR-0023). A bound-but-blank {@code
- * KEEL_VAULT_ADDR} must fall back to {@link EnvSecretProvider} rather than activating OpenBao and
- * crashing startup (the empty-string gating divergence); only a non-blank address selects the
- * production provider, which then fails loudly on misconfiguration (fail-closed).
+ * Covers the {@link SecretProvider} selection factory (ADR-0023, ADR-0024). None set -> {@link
+ * EnvSecretProvider}; a bound-but-blank gating var is treated as unset (so an empty {@code
+ * KEEL_VAULT_ADDR} does not activate OpenBao and crash startup); exactly one selects that backend,
+ * which then fails loudly on misconfiguration (fail-closed); more than one is an ambiguous
+ * misconfiguration that fails construction.
  */
 class KeelCoreAutoConfigurationTest {
 
   private final KeelCoreAutoConfiguration autoConfig = new KeelCoreAutoConfiguration();
 
   @Test
+  void noBackendConfiguredYieldsEnvSecretProvider() {
+    SecretProvider provider = autoConfig.secretProvider(props("", null, "", ""));
+    assertInstanceOf(
+        EnvSecretProvider.class,
+        provider,
+        "no secret backend configured selects the dev EnvSecretProvider");
+  }
+
+  @Test
   void blankVaultAddrYieldsEnvSecretProvider() {
-    SecretProvider provider = autoConfig.secretProvider(props("", null, ""));
+    SecretProvider provider = autoConfig.secretProvider(props("", null, "", ""));
     assertInstanceOf(
         EnvSecretProvider.class,
         provider,
@@ -30,9 +41,9 @@ class KeelCoreAutoConfigurationTest {
 
   @Test
   void whitespaceVaultAddrYieldsEnvSecretProvider() {
-    SecretProvider provider = autoConfig.secretProvider(props("   ", null, ""));
+    SecretProvider provider = autoConfig.secretProvider(props("   ", null, "", "   "));
     assertInstanceOf(
-        EnvSecretProvider.class, provider, "a whitespace-only KEEL_VAULT_ADDR is treated as unset");
+        EnvSecretProvider.class, provider, "a whitespace-only gating var is treated as unset");
   }
 
   @Test
@@ -41,10 +52,26 @@ class KeelCoreAutoConfigurationTest {
     // is unreachable rather than silently falling through to the environment.
     assertThrows(
         RuntimeException.class,
-        () -> autoConfig.secretProvider(props("http://127.0.0.1:1", "root", "keel-test")));
+        () -> autoConfig.secretProvider(props("http://127.0.0.1:1", "root", "keel-test", "")));
   }
 
-  private static KeelProperties props(String vaultAddr, String vaultToken, String vaultPath) {
+  @Test
+  void bothVaultAndAwsSetFailsConstruction() {
+    // At most one backend may be configured (ADR-0024); more than one is an ambiguous
+    // misconfiguration that must fail construction rather than silently preferring one.
+    IllegalStateException ex =
+        assertThrows(
+            IllegalStateException.class,
+            () ->
+                autoConfig.secretProvider(
+                    props("http://127.0.0.1:1", "root", "keel-test", "keel-test")));
+    assertTrue(
+        ex.getMessage().contains("multiple secret backends configured"),
+        "both backends set fails loudly with an ambiguous-misconfiguration message");
+  }
+
+  private static KeelProperties props(
+      String vaultAddr, String vaultToken, String vaultPath, String awsSecretId) {
     return new KeelProperties(
         "",
         "",
@@ -70,6 +97,8 @@ class KeelCoreAutoConfigurationTest {
         vaultPath,
         "",
         "",
-        60);
+        60,
+        awsSecretId,
+        "");
   }
 }

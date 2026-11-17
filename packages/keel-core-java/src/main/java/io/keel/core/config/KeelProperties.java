@@ -30,12 +30,17 @@ import org.springframework.validation.annotation.Validated;
  * KEEL_GRPC_TLS_INSECURE} ({@code keel.grpc-tls-insecure}), false by default, so a production
  * deployment that forgets to supply the PEM triple fails to start rather than binding in the clear.
  *
- * <p>The {@code KEEL_VAULT_*} fields gate the OpenBao {@link io.keel.core.ports.SecretProvider}
- * backend (ADR-0023): the adapter is wired only when {@code KEEL_VAULT_ADDR} ({@code
- * keel.vault-addr}) is set, otherwise the dev {@code EnvSecretProvider} is used. {@code
- * KEEL_VAULT_TOKEN} (static token) or {@code KEEL_VAULT_ROLE} (Kubernetes auth role) authenticates;
- * {@code KEEL_VAULT_MOUNT}/{@code KEEL_VAULT_PATH} name the KV v2 secret, and the remaining fields
- * tune the Kubernetes auth mount/JWT path, the Vault namespace, the TLS CA, and the cache TTL.
+ * <p>The secret-backend fields select one production {@link io.keel.core.ports.SecretProvider}
+ * (ADR-0023, ADR-0024). At most one of {@code KEEL_VAULT_ADDR} ({@code keel.vault-addr}) and {@code
+ * KEEL_AWS_SECRET_ID} ({@code keel.aws-secret-id}) may be set; more than one fails construction,
+ * and none selects the dev {@code EnvSecretProvider}. For OpenBao, {@code KEEL_VAULT_TOKEN} (static
+ * token) or {@code KEEL_VAULT_ROLE} (Kubernetes auth role) authenticates; {@code KEEL_VAULT_MOUNT}/
+ * {@code KEEL_VAULT_PATH} name the KV v2 secret, and the remaining {@code KEEL_VAULT_*} fields tune
+ * the Kubernetes auth mount/JWT path, the Vault namespace, and the TLS CA. For AWS Secrets Manager,
+ * {@code KEEL_AWS_SECRET_ID} names the secret (name or ARN) and {@code KEEL_AWS_REGION} optionally
+ * pins the region (else the SDK default chain); credentials come from the default AWS provider
+ * chain. {@code KEEL_SECRET_CACHE_TTL_SECONDS} ({@code keel.secret-cache-ttl-seconds}, positive or
+ * fail, default 60) is the shared field-map cache TTL for every backend.
  */
 @ConfigurationProperties(prefix = "keel")
 @Validated
@@ -64,7 +69,9 @@ public record KeelProperties(
     @DefaultValue("") String vaultPath,
     @DefaultValue("") String vaultNamespace,
     @DefaultValue("") String vaultCacert,
-    @DefaultValue("60") int vaultCacheTtlSeconds) {
+    @DefaultValue("60") int secretCacheTtlSeconds,
+    @DefaultValue("") String awsSecretId,
+    @DefaultValue("") String awsRegion) {
 
   /**
    * One configured API-key credential (platform.yaml auth: api_key). The key is stored only as its

@@ -1,5 +1,6 @@
 package io.keel.core;
 
+import io.keel.core.adapters.AwsSecretsManagerSecretProvider;
 import io.keel.core.adapters.EnvSecretProvider;
 import io.keel.core.adapters.OpenBaoSecretProvider;
 import io.keel.core.adapters.SystemClock;
@@ -21,6 +22,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Lazy;
 
 /**
  * The composition auto-configuration for the Java vertical: it registers the deny-by-default
@@ -81,34 +83,75 @@ public class KeelCoreAutoConfiguration {
   }
 
   /**
-   * The secret backend (ADR-0023). A single factory chooses the provider so a blank or
-   * whitespace-only {@code KEEL_VAULT_ADDR} ({@code keel.vault-addr}) falls back to the dev {@link
-   * EnvSecretProvider} rather than activating OpenBao and crashing startup: a bound-but-empty
-   * address is treated as unset, matching the other verticals. Only a non-blank address selects the
-   * production {@link OpenBaoSecretProvider}, which then fails loudly on misconfiguration
-   * (fail-closed, no silent fall-through to the environment). {@code @ConditionalOnMissingBean}
-   * lets a service supply its own provider. The inferred destroy method stops the OpenBao
-   * background refresh thread at shutdown (it is {@link AutoCloseable}); the env provider has
-   * nothing to close.
+   * The secret backend (ADR-0023, ADR-0024). A single factory selects among the dev {@link
+   * EnvSecretProvider}, the {@link OpenBaoSecretProvider}, and the {@link
+   * AwsSecretsManagerSecretProvider} by which gating property is set: at most one of {@code
+   * keel.vault-addr} ({@code KEEL_VAULT_ADDR}) and {@code keel.aws-secret-id} ({@code
+   * KEEL_AWS_SECRET_ID}) may be non-blank. Blank or whitespace-only values are treated as unset
+   * (matching the other verticals, so a bound-but-empty address never activates a backend and
+   * crashes startup); more than one set is an ambiguous misconfiguration that fails construction;
+   * none set falls back to the environment. A selected production backend then fails loudly on
+   * misconfiguration (fail-closed, no silent fall-through to the environment). {@code
+   * KEEL_SECRET_CACHE_TTL_SECONDS} is the shared cache TTL for both backends.
+   *
+   * <p>{@code @Lazy}: the provider is built on first injection, not at context refresh. The only
+   * in-process consumer is the gRPC/mTLS wiring (gated on {@code keel.grpc-port}); a service that
+   * reads no secret material never stands up a backend, so a test or app that merely has a secret
+   * env var in scope is not forced to construct and validate it. A real consumer still triggers
+   * fail-closed construction at startup (ADR-0023: "fails at construction or first read").
+   * {@code @ConditionalOnMissingBean} lets a service supply its own provider; the inferred destroy
+   * method stops a backend's background refresh thread at shutdown (both are {@link
+   * AutoCloseable}).
    */
   @Bean
+  @Lazy
   @ConditionalOnMissingBean
   public SecretProvider secretProvider(KeelProperties properties) {
-    String addr = properties.vaultAddr();
-    if (addr == null || addr.isBlank()) {
-      return new EnvSecretProvider();
+    String vaultAddr = trimToNull(properties.vaultAddr());
+    String awsSecretId = trimToNull(properties.awsSecretId());
+
+    int configured = 0;
+    if (vaultAddr != null) {
+      configured++;
     }
-    return new OpenBaoSecretProvider(
-        new OpenBaoSecretProvider.Config(
-            properties.vaultAddr(),
-            properties.vaultToken(),
-            properties.vaultRole(),
-            properties.vaultK8sMount(),
-            properties.vaultK8sJwtPath(),
-            properties.vaultMount(),
-            properties.vaultPath(),
-            properties.vaultNamespace(),
-            properties.vaultCacert(),
-            Duration.ofSeconds(properties.vaultCacheTtlSeconds())));
+    if (awsSecretId != null) {
+      configured++;
+    }
+    if (configured > 1) {
+      throw new IllegalStateException(
+          "multiple secret backends configured: set at most one of KEEL_VAULT_ADDR,"
+              + " KEEL_AWS_SECRET_ID");
+    }
+
+    Duration cacheTtl = Duration.ofSeconds(properties.secretCacheTtlSeconds());
+
+    if (vaultAddr != null) {
+      return new OpenBaoSecretProvider(
+          new OpenBaoSecretProvider.Config(
+              properties.vaultAddr(),
+              properties.vaultToken(),
+              properties.vaultRole(),
+              properties.vaultK8sMount(),
+              properties.vaultK8sJwtPath(),
+              properties.vaultMount(),
+              properties.vaultPath(),
+              properties.vaultNamespace(),
+              properties.vaultCacert(),
+              cacheTtl));
+    }
+    if (awsSecretId != null) {
+      return new AwsSecretsManagerSecretProvider(
+          new AwsSecretsManagerSecretProvider.Config(
+              awsSecretId, properties.awsRegion(), cacheTtl));
+    }
+    return new EnvSecretProvider();
+  }
+
+  private static String trimToNull(String value) {
+    if (value == null) {
+      return null;
+    }
+    String trimmed = value.strip();
+    return trimmed.isEmpty() ? null : trimmed;
   }
 }
