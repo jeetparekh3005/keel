@@ -31,16 +31,21 @@ import org.springframework.validation.annotation.Validated;
  * deployment that forgets to supply the PEM triple fails to start rather than binding in the clear.
  *
  * <p>The secret-backend fields select one production {@link io.keel.core.ports.SecretProvider}
- * (ADR-0023, ADR-0024). At most one of {@code KEEL_VAULT_ADDR} ({@code keel.vault-addr}) and {@code
- * KEEL_AWS_SECRET_ID} ({@code keel.aws-secret-id}) may be set; more than one fails construction,
- * and none selects the dev {@code EnvSecretProvider}. For OpenBao, {@code KEEL_VAULT_TOKEN} (static
- * token) or {@code KEEL_VAULT_ROLE} (Kubernetes auth role) authenticates; {@code KEEL_VAULT_MOUNT}/
- * {@code KEEL_VAULT_PATH} name the KV v2 secret, and the remaining {@code KEEL_VAULT_*} fields tune
- * the Kubernetes auth mount/JWT path, the Vault namespace, and the TLS CA. For AWS Secrets Manager,
+ * (ADR-0023, ADR-0024). At most one of {@code KEEL_VAULT_ADDR} ({@code keel.vault-addr}), {@code
+ * KEEL_AWS_SECRET_ID} ({@code keel.aws-secret-id}), and {@code KEEL_GCP_SECRET} ({@code
+ * keel.gcp-secret}) may be set; more than one fails construction, and none selects the dev {@code
+ * EnvSecretProvider}. For OpenBao, {@code KEEL_VAULT_TOKEN} (static token) or {@code
+ * KEEL_VAULT_ROLE} (Kubernetes auth role) authenticates; {@code KEEL_VAULT_MOUNT}/{@code
+ * KEEL_VAULT_PATH} name the KV v2 secret, and the remaining {@code KEEL_VAULT_*} fields tune the
+ * Kubernetes auth mount/JWT path, the Vault namespace, and the TLS CA. For AWS Secrets Manager,
  * {@code KEEL_AWS_SECRET_ID} names the secret (name or ARN) and {@code KEEL_AWS_REGION} optionally
  * pins the region (else the SDK default chain); credentials come from the default AWS provider
- * chain. {@code KEEL_SECRET_CACHE_TTL_SECONDS} ({@code keel.secret-cache-ttl-seconds}, positive or
- * fail, default 60) is the shared field-map cache TTL for every backend.
+ * chain. For GCP Secret Manager, {@code KEEL_GCP_SECRET} names the secret ({@code
+ * projects/<project>/secrets/<name>} or the full {@code .../versions/<v>}) and {@code
+ * KEEL_GCP_SECRET_VERSION} ({@code keel.gcp-secret-version}, default {@code latest}) selects the
+ * version when the resource name carries none; credentials come from Application Default
+ * Credentials. {@code KEEL_SECRET_CACHE_TTL_SECONDS} ({@code keel.secret-cache-ttl-seconds},
+ * positive or fail, default 60) is the shared field-map cache TTL for every backend.
  */
 @ConfigurationProperties(prefix = "keel")
 @Validated
@@ -71,7 +76,9 @@ public record KeelProperties(
     @DefaultValue("") String vaultCacert,
     @DefaultValue("60") int secretCacheTtlSeconds,
     @DefaultValue("") String awsSecretId,
-    @DefaultValue("") String awsRegion) {
+    @DefaultValue("") String awsRegion,
+    @DefaultValue("") String gcpSecret,
+    @DefaultValue("latest") String gcpSecretVersion) {
 
   /**
    * One configured API-key credential (platform.yaml auth: api_key). The key is stored only as its

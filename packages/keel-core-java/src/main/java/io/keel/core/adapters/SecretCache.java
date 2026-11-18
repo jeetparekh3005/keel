@@ -14,10 +14,10 @@ import tools.jackson.databind.JsonNode;
 /**
  * The shared caching core for every production {@link SecretProvider} backend (ADR-0024). It holds
  * the cache/refresh/coercion/no-leak engine that ADR-0023 first grew inside the OpenBao adapter,
- * now parameterized by a {@link Loader} that authenticates and returns the raw field map. OpenBao
- * and AWS Secrets Manager are two loaders over this one core (GCP is the planned third), so the
- * three backends cannot diverge on caching, TTL validation, fail-closed loading, or the no-leak
- * refresh log.
+ * now parameterized by a {@link Loader} that authenticates and returns the raw field map. OpenBao,
+ * AWS Secrets Manager, and GCP Secret Manager are three loaders over this one core, so the three
+ * backends cannot diverge on caching, TTL validation, fail-closed loading, or the no-leak refresh
+ * log.
  *
  * <p>At construction it validates the TTL (fail-closed on a non-positive value), loads the field
  * map once eagerly (a failure here is fatal - no silent fall-through to the environment), then
