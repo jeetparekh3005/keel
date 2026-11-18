@@ -14,6 +14,7 @@ require (
 	github.com/googleapis/gax-go/v2 v2.27.0
 	github.com/jackc/pgx/v5 v5.12.0
 	github.com/nats-io/nats.go v1.55.0
+	github.com/rabbitmq/amqp091-go v1.17.0
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.72.0
 	go.opentelemetry.io/otel v1.47.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.47.0
