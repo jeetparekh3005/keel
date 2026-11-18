@@ -90,7 +90,7 @@ jobs:
           # that changes Cargo.lock still pays one cold build.
           cache-directories: target/llvm-cov-target
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        uses: taiki-e/install-action@4a76afe23f9e08d2d9550fb56e556444e8611d21 # v2.90.4
         with:
           tool: cargo-llvm-cov
       - name: Format check
@@ -181,7 +181,7 @@ jobs:
         # so only the hand-written server factory/mTLS in keel_core::grpc is measured.
         run: cargo llvm-cov --all --locked --features nats,grpc,vault,aws --ignore-filename-regex genproto --fail-under-lines 85 -- --include-ignored
       - name: Install cargo-audit
-        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        uses: taiki-e/install-action@4a76afe23f9e08d2d9550fb56e556444e8611d21 # v2.90.4
         with:
           tool: cargo-audit
       - name: Audit dependencies for RUSTSEC advisories (blocking)
