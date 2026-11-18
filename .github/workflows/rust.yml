@@ -22,6 +22,12 @@ on:
       - "Cargo.lock"
       - "rust-toolchain.toml"
       - ".github/workflows/rust.yml"
+  # Nightly full coverage sweep. The 85% llvm-cov floor is OFF the per-PR critical path
+  # (pull_request runs only fmt+clippy+test, see the conditional steps below); it runs on
+  # every push to dev/main and here nightly so a coverage regression is caught within a day
+  # even on a branch that never pushes to dev. Schedule ignores the paths filter by design.
+  schedule:
+    - cron: "0 7 * * *"
 
 permissions:
   contents: read
@@ -90,6 +96,10 @@ jobs:
           # that changes Cargo.lock still pays one cold build.
           cache-directories: target/llvm-cov-target
       - name: Install cargo-llvm-cov
+        # Only the coverage floor needs llvm-cov, and that runs on push/schedule, not on PRs
+        # (see the two conditional test steps below). Skipping the install on PRs keeps the
+        # fast PR gate lean.
+        if: github.event_name != 'pull_request'
         uses: taiki-e/install-action@4a76afe23f9e08d2d9550fb56e556444e8611d21 # v2.90.4
         with:
           tool: cargo-llvm-cov
@@ -134,10 +144,15 @@ jobs:
         run: |
           docker run -d --name localstack -p 4566:4566 -e SERVICES=secretsmanager localstack/localstack:4.9.1
           for i in $(seq 1 60); do curl -sf http://localhost:4566/_localstack/health >/dev/null && break; sleep 1; done
-      - name: Test with coverage floor (85% lines)
-        # Runs the full suite under cargo-llvm-cov and fails the job if line coverage
-        # drops below 85%, matching the Python vertical's `fail_under = 85` gate so the
-        # Rust vertical cannot silently regress below parity (epic #419, v0.6).
+      - name: Test (PRs fast; push/nightly enforces the coverage floor)
+        # Split to keep the per-PR critical path short. On a pull_request this runs the full
+        # suite under a plain `cargo test` (non-instrumented, cached) so PRs - including the
+        # dep-bump PRs that change Cargo.lock - get fmt+clippy+unit+integration signal in minutes
+        # instead of waiting on the ~45-60 min instrumented coverage build. On push to dev/main
+        # and on the nightly schedule it runs the same suite under cargo-llvm-cov and fails if
+        # line coverage drops below 85%, matching the Python vertical's `fail_under = 85` gate so
+        # the Rust vertical cannot silently regress below parity (epic #419, v0.6). The floor is
+        # therefore still enforced on every merge to dev and every night - just off the PR wait.
         #
         # --include-ignored runs the #[ignore]'d integration tests too: the Postgres CRUD
         # round-trip (Postgres service above + KEEL_TEST_DATABASE_URL), the live Keycloak
@@ -149,13 +164,14 @@ jobs:
         # if its backing service is missing -- and they are the paths that carry the service's
         # composition/http/repository, the broker adapter's connect/publish/subscribe/dispatch, and
         # the secret adapters' authenticate/load lines over the floor, so the coverage number is
-        # only honest with them in. --features nats,grpc,vault,aws builds the opt-in NatsMessageBus
-        # adapter (and its integration test), the opt-in gRPC server factory/mTLS module
-        # (keel_core::grpc, ADR-0022), the opt-in OpenBaoSecretProvider (keel_core::vault,
-        # ADR-0023), and the opt-in AwsSecretsManagerSecretProvider over the shared caching core
-        # (keel_core::aws + keel_core::secret, ADR-0024) so all are exercised and counted here --
-        # without them in the feature set the new code is not compiled under coverage and the floor
-        # could not see it.
+        # only honest with them in. --features nats,grpc,vault,aws,gcp builds the opt-in
+        # NatsMessageBus adapter (and its integration test), the opt-in gRPC server factory/mTLS
+        # module (keel_core::grpc, ADR-0022), the opt-in OpenBaoSecretProvider (keel_core::vault,
+        # ADR-0023), and the opt-in AwsSecretsManagerSecretProvider and GcpSecretManagerSecretProvider
+        # over the shared caching core (keel_core::aws + keel_core::gcp + keel_core::secret, ADR-0024)
+        # so all are exercised and counted here -- without them in the feature set the new code is
+        # not compiled under test/coverage and the floor could not see it. gcp is new in this split:
+        # #546 added the adapter but not the CI feature flag, so its tests had not yet run in CI.
         env:
           KEEL_KEYCLOAK_URL: http://localhost:8080
           KEEL_KEYCLOAK_REALM: keel
@@ -179,7 +195,14 @@ jobs:
         # generated code under src/genproto) from the denominator: they are not held to the
         # crate's lint/style/coverage bar (see genproto.rs and the Python genproto excludes),
         # so only the hand-written server factory/mTLS in keel_core::grpc is measured.
-        run: cargo llvm-cov --all --locked --features nats,grpc,vault,aws --ignore-filename-regex genproto --fail-under-lines 85 -- --include-ignored
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # Fast PR gate: full suite, non-instrumented, cached. No coverage measurement here.
+            cargo test --all --locked --features nats,grpc,vault,aws,gcp -- --include-ignored
+          else
+            # Merge/nightly: same suite under instrumentation, 85% line floor enforced.
+            cargo llvm-cov --all --locked --features nats,grpc,vault,aws,gcp --ignore-filename-regex genproto --fail-under-lines 85 -- --include-ignored
+          fi
       - name: Install cargo-audit
         uses: taiki-e/install-action@4a76afe23f9e08d2d9550fb56e556444e8611d21 # v2.90.4
         with:
