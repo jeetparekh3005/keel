@@ -152,6 +152,15 @@ class GcpSecretManagerSecretProviderTest {
   }
 
   @Test
+  void trimsTrailingSlashBeforeAppendingVersion() {
+    SecretManagerServiceClient client = clientReturning("{\"api_key\":\"v\"}");
+    // A KEEL_GCP_SECRET with a trailing slash must resolve to a single-slash resource name, not a
+    // malformed .../app//versions/latest that GCP rejects (parity with Go's strings.TrimRight).
+    provider = new GcpSecretManagerSecretProvider(client, SECRET + "/", Duration.ofSeconds(60));
+    verify(client, times(1)).accessSecretVersion(eq(SECRET + "/versions/latest"));
+  }
+
+  @Test
   void usesAnExplicitVersionResourceNameVerbatim() {
     SecretManagerServiceClient client = clientReturning("{\"api_key\":\"v\"}");
     String withVersion = SECRET + "/versions/7";
@@ -205,6 +214,18 @@ class GcpSecretManagerSecretProviderTest {
     assertThrows(
         IllegalStateException.class,
         () -> new GcpSecretManagerSecretProvider(client, SECRET, Duration.ofSeconds(60)));
+  }
+
+  @Test
+  void emptyPayloadFailsClosedWithoutLeaking() {
+    // An empty payload cannot back get(name); it must fail closed explicitly (parity with
+    // Go/TS/Rust), carrying only the resource name - never any payload bytes.
+    SecretManagerServiceClient client = clientReturning("");
+    IllegalStateException ex =
+        assertThrows(
+            IllegalStateException.class,
+            () -> new GcpSecretManagerSecretProvider(client, SECRET, Duration.ofSeconds(60)));
+    assertEquals("GCP secret " + SECRET + "/versions/latest has an empty payload", ex.getMessage());
   }
 
   @Test
