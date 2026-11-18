@@ -75,10 +75,12 @@ function resolveConfig(env: NodeJS.ProcessEnv): GcpConfig {
   if (secret === undefined) {
     throw new Error('GcpSecretManagerSecretProvider: KEEL_GCP_SECRET is required');
   }
-  // Already a version resource name -> use as-is; otherwise append the (defaulted) version.
+  // Already a version resource name -> use as-is; otherwise trim any trailing slash(es) before
+  // appending the (defaulted) version so a `KEEL_GCP_SECRET` like `projects/p/secrets/app/` cannot
+  // yield a malformed `.../app//versions/latest` that GCP rejects (parity with Go and Rust).
   const versionName = secret.includes('/versions/')
     ? secret
-    : `${secret}/versions/${trimmed(env['KEEL_GCP_SECRET_VERSION']) ?? 'latest'}`;
+    : `${secret.replace(/\/+$/, '')}/versions/${trimmed(env['KEEL_GCP_SECRET_VERSION']) ?? 'latest'}`;
   return { versionName, ttlMs: resolveCacheTtlMs(env) };
 }
 

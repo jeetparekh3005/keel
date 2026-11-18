@@ -117,6 +117,21 @@ describe('GcpSecretManagerSecretProvider', () => {
     expect(request.name).toBe('projects/keel-test/secrets/app/versions/7');
   });
 
+  it('trims a trailing slash on KEEL_GCP_SECRET before appending the version (no double slash)', async () => {
+    accessSecretVersion.mockResolvedValue(payload(JSON.stringify({ a: '1' })));
+
+    const provider = await createGcpSecretManagerSecretProvider({
+      KEEL_GCP_SECRET: 'projects/p/secrets/app/',
+      KEEL_GCP_SECRET_VERSION: 'latest',
+    });
+    cleanups.push(() => provider.close());
+
+    const [request] = accessSecretVersion.mock.calls[0] as [{ name: string }];
+    // The trailing slash must be trimmed so the resource name has a single slash before `versions`,
+    // not the malformed `.../app//versions/latest` that GCP rejects (parity with Go and Rust).
+    expect(request.name).toBe('projects/p/secrets/app/versions/latest');
+  });
+
   it('uses a full version resource name verbatim (ignoring KEEL_GCP_SECRET_VERSION)', async () => {
     accessSecretVersion.mockResolvedValue(payload(JSON.stringify({ a: '1' })));
 
