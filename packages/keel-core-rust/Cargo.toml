@@ -79,6 +79,25 @@ aws-sdk-secretsmanager = { version = "1", optional = true, default-features = fa
 aws-smithy-http-client = { version = "1", optional = true, default-features = false, features = [
     "rustls-ring",
 ] }
+# Opt-in GCP Secret Manager SecretProvider adapter (the `gcp` feature, ADR-0024). The Rust vertical
+# uses `gcloud-sdk` rather than the official google-cloud-rust `google-cloud-secretmanager-v1`: that
+# crate's `google-cloud-auth` hard-wires `aws-lc-rs` (a C/assembly crypto build) plus `native-tls`,
+# with no `ring` path, which violates keel's rustls/no-openssl posture. `gcloud-sdk` with no bundled
+# TLS feature, plus `reqwest/rustls-no-provider` (pulled transitively by google-cloud-auth) and
+# `tonic/tls-ring`, resolves to a ring-only tree: no aws-lc-sys, no openssl, no native-tls (proven by
+# `cargo tree` and guarded by `deny.toml`). `jwt-rust-crypto` keeps the unused id-token JWT path on
+# pure-Rust crypto rather than aws-lc-rs. `BehaviorVersion`-style endpoint selection is in code.
+gcloud-sdk = { version = "0.34", optional = true, default-features = false, features = [
+    "google-cloud-secretmanager-v1",
+    "jwt-rust-crypto",
+] }
+# The ring-backed rustls crypto provider the adapter installs as the process default: reqwest's
+# `rustls-no-provider` (used by google-cloud-auth for the ADC token calls) ships no default provider,
+# so keel installs `ring` to keep the whole tree off aws-lc-rs/aws-lc-sys.
+rustls = { version = "0.23", optional = true, default-features = false, features = [
+    "ring",
+    "std",
+] }
 
 [features]
 # Opt-in NATS JetStream adapter. Off by default so `cargo build` stays broker-free,
@@ -123,6 +142,20 @@ aws = [
     "tokio/rt",
     "tokio/time",
 ]
+# Opt-in GCP Secret Manager SecretProvider adapter (ADR-0024). Off by default so the default
+# `cargo build` pulls in neither the GCP SDK nor an async IO driver; enabling it turns on gcloud-sdk
+# and tonic's ring-backed TLS (`tonic/tls-ring`), plus the tokio features the adapter's dedicated
+# current-thread runtime needs to drive the async gRPC calls inside its blocking refresh thread
+# (never on the app's async runtime). Mirrors the `aws`/`vault` features; all three share the
+# ADR-0024 caching core in `crate::secret`.
+gcp = [
+    "dep:gcloud-sdk",
+    "dep:rustls",
+    "tonic/tls-ring",
+    "tokio/net",
+    "tokio/rt",
+    "tokio/time",
+]
 
 [dev-dependencies]
 figment = { version = "0.10", features = ["env", "toml", "test"] }
@@ -148,3 +181,11 @@ rcgen = { version = "0.14", default-features = false, features = ["pem", "ring"]
 # boundary so the `aws` unit tests assert field-map round-trip, coercion, not-found-as-empty,
 # fail-closed, and the no-leak invariant with no network (ADR-0024 "AWS unit (non-gated)").
 aws-smithy-mocks = "0.3"
+# The `gcp` unit tests stand up an in-process tonic SecretManagerService mock on a loopback port
+# and drive a single unary AccessSecretVersion via `tonic::server::Grpc` + `ProstCodec`, so they
+# assert field-map round-trip, coercion, not-found-as-empty, fail-closed, the no-leak invariant,
+# and the bounded-timeout path with no real ADC, no metadata server, and no external socket
+# (ADR-0024 "GCP unit (non-gated)"). `http` provides the Request/Response + header types the mock
+# service and the static-bearer credentials use; both unify with the versions gcloud-sdk pulls.
+tonic-prost = "0.14"
+http = "1"

@@ -1,0 +1,28 @@
+# cargo-deny configuration (ADR-0024): guard the ring-only TLS posture of the Rust vertical.
+#
+# The GCP and AWS Secret Manager adapters were deliberately chosen/configured to keep the whole
+# dependency tree off C/assembly crypto and off native-tls/openssl: ring-backed rustls only. GCP
+# uses `gcloud-sdk` + `reqwest/rustls-no-provider` + `tonic/tls-ring` (the official
+# google-cloud-rust crate was rejected because its `google-cloud-auth` hard-wires `aws-lc-rs` +
+# `native-tls` with no `ring` path - see ADR-0024); AWS uses `aws-smithy-http-client` with
+# `rustls-ring`. This file bans the crates whose reappearance would silently undo that posture (a
+# dependency bump flipping a TLS feature, a new backend pulling aws-lc, etc.) so the guard fails
+# loudly instead of shipping a heavy/vulnerable crypto stack.
+#
+# Intended CI step (Rust lane): `cargo deny check bans`. `all-features` below makes the check
+# consider the opt-in `aws`/`gcp`/`grpc`/`nats` features, where these crates would otherwise hide.
+
+[graph]
+all-features = true
+
+[bans]
+# Only the TLS/crypto bans matter here; version duplication and wildcards are out of scope.
+multiple-versions = "allow"
+wildcards = "allow"
+# Shipped-binary C/assembly crypto (aws-lc) and native-tls/openssl are banned outright (ADR-0024).
+deny = [
+    { name = "aws-lc-sys" },
+    { name = "aws-lc-rs" },
+    { name = "openssl-sys" },
+    { name = "native-tls" },
+]
