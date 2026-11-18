@@ -107,6 +107,13 @@ def test_resource_name_uses_full_version_verbatim() -> None:
     assert _resource_name(_VERSIONED, "latest") == _VERSIONED
 
 
+def test_resource_name_trims_trailing_slash_before_appending_version() -> None:
+    # A stray trailing slash on the bare resource name must not produce a malformed
+    # double-slash name (parity with the Go and Rust adapters).
+    assert _resource_name(f"{_SECRET}/", "latest") == f"{_SECRET}/versions/latest"
+    assert _resource_name(f"{_SECRET}///", "7") == f"{_SECRET}/versions/7"
+
+
 def test_accesses_the_requested_version() -> None:
     client = _mock_client(return_value=_json_response({"k": "v"}))
     with GcpSecretManagerSecretProvider(
