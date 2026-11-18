@@ -58,6 +58,21 @@
         <type>pom</type>
         <scope>import</scope>
       </dependency>
+      <!-- Google Cloud client libraries BOM (ADR-0024): pins the google-cloud-secretmanager stack
+           (gax, gax-grpc, the proto/grpc stubs, the auth library) to one aligned, current release so
+           the GCP Secret Manager client's transitives cannot skew and Trivy scans a single coherent
+           version set. Declared LAST so the repo's own pins win on the artifacts both manage: the
+           grpc BOM above keeps every io.grpc artifact at 1.85.1 (ADR-0022), protobuf-java stays at
+           the gencode version, and Guava stays at the CVE-patched 33.8.0-jre - each is either a
+           direct dependencyManagement entry or an earlier BOM import, both of which beat this
+           later import under Maven's first-declared-wins resolution. 26.94.0 is the current stable. -->
+      <dependency>
+        <groupId>com.google.cloud</groupId>
+        <artifactId>libraries-bom</artifactId>
+        <version>26.94.0</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
     </dependencies>
   </dependencyManagement>
 
@@ -182,6 +197,23 @@
     <dependency>
       <groupId>software.amazon.awssdk</groupId>
       <artifactId>url-connection-client</artifactId>
+    </dependency>
+    <!-- GCP Secret Manager SecretProvider backend (ADR-0024). A normal dependency (the ADR allows an
+         SDK here because correct OAuth2 + the Application Default Credentials / Workload Identity
+         chain is exactly what the SDK implements). The adapter uses the default gRPC transport, which
+         reuses the grpc-netty-shaded stack already bundled for ADR-0022 (pinned to one release by the
+         grpc BOM), so the gax-httpjson REST transport is excluded as the unused transport - the AWS
+         analog of excluding apache5-client in favor of url-connection-client - to shrink the bundled
+         dependency/CVE surface Trivy scans. The version is managed by the libraries BOM above. -->
+    <dependency>
+      <groupId>com.google.cloud</groupId>
+      <artifactId>google-cloud-secretmanager</artifactId>
+      <exclusions>
+        <exclusion>
+          <groupId>com.google.api</groupId>
+          <artifactId>gax-httpjson</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>

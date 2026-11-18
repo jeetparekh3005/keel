@@ -2,6 +2,7 @@ package io.keel.core;
 
 import io.keel.core.adapters.AwsSecretsManagerSecretProvider;
 import io.keel.core.adapters.EnvSecretProvider;
+import io.keel.core.adapters.GcpSecretManagerSecretProvider;
 import io.keel.core.adapters.OpenBaoSecretProvider;
 import io.keel.core.adapters.SystemClock;
 import io.keel.core.auth.SecurityConfig;
@@ -84,15 +85,16 @@ public class KeelCoreAutoConfiguration {
 
   /**
    * The secret backend (ADR-0023, ADR-0024). A single factory selects among the dev {@link
-   * EnvSecretProvider}, the {@link OpenBaoSecretProvider}, and the {@link
-   * AwsSecretsManagerSecretProvider} by which gating property is set: at most one of {@code
-   * keel.vault-addr} ({@code KEEL_VAULT_ADDR}) and {@code keel.aws-secret-id} ({@code
-   * KEEL_AWS_SECRET_ID}) may be non-blank. Blank or whitespace-only values are treated as unset
-   * (matching the other verticals, so a bound-but-empty address never activates a backend and
-   * crashes startup); more than one set is an ambiguous misconfiguration that fails construction;
-   * none set falls back to the environment. A selected production backend then fails loudly on
+   * EnvSecretProvider}, the {@link OpenBaoSecretProvider}, the {@link
+   * AwsSecretsManagerSecretProvider}, and the {@link GcpSecretManagerSecretProvider} by which
+   * gating property is set: at most one of {@code keel.vault-addr} ({@code KEEL_VAULT_ADDR}),
+   * {@code keel.aws-secret-id} ({@code KEEL_AWS_SECRET_ID}), and {@code keel.gcp-secret} ({@code
+   * KEEL_GCP_SECRET}) may be non-blank. Blank or whitespace-only values are treated as unset
+   * (matching the other verticals, so a bound-but-empty value never activates a backend and crashes
+   * startup); more than one set is an ambiguous misconfiguration that fails construction; none set
+   * falls back to the environment. A selected production backend then fails loudly on
    * misconfiguration (fail-closed, no silent fall-through to the environment). {@code
-   * KEEL_SECRET_CACHE_TTL_SECONDS} is the shared cache TTL for both backends.
+   * KEEL_SECRET_CACHE_TTL_SECONDS} is the shared cache TTL for every backend.
    *
    * <p>{@code @Lazy}: the provider is built on first injection, not at context refresh. The only
    * in-process consumer is the gRPC/mTLS wiring (gated on {@code keel.grpc-port}); a service that
@@ -109,6 +111,7 @@ public class KeelCoreAutoConfiguration {
   public SecretProvider secretProvider(KeelProperties properties) {
     String vaultAddr = trimToNull(properties.vaultAddr());
     String awsSecretId = trimToNull(properties.awsSecretId());
+    String gcpSecret = trimToNull(properties.gcpSecret());
 
     int configured = 0;
     if (vaultAddr != null) {
@@ -117,10 +120,13 @@ public class KeelCoreAutoConfiguration {
     if (awsSecretId != null) {
       configured++;
     }
+    if (gcpSecret != null) {
+      configured++;
+    }
     if (configured > 1) {
       throw new IllegalStateException(
           "multiple secret backends configured: set at most one of KEEL_VAULT_ADDR,"
-              + " KEEL_AWS_SECRET_ID");
+              + " KEEL_AWS_SECRET_ID, KEEL_GCP_SECRET");
     }
 
     Duration cacheTtl = Duration.ofSeconds(properties.secretCacheTtlSeconds());
@@ -143,6 +149,11 @@ public class KeelCoreAutoConfiguration {
       return new AwsSecretsManagerSecretProvider(
           new AwsSecretsManagerSecretProvider.Config(
               awsSecretId, properties.awsRegion(), cacheTtl));
+    }
+    if (gcpSecret != null) {
+      return new GcpSecretManagerSecretProvider(
+          new GcpSecretManagerSecretProvider.Config(
+              gcpSecret, properties.gcpSecretVersion(), cacheTtl));
     }
     return new EnvSecretProvider();
   }

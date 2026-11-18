@@ -14,8 +14,8 @@ import org.junit.jupiter.api.Test;
  * Covers the {@link SecretProvider} selection factory (ADR-0023, ADR-0024). None set -> {@link
  * EnvSecretProvider}; a bound-but-blank gating var is treated as unset (so an empty {@code
  * KEEL_VAULT_ADDR} does not activate OpenBao and crash startup); exactly one selects that backend,
- * which then fails loudly on misconfiguration (fail-closed); more than one is an ambiguous
- * misconfiguration that fails construction.
+ * which then fails loudly on misconfiguration (fail-closed); more than one (among Vault, AWS, and
+ * GCP) is an ambiguous misconfiguration that fails construction.
  */
 class KeelCoreAutoConfigurationTest {
 
@@ -23,7 +23,7 @@ class KeelCoreAutoConfigurationTest {
 
   @Test
   void noBackendConfiguredYieldsEnvSecretProvider() {
-    SecretProvider provider = autoConfig.secretProvider(props("", null, "", ""));
+    SecretProvider provider = autoConfig.secretProvider(props("", null, "", "", ""));
     assertInstanceOf(
         EnvSecretProvider.class,
         provider,
@@ -32,7 +32,7 @@ class KeelCoreAutoConfigurationTest {
 
   @Test
   void blankVaultAddrYieldsEnvSecretProvider() {
-    SecretProvider provider = autoConfig.secretProvider(props("", null, "", ""));
+    SecretProvider provider = autoConfig.secretProvider(props("", null, "", "", ""));
     assertInstanceOf(
         EnvSecretProvider.class,
         provider,
@@ -40,8 +40,8 @@ class KeelCoreAutoConfigurationTest {
   }
 
   @Test
-  void whitespaceVaultAddrYieldsEnvSecretProvider() {
-    SecretProvider provider = autoConfig.secretProvider(props("   ", null, "", "   "));
+  void whitespaceGatingVarsYieldEnvSecretProvider() {
+    SecretProvider provider = autoConfig.secretProvider(props("   ", null, "", "   ", "   "));
     assertInstanceOf(
         EnvSecretProvider.class, provider, "a whitespace-only gating var is treated as unset");
   }
@@ -52,7 +52,7 @@ class KeelCoreAutoConfigurationTest {
     // is unreachable rather than silently falling through to the environment.
     assertThrows(
         RuntimeException.class,
-        () -> autoConfig.secretProvider(props("http://127.0.0.1:1", "root", "keel-test", "")));
+        () -> autoConfig.secretProvider(props("http://127.0.0.1:1", "root", "keel-test", "", "")));
   }
 
   @Test
@@ -64,14 +64,51 @@ class KeelCoreAutoConfigurationTest {
             IllegalStateException.class,
             () ->
                 autoConfig.secretProvider(
-                    props("http://127.0.0.1:1", "root", "keel-test", "keel-test")));
+                    props("http://127.0.0.1:1", "root", "keel-test", "keel-test", "")));
     assertTrue(
         ex.getMessage().contains("multiple secret backends configured"),
         "both backends set fails loudly with an ambiguous-misconfiguration message");
   }
 
+  @Test
+  void bothVaultAndGcpSetFailsConstruction() {
+    // The GCP gating var (KEEL_GCP_SECRET) joins the at-most-one rule: Vault + GCP is ambiguous and
+    // fails construction before any backend (or GCP client) is built, so this stays hermetic.
+    IllegalStateException ex =
+        assertThrows(
+            IllegalStateException.class,
+            () ->
+                autoConfig.secretProvider(
+                    props(
+                        "http://127.0.0.1:1",
+                        "root",
+                        "keel-test",
+                        "",
+                        "projects/p/secrets/keel-test")));
+    assertTrue(
+        ex.getMessage().contains("multiple secret backends configured")
+            && ex.getMessage().contains("KEEL_GCP_SECRET"),
+        "Vault + GCP fails loudly and the message names the GCP gating var");
+  }
+
+  @Test
+  void bothAwsAndGcpSetFailsConstruction() {
+    // AWS + GCP is equally ambiguous and fails at the count check before constructing either
+    // client,
+    // so no network/ADC lookup happens.
+    IllegalStateException ex =
+        assertThrows(
+            IllegalStateException.class,
+            () ->
+                autoConfig.secretProvider(
+                    props("", null, "", "keel-test", "projects/p/secrets/keel-test")));
+    assertTrue(
+        ex.getMessage().contains("multiple secret backends configured"),
+        "AWS + GCP fails loudly with an ambiguous-misconfiguration message");
+  }
+
   private static KeelProperties props(
-      String vaultAddr, String vaultToken, String vaultPath, String awsSecretId) {
+      String vaultAddr, String vaultToken, String vaultPath, String awsSecretId, String gcpSecret) {
     return new KeelProperties(
         "",
         "",
@@ -99,6 +136,8 @@ class KeelCoreAutoConfigurationTest {
         "",
         60,
         awsSecretId,
-        "");
+        "",
+        gcpSecret,
+        "latest");
   }
 }
