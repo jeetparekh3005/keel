@@ -48,6 +48,11 @@ export {
   createAwsSecretsManagerSecretProvider,
 } from './adapters/aws-secrets-manager.secret-provider.js';
 export {
+  createGcpSecretManagerSecretProvider,
+  GcpSecretManagerSecretProvider,
+  type GcpSecretManagerOptions,
+} from './adapters/gcp-secret-manager.secret-provider.js';
+export {
   secretProviderFromEnv,
   type SecretProviderFromEnvOptions,
 } from './adapters/secret-provider.factory.js';
