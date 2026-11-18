@@ -149,6 +149,11 @@ public final class GcpSecretManagerSecretProvider
       throw ex;
     }
     String payload = response.getPayload().getData().toStringUtf8();
+    if (payload.isEmpty()) {
+      // An empty payload cannot back get(name); reject it explicitly (parity with Go/TS/Rust). The
+      // message carries only the resource name, never any payload bytes (ADR-0024: no-leak).
+      throw new IllegalStateException("GCP secret " + resourceName + " has an empty payload");
+    }
     JsonNode root = parse(payload);
     if (!root.isObject()) {
       throw new IllegalStateException(
@@ -212,7 +217,9 @@ public final class GcpSecretManagerSecretProvider
       return secret;
     }
     String resolvedVersion = orDefault(version, "latest");
-    return secret + "/versions/" + resolvedVersion;
+    // Trim trailing slashes so a KEEL_GCP_SECRET like projects/p/secrets/app/ does not yield a
+    // malformed .../app//versions/latest that GCP rejects (parity with Go's strings.TrimRight).
+    return secret.replaceAll("/+$", "") + "/versions/" + resolvedVersion;
   }
 
   private static String requireValue(String value, String name) {
