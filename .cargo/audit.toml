@@ -20,16 +20,16 @@ ignore = [
     # not in the shipped binary (the production `aws-smithy-http-client` uses only rustls-ring).
     # No action available until the AWS smithy test crates drop chrono.
     "RUSTSEC-2026-0543",
-    # crypto-bigint 0.5.5 constant-time timing variability. NOT in the shipped binary: verified
-    # with `cargo tree --features nats,grpc,vault,aws,gcp -e no-dev -i crypto-bigint@0.5.5`
-    # (reports "not in shipped graph"). It is a locked-but-inactive optional pulled only by
-    # jsonwebtoken's RustCrypto ECDSA path (p256/p384 -> ecdsa -> elliptic-curve 0.13 ->
-    # crypto-bigint 0.5), which the `gcp` feature's `jwt-rust-crypto` makes resolvable but never
-    # activates: the GCP adapter authenticates via ADC (metadata-server tokens, or RSA
-    # service-account keys signed with RS256 -> rsa -> crypto-bigint 0.7.11, the patched line),
-    # never local ECDSA signing. jwt-rust-crypto is required so jsonwebtoken uses pure-Rust crypto
-    # instead of aws-lc-rs (ADR-0024 ring-only posture), so the inactive 0.5 branch cannot be
-    # dropped without reintroducing aws-lc. No in-range fix (needs jsonwebtoken to bump
-    # elliptic-curve to a crypto-bigint >=0.7 release).
+    # crypto-bigint 0.5.5 constant-time timing variability. This is a Cargo.lock-only union entry,
+    # NOT compiled into any build: cargo-audit scans the lockfile, not the feature-resolved build
+    # graph. Verified with
+    #   cargo tree --features nats,grpc,vault,aws,gcp -e no-dev -i crypto-bigint@0.5.5 --target all
+    # which reports nothing (and likewise with --all-features, including dev-deps). The crate's only
+    # lockfile consumers - p256/p384 -> ecdsa -> elliptic-curve 0.13 - are OPTIONAL deps of
+    # jsonwebtoken that google-cloud-auth never enables, so none of them (nor crypto-bigint 0.5.5)
+    # appear in the resolved graph. jwt-rust-crypto is required so jsonwebtoken uses pure-Rust crypto
+    # instead of aws-lc-rs (ADR-0024 ring-only posture). No in-range fix removes the lockfile entry
+    # (it needs jsonwebtoken to bump elliptic-curve onto a crypto-bigint >=0.7 line); since the
+    # vulnerable code is never compiled, the risk is accepted.
     "RUSTSEC-2026-0387",
 ]
