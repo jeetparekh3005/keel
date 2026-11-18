@@ -267,6 +267,11 @@ impl SecretLoader for GcpLoader {
         let result = self.runtime.block_on(async move {
             let mut service = client.get();
             let request = AccessSecretVersionRequest { name: resource };
+            // Single attempt, bounded by `timeout`. gcloud-sdk/tonic does not auto-retry a unary
+            // call (there is no retry middleware on the channel), so this is deliberately a
+            // one-shot request with a hard deadline - the same effective posture as the Go adapter
+            // (one attempt) and bounded like the Rust AWS adapter. If a future gcloud-sdk/tonic
+            // ever added default retry middleware, bound it explicitly here to preserve that.
             tokio::time::timeout(timeout, service.access_secret_version(request)).await
         });
         match result {
