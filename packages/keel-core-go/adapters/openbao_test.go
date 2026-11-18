@@ -35,6 +35,7 @@ func clearVaultEnv(t *testing.T) {
 		envAddr, envToken, envRole, envK8sMount, envJWTPath,
 		envMount, envPath, envNamespace, envCACert, envCacheTTL,
 		envAWSSecretID, envAWSRegion,
+		envGCPSecret, envGCPSecretVersion,
 	} {
 		t.Setenv(k, "")
 	}
@@ -731,13 +732,23 @@ func TestSecretProviderFromEnvSelection(t *testing.T) {
 	})
 
 	t.Run("multiple backends configured fails construction", func(t *testing.T) {
-		clearVaultEnv(t)
-		// Both the OpenBao and AWS gating vars set is an ambiguous misconfiguration (ADR-0024
-		// decision 5): construction must fail rather than silently pick one.
-		t.Setenv(envAddr, "http://127.0.0.1:1")
-		t.Setenv(envAWSSecretID, "keel-test")
-		if _, err := SecretProviderFromEnv(context.Background()); err == nil {
-			t.Error("setting both KEEL_VAULT_ADDR and KEEL_AWS_SECRET_ID must fail construction")
+		// More than one gating var set is an ambiguous misconfiguration (ADR-0024 decision 5):
+		// construction must fail fast (before any backend is built) rather than silently pick one.
+		for name, vars := range map[string]map[string]string{
+			"vault+aws": {envAddr: "http://127.0.0.1:1", envAWSSecretID: "keel-test"},
+			"vault+gcp": {envAddr: "http://127.0.0.1:1", envGCPSecret: "projects/p/secrets/s"},
+			"aws+gcp":   {envAWSSecretID: "keel-test", envGCPSecret: "projects/p/secrets/s"},
+			"all three": {envAddr: "http://127.0.0.1:1", envAWSSecretID: "keel-test", envGCPSecret: "projects/p/secrets/s"},
+		} {
+			t.Run(name, func(t *testing.T) {
+				clearVaultEnv(t)
+				for k, v := range vars {
+					t.Setenv(k, v)
+				}
+				if _, err := SecretProviderFromEnv(context.Background()); err == nil {
+					t.Errorf("setting multiple gating vars (%s) must fail construction", name)
+				}
+			})
 		}
 	})
 }
