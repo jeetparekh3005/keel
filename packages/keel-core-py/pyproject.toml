@@ -34,6 +34,15 @@ aws = [
     # It ships with boto3, but declare it since we import it (deptry DEP003).
     "botocore>=1.42",
 ]
+# GCP Secret Manager backend (ADR-0024) is opt-in: only services using it pull the SDK.
+# google-cloud-secret-manager handles the OAuth2 exchange and Application Default
+# Credentials (env, Workload Identity, metadata server). google-api-core is imported
+# directly for NotFound and the bounded Retry, so declare it (deptry DEP003) even though
+# it ships transitively with the client.
+gcp = [
+    "google-cloud-secret-manager>=2.20",
+    "google-api-core>=2.20",
+]
 
 [build-system]
 requires = ["hatchling"]
