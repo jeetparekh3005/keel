@@ -78,10 +78,14 @@ def _resource_name(secret: str, version: str) -> str:
     ``KEEL_GCP_SECRET`` is either a secret resource name (``projects/<p>/secrets/<name>``),
     to which ``/versions/<version>`` is appended, or already a fully qualified version
     (``.../versions/<v>``), which is used verbatim (the version env var is then ignored).
+
+    Any trailing slashes on the bare resource name are trimmed before appending so a
+    stray ``.../secrets/app/`` does not produce a malformed double-slash name that GCP
+    rejects (parity with the Go and Rust adapters).
     """
     if "/versions/" in secret:
         return secret
-    return f"{secret}/versions/{version}"
+    return f"{secret.rstrip('/')}/versions/{version}"
 
 
 class _GcpSecretManagerLoader:
