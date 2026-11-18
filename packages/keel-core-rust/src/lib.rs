@@ -15,6 +15,13 @@ pub mod auth;
 pub mod aws;
 pub mod config;
 pub mod domain;
+/// GCP Secret Manager `SecretProvider` adapter (ADR-0024), a loader over the shared [`secret`]
+/// caching core. Opt-in: enable the `gcp` feature so the default build pulls in neither the GCP SDK
+/// nor an async IO driver, mirroring the `aws`/`vault` features. The Rust vertical uses `gcloud-sdk`
+/// (not the official google-cloud-rust crate) for a ring-only TLS tree; see the module docs and
+/// ADR-0024.
+#[cfg(feature = "gcp")]
+pub mod gcp;
 /// Generated gRPC stubs for the `keel.reference.v1` contract (ADR-0022). Opt-in:
 /// enable the `grpc` feature (mirrors the Python `keel-core[grpc]` extra) so the
 /// default build needs neither prost nor tonic.
@@ -38,8 +45,8 @@ pub mod redact;
 /// Shared caching core for the production `SecretProvider` backends (ADR-0024): the cache,
 /// background refresh, fail-closed construction, no-leak serving, and the fail-closed
 /// `secret_provider_from_env` selector, parameterized by a per-backend loader. Compiled only
-/// when a production backend feature (`vault` or `aws`) is enabled.
-#[cfg(any(feature = "vault", feature = "aws"))]
+/// when a production backend feature (`vault`, `aws`, or `gcp`) is enabled.
+#[cfg(any(feature = "vault", feature = "aws", feature = "gcp"))]
 pub mod secret;
 pub mod telemetry;
 pub mod testkit;

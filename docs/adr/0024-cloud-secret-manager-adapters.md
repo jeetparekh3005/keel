@@ -33,6 +33,19 @@ Secrets Manager or GCP Secret Manager through the same port with identical seman
    cloud.google.com/go/secretmanager (Go) / the google-cloud Rust secret-manager crate /
    `com.google.cloud:google-cloud-secretmanager` (Java) / `@google-cloud/secret-manager`.
 
+   **Rust GCP SDK exception (ring-only TLS).** The Rust vertical uses the community `gcloud-sdk`
+   crate instead of the official google-cloud-rust `google-cloud-secretmanager-v1`. That official
+   crate's `google-cloud-auth` hard-wires `aws-lc-rs` (a C/assembly crypto build) and `reqwest`'s
+   `native-tls` (openssl on Linux) for its rustls provider, with no `ring` path - which violates
+   keel's established rustls/ring, no-openssl/no-aws-lc posture (the `aws` adapter and the gRPC
+   stack are both ring-only). `gcloud-sdk`, built with no bundled TLS feature plus
+   `reqwest/rustls-no-provider`, `tonic/tls-ring`, and `jwt-rust-crypto`, resolves to a ring-only
+   tree (no `aws-lc-sys`, no `openssl`, no `native-tls`), verified by `cargo tree` and enforced by
+   a `deny.toml` bans list. Because `rustls-no-provider` ships no default crypto provider, the
+   adapter installs the process-global `ring` provider once at construction. This is the only SDK
+   deviation from decision 1; semantics (ADC, AccessSecretVersion, JSON field map, fail-closed,
+   no-leak) are identical to the other verticals.
+
 2. **One secret = a JSON field map.** A single configured secret holds a JSON object; `get(name)`
    returns field `name`, coerced per ADR-0023 (scalars only; object/array/null absent). Parity with
    the port and the Vault field-map model, and cheap (cloud providers bill per secret).

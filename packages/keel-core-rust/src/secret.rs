@@ -14,8 +14,8 @@
 //! loaders leave those at their defaults because the SDK refreshes credentials internally and the
 //! core simply re-invokes the loader every TTL.
 //!
-//! This module compiles only when a production backend feature is on (`vault` or `aws`); the
-//! default core build stays env-only.
+//! This module compiles only when a production backend feature is on (`vault`, `aws`, or `gcp`);
+//! the default core build stays env-only.
 
 use std::collections::HashMap;
 use std::sync::mpsc;
@@ -247,11 +247,22 @@ fn refresh_loop<L: SecretLoader>(
         let wait = wake_at.saturating_duration_since(now);
         let stopping = {
             let Ok(guard) = lock.lock() else { break };
-            let (guard, _timeout) = match cvar.wait_timeout(guard, wait) {
-                Ok(result) => result,
-                Err(_) => break,
-            };
-            *guard
+            // Check the stop flag BEFORE waiting. `Drop` sets it under this same lock and then
+            // notifies; a notify that lands between the previous iteration releasing the lock and
+            // this `wait_timeout` would otherwise be lost, and the thread would sleep the full
+            // `wait` (up to the TTL) before noticing the shutdown - a lost-wakeup that stalls the
+            // Drop-time join for a whole TTL. Testing the flag while holding the lock closes that
+            // window: either we observe the stop here, or we are already parked in `wait_timeout`
+            // when Drop takes the lock and are woken by its notify.
+            if *guard {
+                true
+            } else {
+                let (guard, _timeout) = match cvar.wait_timeout(guard, wait) {
+                    Ok(result) => result,
+                    Err(_) => break,
+                };
+                *guard
+            }
         };
         if stopping {
             break;
@@ -286,7 +297,7 @@ fn refresh_loop<L: SecretLoader>(
 pub enum SecretProviderError {
     /// More than one backend gating variable is set - an ambiguous misconfiguration.
     #[error(
-        "multiple secret backends configured: set at most one of KEEL_VAULT_ADDR, KEEL_AWS_SECRET_ID"
+        "multiple secret backends configured: set at most one of KEEL_VAULT_ADDR, KEEL_AWS_SECRET_ID, KEEL_GCP_SECRET"
     )]
     MultipleBackends,
     /// A backend's gating variable is set but that backend's cargo feature is not compiled into
@@ -305,12 +316,17 @@ pub enum SecretProviderError {
     #[cfg(feature = "aws")]
     #[error(transparent)]
     Aws(#[from] crate::aws::AwsError),
+    /// The GCP Secret Manager backend failed to construct (bad config, auth failure, unreadable
+    /// or malformed secret).
+    #[cfg(feature = "gcp")]
+    #[error(transparent)]
+    Gcp(#[from] crate::gcp::GcpError),
 }
 
 /// Select the production secret provider fail-closed (ADR-0024): at most one of `KEEL_VAULT_ADDR`
-/// (OpenBao) or `KEEL_AWS_SECRET_ID` (AWS Secrets Manager) may be set; more than one is an
-/// ambiguous misconfiguration that fails. None set yields the dev [`EnvSecretProvider`]. Boxed as
-/// `Arc<dyn SecretProvider>` for the service composition root.
+/// (OpenBao), `KEEL_AWS_SECRET_ID` (AWS Secrets Manager), or `KEEL_GCP_SECRET` (GCP Secret Manager)
+/// may be set; more than one is an ambiguous misconfiguration that fails. None set yields the dev
+/// [`EnvSecretProvider`]. Boxed as `Arc<dyn SecretProvider>` for the service composition root.
 ///
 /// # Errors
 /// Returns [`SecretProviderError`] when more than one backend is configured, when a configured
@@ -320,8 +336,14 @@ pub enum SecretProviderError {
 pub fn secret_provider_from_env() -> Result<Arc<dyn SecretProvider>, SecretProviderError> {
     let vault_set = env_var("KEEL_VAULT_ADDR").is_some();
     let aws_set = env_var("KEEL_AWS_SECRET_ID").is_some();
+    let gcp_set = env_var("KEEL_GCP_SECRET").is_some();
 
-    if [vault_set, aws_set].into_iter().filter(|set| *set).count() > 1 {
+    if [vault_set, aws_set, gcp_set]
+        .into_iter()
+        .filter(|set| *set)
+        .count()
+        > 1
+    {
         return Err(SecretProviderError::MultipleBackends);
     }
 
@@ -348,6 +370,19 @@ pub fn secret_provider_from_env() -> Result<Arc<dyn SecretProvider>, SecretProvi
             return Err(SecretProviderError::BackendNotCompiled(
                 "KEEL_AWS_SECRET_ID",
             ));
+        }
+    }
+
+    if gcp_set {
+        #[cfg(feature = "gcp")]
+        {
+            return Ok(Arc::new(
+                crate::gcp::GcpSecretManagerSecretProvider::from_env()?,
+            ));
+        }
+        #[cfg(not(feature = "gcp"))]
+        {
+            return Err(SecretProviderError::BackendNotCompiled("KEEL_GCP_SECRET"));
         }
     }
 
