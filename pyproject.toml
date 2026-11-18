@@ -44,7 +44,7 @@ dev = [
     "psycopg[binary]>=3.3.9",   # sync Postgres driver for Alembic migrations in CI
     "nats-py>=2.6",           # keel-core[nats] extra - installed for the NATS integration test
     "boto3>=1.42",            # keel-core[aws] extra - installed for the AWS Secrets Manager tests
-    "boto3-stubs[secretsmanager]>=1.42",  # type stubs for the AWS adapter (mypy strict)
+    "boto3-stubs[secretsmanager]>=1.44.3",  # type stubs for the AWS adapter (mypy strict)
     "google-cloud-secret-manager>=2.20",  # keel-core[gcp] extra - GCP Secret Manager tests + types
     "google-api-core>=2.20",  # NotFound + bounded Retry imported by the GCP adapter
 ]
