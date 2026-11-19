@@ -298,3 +298,17 @@ jobs:
         # crate metadata from Trivy's image scan, so this is where Rust advisories are
         # caught. Fails the build on any known-vulnerable dependency.
         run: cargo audit
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@4a76afe23f9e08d2d9550fb56e556444e8611d21 # v2.90.4
+        with:
+          tool: cargo-deny
+      - name: Enforce the ring-only TLS posture (cargo deny check bans, blocking)
+        # deny.toml bans the C/assembly-crypto and native-tls crates (aws-lc-sys, aws-lc-rs,
+        # openssl-sys, native-tls) to hold the Rust vertical's ring-backed rustls posture (ADR-0024).
+        # The ban list is only a comment until something checks it: without this step a future
+        # dependency bump could flip a TLS feature and silently reintroduce a banned crate while CI
+        # stayed green ("wired is not working"). deny.toml sets `all-features = true`, so the check
+        # considers the opt-in aws/gcp/grpc/nats/rabbitmq/kafka features where such a crate would
+        # otherwise hide. Scoped to `check bans` so it does not duplicate the advisory/license surface
+        # cargo-audit above already covers.
+        run: cargo deny check bans
