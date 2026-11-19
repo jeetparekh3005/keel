@@ -29,6 +29,13 @@ import (
 // incremented each time a failed record is re-produced to the retry topic.
 const deliveryCountHeader = "keel-delivery-count"
 
+// subjectHeader carries the original subject verbatim. The subject-to-topic mapping is a lossy
+// sanitization (keel.test.events -> keel_test_events), so the topic name cannot reconstruct it;
+// Publish stamps the pre-sanitization subject here and dispatch reports it back, so the delivered
+// subject equals the published one (NATS/RabbitMQ get this for free because their subject IS the
+// routing key).
+const subjectHeader = "keel-subject"
+
 // retrySuffix and dlqSuffix name the retry and dead-letter topics derived from a base topic.
 const (
 	retrySuffix = ".retry"
@@ -135,13 +142,16 @@ func (b *KafkaMessageBus) Connect(ctx context.Context) error {
 	return nil
 }
 
-// Publish produces payload to the topic subject maps to, injecting the current trace context into the
-// record headers so a subscriber can continue the same trace.
+// Publish produces payload to the topic subject maps to, stamping the original subject into the
+// keel-subject header (the topic is a lossy sanitization of it) and injecting the current trace
+// context into the record headers so a subscriber can continue the same trace and see the subject
+// verbatim.
 func (b *KafkaMessageBus) Publish(ctx context.Context, subject string, payload []byte, headers map[string]string) error {
-	hdrs := make([]kgo.RecordHeader, 0, len(headers)+1)
+	hdrs := make([]kgo.RecordHeader, 0, len(headers)+2)
 	for k, v := range headers {
 		hdrs = append(hdrs, kgo.RecordHeader{Key: k, Value: []byte(v)})
 	}
+	hdrs = append(hdrs, kgo.RecordHeader{Key: subjectHeader, Value: []byte(subject)})
 	carrier := kafkaHeaderCarrier{headers: &hdrs}
 	otel.GetTextMapPropagator().Inject(ctx, carrier)
 	rec := &kgo.Record{Topic: topicName(subject), Value: payload, Headers: hdrs}
@@ -207,9 +217,16 @@ func (b *KafkaMessageBus) pollLoop(ctx context.Context) {
 func (b *KafkaMessageBus) dispatch(parent context.Context, handler ports.MessageHandler, rec *kgo.Record) {
 	hdrs := rec.Headers
 	ctx := otel.GetTextMapPropagator().Extract(parent, kafkaHeaderCarrier{headers: &hdrs})
+	// base is the sanitized topic (retry suffix stripped) and drives the retry/dlq derivation; the
+	// subject reported to the handler is the original one carried in keel-subject, falling back to
+	// the topic when the header is absent (e.g. a record produced outside this adapter).
 	base := strings.TrimSuffix(rec.Topic, retrySuffix)
+	subject := base
+	if s := kafkaHeaderString(rec.Headers, subjectHeader); s != "" {
+		subject = s
+	}
 	inbound := ports.InboundMessage{
-		Subject: base,
+		Subject: subject,
 		Payload: rec.Value,
 		Headers: flattenKafkaHeaders(rec.Headers),
 	}
@@ -218,10 +235,10 @@ func (b *KafkaMessageBus) dispatch(parent context.Context, handler ports.Message
 	numDelivered := kafkaDeliveryCount(rec.Headers) + 1
 	switch disposition(err == nil, numDelivered, b.cfg.MaxDeliver) {
 	case actionAck:
-		b.control(func() error { return b.sink.commit(ctx, rec) }, "commit", base)
+		b.control(func() error { return b.sink.commit(ctx, rec) }, "commit", subject)
 	case actionRequeue:
 		b.cfg.Logger.Warn("message handler failed; scheduling redelivery",
-			"subject", base,
+			"subject", subject,
 			"retry_topic", base+retrySuffix,
 			"num_delivered", numDelivered,
 			"error", err,
@@ -231,14 +248,14 @@ func (b *KafkaMessageBus) dispatch(parent context.Context, handler ports.Message
 			// Preserve: the record has no home on the retry topic, so leave the offset uncommitted
 			// and let the consumer group redeliver it rather than silently drop it.
 			b.cfg.Logger.Error("retry produce failed; offset left uncommitted for redelivery",
-				"subject", base, "retry_topic", base+retrySuffix, "error", prodErr)
+				"subject", subject, "retry_topic", base+retrySuffix, "error", prodErr)
 			return
 		}
-		b.control(func() error { return b.sink.commit(ctx, rec) }, "commit", base)
+		b.control(func() error { return b.sink.commit(ctx, rec) }, "commit", subject)
 	case actionDeadLetter:
 		dlq := b.dlqTopic(base)
 		b.cfg.Logger.Error("message terminated after exhausting delivery attempts",
-			"subject", base,
+			"subject", subject,
 			"dlq_topic", dlq,
 			"num_delivered", numDelivered,
 			"max_deliver", b.cfg.MaxDeliver,
@@ -249,11 +266,11 @@ func (b *KafkaMessageBus) dispatch(parent context.Context, handler ports.Message
 			// Preserve: the record has no home on the dead-letter topic, so leave the offset
 			// uncommitted and let it be redelivered rather than lost.
 			b.cfg.Logger.Error("dead-letter produce failed; offset left uncommitted for redelivery",
-				"subject", base, "dlq_topic", dlq, "error", prodErr)
+				"subject", subject, "dlq_topic", dlq, "error", prodErr)
 			return
 		}
 		// Commit the original only after the record has a home on the dead-letter topic.
-		b.control(func() error { return b.sink.commit(ctx, rec) }, "commit", base)
+		b.control(func() error { return b.sink.commit(ctx, rec) }, "commit", subject)
 	}
 }
 
@@ -321,6 +338,16 @@ func deadLetterRecord(rec *kgo.Record, dlq string) *kgo.Record {
 // which the .retry/.dlq suffixes append a legal dot.
 func topicName(subject string) string {
 	return durableUnsafe.ReplaceAllString(subject, "_")
+}
+
+// kafkaHeaderString returns the value of the first record header with key, or "" when it is absent.
+func kafkaHeaderString(headers []kgo.RecordHeader, key string) string {
+	for _, h := range headers {
+		if h.Key == key {
+			return string(h.Value)
+		}
+	}
+	return ""
 }
 
 // kafkaDeliveryCount reads the redelivery count from the keel-delivery-count header, returning 0 when

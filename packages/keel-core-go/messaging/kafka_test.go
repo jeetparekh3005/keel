@@ -251,6 +251,77 @@ func TestKafkaRetriedRecordRoutesToBaseHandlerSubject(t *testing.T) {
 	}
 }
 
+// TestKafkaDispatchReportsOriginalSubjectFromHeader guards the cross-vertical regression: the
+// subject-to-topic mapping is lossy (keel.test.events -> keel_test_events), so dispatch must report
+// the original subject carried in keel-subject, not the sanitized topic. It also checks the fallback
+// to the topic when the header is absent (a record produced outside this adapter).
+func TestKafkaDispatchReportsOriginalSubjectFromHeader(t *testing.T) {
+	bus := kafkaBusWithLog(&bytes.Buffer{}, &fakeSink{})
+
+	var seen string
+	capture := func(_ context.Context, m ports.InboundMessage) error { seen = m.Subject; return nil }
+
+	// Header present: the original dotted subject is reported verbatim despite the underscored topic.
+	withHeader := &kgo.Record{
+		Topic:   "keel_test_events",
+		Value:   []byte("x"),
+		Headers: []kgo.RecordHeader{{Key: subjectHeader, Value: []byte("keel.test.events")}},
+	}
+	bus.dispatch(context.Background(), capture, withHeader)
+	if seen != "keel.test.events" {
+		t.Errorf("with keel-subject header: handler saw %q, want original %q", seen, "keel.test.events")
+	}
+
+	// Header absent: fall back to the topic name so an externally produced record still has a subject.
+	bus.dispatch(context.Background(), capture, &kgo.Record{Topic: "keel_other", Value: []byte("x")})
+	if seen != "keel_other" {
+		t.Errorf("without keel-subject header: handler saw %q, want topic fallback %q", seen, "keel_other")
+	}
+}
+
+// TestKafkaPublishStampsOriginalSubjectHeader proves the producing half of the round-trip: Publish
+// sanitizes the subject into the topic AND stamps the original into keel-subject so the consumer can
+// recover it.
+func TestKafkaPublishStampsOriginalSubjectHeader(t *testing.T) {
+	sink := &fakeSink{}
+	bus := kafkaBusWithLog(&bytes.Buffer{}, sink)
+	if err := bus.Publish(context.Background(), "keel.test.events", []byte("x"), nil); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	rec := sink.lastProducedTo("")
+	if rec == nil {
+		t.Fatal("publish produced no record")
+	}
+	if rec.Topic != "keel_test_events" {
+		t.Errorf("topic = %q, want sanitized %q", rec.Topic, "keel_test_events")
+	}
+	if got := kafkaHeaderString(rec.Headers, subjectHeader); got != "keel.test.events" {
+		t.Errorf("keel-subject header = %q, want original %q", got, "keel.test.events")
+	}
+}
+
+// TestKafkaSubjectHeaderSurvivesRetryAndDeadLetter proves the original subject is carried onto both
+// the retry and dead-letter records, so a redelivered or dead-lettered record still reports it.
+func TestKafkaSubjectHeaderSurvivesRetryAndDeadLetter(t *testing.T) {
+	withSubject := func(numDelivered int) *kgo.Record {
+		rec := newKafkaRecord(numDelivered)
+		rec.Headers = append(rec.Headers, kgo.RecordHeader{Key: subjectHeader, Value: []byte("keel.test.events")})
+		return rec
+	}
+
+	retrySink := &fakeSink{}
+	kafkaBusWithLog(&bytes.Buffer{}, retrySink).dispatch(context.Background(), failHandler, withSubject(1))
+	if got := kafkaHeaderString(retrySink.lastProducedTo(retrySuffix).Headers, subjectHeader); got != "keel.test.events" {
+		t.Errorf("retry record keel-subject = %q, want %q", got, "keel.test.events")
+	}
+
+	dlqSink := &fakeSink{}
+	kafkaBusWithLog(&bytes.Buffer{}, dlqSink).dispatch(context.Background(), failHandler, withSubject(5))
+	if got := kafkaHeaderString(dlqSink.lastProducedTo(dlqSuffix).Headers, subjectHeader); got != "keel.test.events" {
+		t.Errorf("dead-letter record keel-subject = %q, want %q", got, "keel.test.events")
+	}
+}
+
 func TestKafkaDLQTopicOverride(t *testing.T) {
 	sink := &fakeSink{}
 	logger := slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil))
