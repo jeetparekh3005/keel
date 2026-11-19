@@ -41,11 +41,13 @@ pub mod jwks;
 #[cfg(feature = "kafka")]
 pub mod kafka;
 pub mod logging;
-/// The `MessageBus` port and the NATS JetStream adapter. The shared port (traits,
-/// `InboundMessage`, `MessagingError`, the pure `disposition` policy, trace-context helpers)
-/// compiles under any broker feature; the JetStream adapter is `nats`-only (mirrors the
-/// Python `keel-core[nats]` extra) so the default build needs no broker.
-#[cfg(any(feature = "nats", feature = "rabbitmq", feature = "kafka"))]
+/// The `MessageBus` port, the in-memory dev bus, and the fail-closed `message_bus_from_env`
+/// selector. The shared port (traits, `InboundMessage`, `MessagingError`, the pure `disposition`
+/// policy, trace-context helpers), the in-memory dev default, and the selector are always
+/// compiled so a broker-free service still resolves a working bus (ADR-0025 decision 3); each
+/// broker adapter (NATS JetStream here, Kafka in [`kafka`], RabbitMQ in [`rabbitmq`]) is gated
+/// behind its own feature, mirroring the Python `keel-core[nats|kafka|rabbitmq]` extras so the
+/// default build needs no broker.
 pub mod messaging;
 pub mod persistence;
 pub mod ports;
