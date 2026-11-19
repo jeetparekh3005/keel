@@ -2,6 +2,7 @@ package io.keel.core.adapters.messaging;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
@@ -24,6 +25,8 @@ import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator;
 import io.opentelemetry.context.propagation.ContextPropagators;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
@@ -168,5 +171,51 @@ class RabbitMqMessageBusDispatchTest {
         traceId, seenTraceId.get(), "the handler must run within the publisher's trace context");
     assertEquals("00-" + traceId + "-b7ad6b7169203331-01", seenHeaders.get().get("traceparent"));
     assertFalse(seenHeaders.get().isEmpty());
+  }
+
+  // Pure disposition policy (parity with the other four verticals): ack on success regardless of
+  // count; redeliver on failure under the cap; dead-letter at or over it. Unit-tested without a
+  // broker.
+
+  @Test
+  void dispositionAcksOnSuccessRegardlessOfCount() {
+    assertEquals(RabbitMqMessageBus.Disposition.ACK, RabbitMqMessageBus.disposition(true, 1, 5));
+    assertEquals(RabbitMqMessageBus.Disposition.ACK, RabbitMqMessageBus.disposition(true, 99, 5));
+  }
+
+  @Test
+  void dispositionRedeliversOnFailureBelowMaxDeliver() {
+    assertEquals(
+        RabbitMqMessageBus.Disposition.REDELIVER, RabbitMqMessageBus.disposition(false, 1, 5));
+    assertEquals(
+        RabbitMqMessageBus.Disposition.REDELIVER, RabbitMqMessageBus.disposition(false, 4, 5));
+  }
+
+  @Test
+  void dispositionDeadLettersAtTheCap() {
+    assertEquals(
+        RabbitMqMessageBus.Disposition.DEAD_LETTER, RabbitMqMessageBus.disposition(false, 5, 5));
+    assertEquals(
+        RabbitMqMessageBus.Disposition.DEAD_LETTER, RabbitMqMessageBus.disposition(false, 6, 5));
+  }
+
+  /**
+   * A connect failure must never echo the broker URL (which carries {@code user:password}) into the
+   * exception message or its chained stack trace, so the credential cannot land in the application
+   * log. Uses a refused local port so connect fails deterministically without a broker.
+   */
+  @Test
+  void connectFailureDoesNotLeakUrlCredentials() {
+    String url = "amqp://leakuser:leaksecret@127.0.0.1:1/leakvhost";
+    RabbitMqMessageBus bus = new RabbitMqMessageBus(url, "keel", "keel", "keel.dlx", OTEL);
+
+    IllegalStateException thrown = assertThrows(IllegalStateException.class, bus::connect);
+
+    StringWriter trace = new StringWriter();
+    thrown.printStackTrace(new PrintWriter(trace));
+    String rendered = thrown.getMessage() + "\n" + trace;
+    assertFalse(rendered.contains("amqp://"), "connect error must not echo the broker URL scheme");
+    assertFalse(rendered.contains("leakuser"), "connect error must not echo the broker username");
+    assertFalse(rendered.contains("leaksecret"), "connect error must not echo the broker password");
   }
 }

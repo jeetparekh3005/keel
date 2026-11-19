@@ -140,10 +140,12 @@ public final class NatsMessageBus implements MessageBus {
         management.updateStream(config);
       }
     } catch (IOException | JetStreamApiException e) {
-      throw new IllegalStateException("failed to connect to NATS JetStream at " + url, e);
+      // The URL can carry credentials (nats://user:pass@host); never echo it into an exception that
+      // is logged with the stack trace. The cause is chained for diagnosis without the secret.
+      throw new IllegalStateException("failed to connect to NATS JetStream", e);
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
-      throw new IllegalStateException("interrupted connecting to NATS JetStream at " + url, e);
+      throw new IllegalStateException("interrupted connecting to NATS JetStream", e);
     }
   }
 

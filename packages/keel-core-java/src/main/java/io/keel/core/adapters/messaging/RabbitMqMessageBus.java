@@ -22,6 +22,7 @@ import java.net.URISyntaxException;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeoutException;
 import org.slf4j.Logger;
@@ -77,6 +78,7 @@ public final class RabbitMqMessageBus implements MessageBus {
   private final String exchange;
   private final String queue;
   private final String deadLetterExchange;
+  private final List<String> subjects;
   private final TextMapPropagator propagator;
   private final int maxDeliver;
   private final int prefetch;
@@ -93,6 +95,7 @@ public final class RabbitMqMessageBus implements MessageBus {
    * @param exchange the durable topic exchange to publish to and bind the queue against
    * @param queue the durable quorum queue that captures the subscribed subjects
    * @param deadLetterExchange the exchange a message is published to once the delivery cap is hit
+   * @param subjects the default subjects (routing keys) the queue is bound to at connect
    * @param openTelemetry source of the W3C text-map propagator used to carry trace context
    * @param maxDeliver redelivery cap before a message is dead-lettered
    * @param prefetch the consumer prefetch (basic.qos) bound on unacked in-flight messages
@@ -102,6 +105,7 @@ public final class RabbitMqMessageBus implements MessageBus {
       String exchange,
       String queue,
       String deadLetterExchange,
+      List<String> subjects,
       OpenTelemetry openTelemetry,
       int maxDeliver,
       int prefetch) {
@@ -109,6 +113,7 @@ public final class RabbitMqMessageBus implements MessageBus {
     this.exchange = exchange;
     this.queue = queue;
     this.deadLetterExchange = deadLetterExchange;
+    this.subjects = List.copyOf(subjects);
     this.propagator = openTelemetry.getPropagators().getTextMapPropagator();
     this.maxDeliver = maxDeliver;
     this.prefetch = prefetch;
@@ -120,15 +125,31 @@ public final class RabbitMqMessageBus implements MessageBus {
       String exchange,
       String queue,
       String deadLetterExchange,
+      List<String> subjects,
       OpenTelemetry openTelemetry) {
-    this(url, exchange, queue, deadLetterExchange, openTelemetry, 5, 256);
+    this(url, exchange, queue, deadLetterExchange, subjects, openTelemetry, 5, 256);
   }
 
   /**
-   * Connect and ensure the exchange, dead-letter exchange, and durable queue exist. Idempotent and
-   * synchronized: {@code publish}/{@code subscribe} call it on first use, so the bean does not open
-   * a socket merely by being wired into a context (the application still starts when the broker is
-   * unreachable; the failure surfaces on first use, matching how the NATS bus connects lazily).
+   * Configure with the default subjects ({@code keel.#}) and delivery policy. Retained so callers
+   * that do not override the subject binding (and the broker-free dispatch tests) stay terse.
+   */
+  public RabbitMqMessageBus(
+      String url,
+      String exchange,
+      String queue,
+      String deadLetterExchange,
+      OpenTelemetry openTelemetry) {
+    this(url, exchange, queue, deadLetterExchange, List.of("keel.#"), openTelemetry, 5, 256);
+  }
+
+  /**
+   * Connect and ensure the exchange, dead-letter exchange, and durable queue exist, binding the
+   * configured default subjects (default {@code keel.#}) so the queue captures the contract's
+   * subjects at connect, parallel to the other verticals. Idempotent and synchronized: {@code
+   * publish}/{@code subscribe} call it on first use, so the bean does not open a socket merely by
+   * being wired into a context (the application still starts when the broker is unreachable; the
+   * failure surfaces on first use, matching how the NATS bus connects lazily).
    */
   public synchronized void connect() {
     if (connection != null) {
@@ -146,12 +167,19 @@ public final class RabbitMqMessageBus implements MessageBus {
       // non-exclusive, non-auto-delete as quorum queues require.
       consumeChannel.queueDeclare(queue, true, false, false, Map.of("x-queue-type", "quorum"));
       consumeChannel.basicQos(prefetch);
+      // Bind the configured default subjects (default keel.#) at connect, parallel to the other
+      // verticals; subscribe still binds its specific subject on top.
+      for (String subject : subjects) {
+        consumeChannel.queueBind(queue, exchange, subject);
+      }
     } catch (URISyntaxException | NoSuchAlgorithmException | KeyManagementException e) {
-      throw new IllegalStateException("invalid RabbitMQ URL " + url, e);
+      // The URL carries credentials (amqp://user:pass@host); never echo it into an exception that
+      // Spring logs with the stack trace. The cause is chained for diagnosis without the secret.
+      throw new IllegalStateException("invalid RabbitMQ URL", e);
     } catch (IOException e) {
-      throw new IllegalStateException("failed to connect to RabbitMQ at " + url, e);
+      throw new IllegalStateException("failed to connect to RabbitMQ", e);
     } catch (TimeoutException e) {
-      throw new IllegalStateException("timed out connecting to RabbitMQ at " + url, e);
+      throw new IllegalStateException("timed out connecting to RabbitMQ", e);
     }
   }
 
@@ -205,16 +233,33 @@ public final class RabbitMqMessageBus implements MessageBus {
     Map<String, String> headers = toMap(properties == null ? null : properties.getHeaders());
     InboundMessage inbound = new InboundMessage(subject, delivery.getBody(), headers);
     Context extracted = propagator.extract(Context.current(), headers, GETTER);
-    try (Scope ignored = extracted.makeCurrent()) {
+
+    boolean ok;
+    Exception handlerFailure = null;
+    try (Scope scope = extracted.makeCurrent()) {
       handler.handle(inbound);
-      control(() -> channel.basicAck(deliveryTag, false), "ack", subject);
-    } catch (Exception handlerFailure) {
-      // Redeliver until the cap, then dead-letter. Always log the control-plane decision: a
-      // dead-letter drops the message from redelivery, which must never be silent. The handler
-      // still
-      // owns its own domain error logging/tracing.
-      long numDelivered = deliveryCount(properties);
-      if (numDelivered >= maxDeliver) {
+      ok = true;
+    } catch (Exception e) {
+      // One bad handler must not kill the subscription, so every exception is caught and turned
+      // into a control-plane decision. The handler still owns its own domain error logging/tracing.
+      ok = false;
+      handlerFailure = e;
+    }
+
+    long numDelivered = deliveryCount(properties);
+    switch (disposition(ok, (int) numDelivered, maxDeliver)) {
+      case ACK -> control(() -> channel.basicAck(deliveryTag, false), "ack", subject);
+      case REDELIVER -> {
+        log.warn(
+            "message handler failed; scheduling redelivery: subject={} numDelivered={}",
+            subject,
+            numDelivered,
+            handlerFailure);
+        control(() -> channel.basicNack(deliveryTag, false, true), "nack", subject);
+      }
+      case DEAD_LETTER -> {
+        // Always log the control-plane decision: a dead-letter drops the message from redelivery,
+        // which must never be silent.
         log.error(
             "message terminated after exhausting delivery attempts: subject={} dlx={} numDelivered={} maxDeliver={}",
             subject,
@@ -229,15 +274,31 @@ public final class RabbitMqMessageBus implements MessageBus {
             },
             "dead-letter",
             subject);
-      } else {
-        log.warn(
-            "message handler failed; scheduling redelivery: subject={} numDelivered={}",
-            subject,
-            numDelivered,
-            handlerFailure);
-        control(() -> channel.basicNack(deliveryTag, false, true), "nack", subject);
       }
     }
+  }
+
+  /** The fate of a delivered message, decided purely from the handler outcome + delivery count. */
+  enum Disposition {
+    ACK,
+    REDELIVER,
+    DEAD_LETTER
+  }
+
+  /**
+   * Decide a message's fate from the handler outcome and delivery count. Pure, so the
+   * poison-handling policy is unit-testable without a broker (parity with the other four
+   * verticals): ack on success regardless of count; redeliver (nack) on failure under the cap;
+   * dead-letter at or over it.
+   */
+  static Disposition disposition(boolean ok, int numDelivered, int maxDeliver) {
+    if (ok) {
+      return Disposition.ACK;
+    }
+    if (numDelivered >= maxDeliver) {
+      return Disposition.DEAD_LETTER;
+    }
+    return Disposition.REDELIVER;
   }
 
   @Override
