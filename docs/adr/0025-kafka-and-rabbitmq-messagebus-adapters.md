@@ -75,12 +75,28 @@ decision is unit-tested without a broker.
   (`<topic>.dlq`, overridable via `KEEL_KAFKA_DLQ_TOPIC`) and committed. W3C trace context rides in
   record headers.
 - **RabbitMQ.** A **topic exchange** (`KEEL_RABBITMQ_EXCHANGE`, default `keel`) with `subject` as the
-  routing key; a durable **queue** (`KEEL_RABBITMQ_QUEUE`, default `keel`) bound to the configured
-  subjects, consumed with manual ack. Handler success -> `basic.ack`; below the cap ->
+  routing key; a durable **quorum queue** (`KEEL_RABBITMQ_QUEUE`, default `keel`) bound to the
+  configured subjects, consumed with manual ack. Handler success -> `basic.ack`; below the cap ->
   `basic.nack(requeue=true)`; at the cap -> publish to a **dead-letter exchange**
-  (`KEEL_RABBITMQ_DLX`, default `keel.dlx`) and `basic.ack` the original. Delivery count is read from
-  the AMQP `x-death`/`x-delivery-count` headers (quorum queues expose `x-delivery-count`), with a
-  `keel-delivery-count` header as the portable fallback. W3C trace context rides in AMQP headers.
+  (`KEEL_RABBITMQ_DLX`, default `keel.dlx`) and `basic.ack` the original. W3C trace context rides in
+  AMQP headers.
+
+  Two clarifications made normative after the cross-vertical review (both were divergences that a
+  classic-queue or ack-and-drop implementation got wrong):
+
+  - **The queue MUST be a quorum queue** (`x-queue-type: quorum`). The delivery cap depends on the
+    AMQP `x-delivery-count` header, which **only quorum queues populate**. The 1-based delivery
+    number is `x-delivery-count + 1` (the header is 0 on first delivery). A classic queue never
+    emits the header, so the count stays at the floor, the disposition never reaches the cap, and a
+    poison message is `nack(requeue)`'d forever instead of dead-lettering - an infinite-requeue
+    head-of-line DoS. A `keel-delivery-count` header is a portable fallback only and is latent on a
+    quorum queue; it must never be the sole counter.
+  - **On a dead-letter (DLX) publish failure, PRESERVE the message, never ack-and-drop.** If the
+    publish to the dead-letter exchange itself fails at the cap, the adapter `nack(requeue=true)`s
+    (does not ack), so the message is retried rather than lost. Dead-lettering is a durability
+    operation; acking after a failed DLX publish would convert it into silent data loss. The requeue
+    self-heals when the DLX recovers, and a permanently-broken DLX is a loud, alertable
+    misconfiguration (the failure is logged every attempt) rather than a quiet lost message.
 
 ### 3. Broker selection (fail-closed, at most one)
 
