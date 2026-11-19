@@ -70,10 +70,11 @@ async fn publish_subscribe_roundtrip_delivers_payload_headers_and_propagates_tra
     };
     let _guard = install_tracer();
 
-    // A unique, already-sanitized (no dots) topic per run so repeated runs never share a group
-    // cursor or collide on topology.
+    // A unique subject WITH dots per run so the subject -> topic sanitization is lossy
+    // (keel.test.<uid> -> topic keel_test_<uid>): the only way the delivered subject can equal the
+    // published subject is the keel-subject header, so this asserts the cross-vertical fix is wired.
     let uid = uuid::Uuid::new_v4().simple().to_string();
-    let subject = format!("keeltest{uid}");
+    let subject = format!("keel.test.{uid}");
     let mut config = KafkaConfig::new(brokers);
     config.topics = vec![subject.clone()];
     config.group_id = format!("keeltestgroup{uid}");
@@ -82,16 +83,19 @@ async fn publish_subscribe_roundtrip_delivers_payload_headers_and_propagates_tra
         .await
         .expect("connect to Kafka and subscribe the configured topics");
 
-    // The consumer hands back (payload, trace_id, app-header value) so one assertion proves the
-    // body, the propagated trace, and that app headers survive the round-trip.
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<(Vec<u8>, String, Option<String>)>(8);
+    // The consumer hands back (subject, payload, trace_id, app-header value) so one assertion proves
+    // the delivered subject equals the published subject, the body, the propagated trace, and that
+    // app headers survive the round-trip.
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<(String, Vec<u8>, String, Option<String>)>(8);
     let handler: MessageHandler = Arc::new(move |message: InboundMessage| {
         let tx = tx.clone();
         Box::pin(async move {
             let cx = tracing::Span::current().context();
             let trace_id = cx.span().span_context().trace_id().to_string();
             let app_header = message.headers.get("x-keel-app").cloned();
-            let _ = tx.send((message.payload, trace_id, app_header)).await;
+            let _ = tx
+                .send((message.subject, message.payload, trace_id, app_header))
+                .await;
             Ok(())
         }) as HandlerFuture
     });
@@ -131,9 +135,14 @@ async fn publish_subscribe_roundtrip_delivers_payload_headers_and_propagates_tra
             break;
         }
     }
-    let (received_payload, received_trace_id, received_app_header) =
+    let (received_subject, received_payload, received_trace_id, received_app_header) =
         received.expect("a message should be delivered within the retry window");
 
+    assert_eq!(
+        received_subject, subject,
+        "the delivered subject must equal the published subject, not the lossy sanitized topic \
+         (carried in the keel-subject header)",
+    );
     assert_eq!(
         received_payload, payload,
         "the subscriber must receive the exact published payload",

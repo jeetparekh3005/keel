@@ -48,6 +48,15 @@ use crate::messaging::{
 /// a failed record is re-produced to the retry topic.
 const DELIVERY_COUNT_HEADER: &str = "keel-delivery-count";
 
+/// Carries the ORIGINAL subject a record was published to, before the lossy subject -> topic
+/// sanitization (`keel.test.events` -> topic `keel_test_events`). Unlike NATS/RabbitMQ, where the
+/// subject IS the routing key and round-trips intact, a Kafka topic is a lossy transform of the
+/// subject, so the original must travel explicitly: `publish` stamps it and consume restores
+/// [`InboundMessage::subject`] from it (falling back to the topic name when absent), so the
+/// delivered subject equals the published subject. Like `keel-delivery-count` and the trace
+/// headers, it is carried through verbatim on the re-produce to `<topic>.retry` / `<topic>.dlq`.
+const SUBJECT_HEADER: &str = "keel-subject";
+
 /// Names the retry and dead-letter topics derived from a base topic.
 const RETRY_SUFFIX: &str = ".retry";
 const DLQ_SUFFIX: &str = ".dlq";
@@ -282,6 +291,9 @@ impl MessagePublisher for KafkaMessageBus {
         headers: &HashMap<String, String>,
     ) -> Result<(), MessagingError> {
         let mut carrier = headers.clone();
+        // Carry the original subject explicitly: the topic is a lossy sanitization of it, so without
+        // this header the consumer could only recover the sanitized topic, not the published subject.
+        carrier.insert(SUBJECT_HEADER.to_string(), subject.to_string());
         inject_trace_context(&mut carrier);
         let owned = map_to_headers(&carrier);
         let topic = topic_name(subject);
@@ -345,10 +357,14 @@ async fn dispatch(
     dlq_topic: Option<&str>,
     max_deliver: i64,
 ) {
+    // `base` is the sanitized topic (drives retry/dlq derivation, handler lookup, and commit);
+    // `subject` is the ORIGINAL published subject recovered from the keel-subject header, so the
+    // delivered InboundMessage.subject equals what was published rather than the lossy topic name.
     let base = base_topic(message.topic());
     let headers = headers_to_map(message.headers());
+    let subject = inbound_subject(&headers, &base);
     let inbound = InboundMessage {
-        subject: base.clone(),
+        subject: subject.clone(),
         payload: message.payload().map(<[u8]>::to_vec).unwrap_or_default(),
         headers: headers.clone(),
     };
@@ -358,7 +374,7 @@ async fn dispatch(
     let span = info_span!(
         "messaging.consume",
         messaging.system = "kafka",
-        messaging.destination = %base,
+        messaging.destination = %subject,
     );
     // Errs only when no OpenTelemetry subscriber is installed (export off), the same regime in which
     // spans are no-ops here; ignore rather than log on every record.
@@ -535,6 +551,19 @@ fn resolve_dlq(dlq_topic: Option<&str>, base: &str) -> String {
     }
 }
 
+/// Recover the original published subject from the `keel-subject` header, falling back to the
+/// (sanitized) topic base when the header is absent (e.g. a record published by a non-keel producer).
+/// Pure, so the subject-restoration contract is unit-testable without a broker: because the subject
+/// -> topic transform is lossy, this is what lets the delivered [`InboundMessage::subject`] equal the
+/// published subject rather than the lossy topic name (parity with NATS/RabbitMQ, where the subject
+/// round-trips as the routing key).
+fn inbound_subject(headers: &HashMap<String, String>, topic_base: &str) -> String {
+    headers
+        .get(SUBJECT_HEADER)
+        .cloned()
+        .unwrap_or_else(|| topic_base.to_string())
+}
+
 /// Read the redelivery count from the `keel-delivery-count` header; absent or unparsable -> 0 (the
 /// first delivery). `dispatch` adds one to get the 1-based attempt count.
 fn delivery_count(headers: &HashMap<String, String>) -> i64 {
@@ -634,8 +663,8 @@ impl Injector for MapInjector<'_> {
 #[cfg(test)]
 mod tests {
     use super::{
-        base_topic, commit_after_produce, delivery_count, resolve_dlq, split_csv, topic_name,
-        KafkaConfig, DELIVERY_COUNT_HEADER,
+        base_topic, commit_after_produce, delivery_count, inbound_subject, resolve_dlq, split_csv,
+        topic_name, KafkaConfig, DELIVERY_COUNT_HEADER, SUBJECT_HEADER,
     };
     use crate::messaging::{disposition, extract_trace_context, Disposition};
     use opentelemetry::trace::TraceContextExt;
@@ -691,6 +720,24 @@ mod tests {
         assert_eq!(resolve_dlq(Some("shared.dlq"), "orders"), "shared.dlq");
         // An empty override is ignored (falls back to the per-topic sibling).
         assert_eq!(resolve_dlq(Some(""), "orders"), "orders.dlq");
+    }
+
+    #[test]
+    fn inbound_subject_restores_the_original_subject_from_the_header_else_the_topic() {
+        // The subject -> topic transform is lossy (keel.test.events -> keel_test_events), so the
+        // consume path must restore the ORIGINAL subject from the keel-subject header: the delivered
+        // subject equals the published subject, not the sanitized topic.
+        let mut headers = HashMap::new();
+        headers.insert(SUBJECT_HEADER.to_string(), "keel.test.events".to_string());
+        assert_eq!(
+            inbound_subject(&headers, "keel_test_events"),
+            "keel.test.events",
+        );
+        // Absent header (e.g. a non-keel producer) -> fall back to the topic base.
+        assert_eq!(
+            inbound_subject(&HashMap::new(), "keel_test_events"),
+            "keel_test_events",
+        );
     }
 
     #[test]
