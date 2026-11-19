@@ -80,6 +80,24 @@
         <artifactId>guava</artifactId>
         <version>33.8.0-jre</version>
       </dependency>
+      <!-- Force the patched Kafka compression codecs (ADR-0025). kafka-clients 4.4.0 pulls these
+           transitively into the reference-service image, where Trivy flags HIGH CVEs in the versions
+           it ships: snappy-java 1.1.10.7 (CVE-2026-108106 DoS, CVE-2026-93451 buffer overflow, fixed
+           in 1.1.10.9) and lz4-java 1.11.2 (CVE-2026-106451 arbitrary code execution, fixed in
+           1.11.4). Spring Boot's BOM does not manage either, so a version property override would not
+           take; these direct dependencyManagement pins force the patched versions for every module in
+           the reactor so the image resolves them (the groupId is at.yawk.lz4, the maintained lz4-java
+           fork Kafka 4.x uses, exactly as Trivy reports it). -->
+      <dependency>
+        <groupId>org.xerial.snappy</groupId>
+        <artifactId>snappy-java</artifactId>
+        <version>1.1.10.9</version>
+      </dependency>
+      <dependency>
+        <groupId>at.yawk.lz4</groupId>
+        <artifactId>lz4-java</artifactId>
+        <version>1.11.4</version>
+      </dependency>
     </dependencies>
   </dependencyManagement>
 
