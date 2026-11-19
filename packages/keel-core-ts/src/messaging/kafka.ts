@@ -163,6 +163,7 @@ export class KafkaMessageBus {
   private readonly connectFn: ConnectFn;
   private readonly handlers = new Map<string, MessageHandler>();
   private readonly subscribedTopics = new Set<string>();
+  private kafka: KafkaFactory | undefined;
   private producer: Producer | undefined;
   private consumer: Consumer | undefined;
   private sink: RecordSink | undefined;
@@ -191,26 +192,17 @@ export class KafkaMessageBus {
     const kafka = this.connectFn({ clientId: this.clientId, brokers: this.brokers });
     const producer = kafka.producer();
     const consumer = kafka.consumer({ groupId: this.groupId });
-    const admin = kafka.admin();
     try {
       // Create every topic the adapter touches (base + <topic>.retry + dead-letter) BEFORE the first
-      // produce or fetch, waiting for leader election. A just-auto-created topic may have no elected
-      // leader yet, and kafkajs surfaces that as "This server does not host this topic-partition"
-      // rather than retrying metadata the way franz-go (Go) and aiokafka (Python) do; waitForLeaders
-      // closes that race. createTopics is idempotent - it resolves false when the topics already
-      // exist, which is fine; allowAutoTopicCreation on the client stays on as a fallback.
-      await admin.connect();
-      await admin.createTopics({ topics: this.topicSpecs(), waitForLeaders: true });
+      // produce or fetch, waiting for leader election. See provisionTopics for the rationale.
+      await this.provisionTopics(kafka, this.topicSpecs());
       await producer.connect();
       await consumer.connect();
     } catch {
       // Never echo brokers or SASL credentials into the error/logs - swallow the original.
       throw new Error('kafka connection failed');
-    } finally {
-      // The admin client is only needed for provisioning; drop it (swallow a disconnect error so it
-      // cannot leak broker/SASL detail or mask the thrown error).
-      await admin.disconnect().catch(() => undefined);
     }
+    this.kafka = kafka;
     this.producer = producer;
     this.consumer = consumer;
     this.sink = new KafkaJsSink(producer, consumer);
@@ -221,28 +213,73 @@ export class KafkaMessageBus {
   }
 
   /**
-   * The topics the adapter provisions on connect: for each configured topic, its sanitized base name,
-   * its <topic>.retry sibling, and its dead-letter destination (the KEEL_KAFKA_DLQ_TOPIC override when
-   * set, else <topic>.dlq). De-duplicated so a shared override topic is created once.
+   * Pre-create `specs` (with leaders elected) via a short-lived admin client, so the first produce or
+   * fetch does not race leader election on a freshly auto-created topic: kafkajs surfaces that as
+   * "This server does not host this topic-partition" rather than retrying metadata the way franz-go
+   * (Go) and aiokafka (Python) do, and waitForLeaders closes the race. createTopics is idempotent - it
+   * resolves false when the topics already exist, which is fine; allowAutoTopicCreation on the client
+   * stays on as a fallback. The admin client is provisioning-only and is dropped afterwards (a
+   * disconnect error is swallowed so it cannot leak broker/SASL detail or mask a thrown error).
+   */
+  private async provisionTopics(kafka: KafkaFactory, specs: { topic: string }[]): Promise<void> {
+    const admin = kafka.admin();
+    try {
+      await admin.connect();
+      await admin.createTopics({ topics: specs, waitForLeaders: true });
+    } finally {
+      await admin.disconnect().catch(() => undefined);
+    }
+  }
+
+  /**
+   * The topics provisioned for a sanitized base topic `tn`: the base itself, its <topic>.retry
+   * sibling, and its dead-letter destination (the KEEL_KAFKA_DLQ_TOPIC override when set, else
+   * <topic>.dlq).
+   */
+  private topicSpecsFor(tn: string): { topic: string }[] {
+    return [{ topic: tn }, { topic: tn + RETRY_SUFFIX }, { topic: this.dlqTopic(tn) }];
+  }
+
+  /**
+   * The topics the adapter provisions on connect: the base, retry, and dead-letter topic for every
+   * configured topic, de-duplicated so a shared KEEL_KAFKA_DLQ_TOPIC override is created once.
    */
   private topicSpecs(): { topic: string }[] {
     const topics = new Set<string>();
     for (const t of this.topics) {
-      const tn = topicName(t);
-      topics.add(tn);
-      topics.add(tn + RETRY_SUFFIX);
-      topics.add(this.dlqTopic(tn));
+      for (const spec of this.topicSpecsFor(topicName(t))) {
+        topics.add(spec.topic);
+      }
     }
     return [...topics].map((topic) => ({ topic }));
   }
 
-  /** Subscribe `tn` and its retry sibling once (kafkajs permits subscribe() only before run()). */
+  /** Subscribe `tn` and its retry sibling once (kafkajs permits subscribe() only when not running). */
   private async subscribeTopic(consumer: Consumer, tn: string): Promise<void> {
     if (this.subscribedTopics.has(tn)) {
       return;
     }
     this.subscribedTopics.add(tn);
-    await consumer.subscribe({ topics: [tn, tn + RETRY_SUFFIX], fromBeginning: false });
+    // fromBeginning:true so a fresh consumer group replays the backlog (earliest), matching the NATS
+    // JetStream DeliverAll baseline and the Python/Java/Rust/Go adapters' earliest offset reset.
+    await consumer.subscribe({ topics: [tn, tn + RETRY_SUFFIX], fromBeginning: true });
+  }
+
+  /** Start (or restart, after a dynamic subscribe) the poll loop, routing each record via dispatch. */
+  private async runLoop(consumer: Consumer, sink: RecordSink): Promise<void> {
+    await consumer.run({
+      autoCommit: false,
+      eachMessage: async ({ topic, partition, message }) => {
+        // A record on <topic>.retry is a retried delivery of the base topic; route it to the base
+        // topic's handler so the retry loop converges on the same consumer.
+        const base = topic.endsWith(RETRY_SUFFIX) ? topic.slice(0, -RETRY_SUFFIX.length) : topic;
+        const h = this.handlers.get(base);
+        if (!h) {
+          return;
+        }
+        await this.dispatch(sink, toConsumedRecord(topic, partition, message), h);
+      },
+    });
   }
 
   /** Publish `payload` to the topic `subject` maps to, injecting the active trace context into headers. */
@@ -267,37 +304,49 @@ export class KafkaMessageBus {
   }
 
   /**
-   * Register `handler` for `subject`'s topic (and its retry sibling) and start the consumer poll loop
-   * on the first call. A record on <topic>.retry is a retried delivery routed back to the base topic's
-   * handler so the retry loop converges on the same consumer. kafkajs permits subscribe() only before
-   * run(), so all subjects must be subscribed before consumption begins; the first call starts it.
+   * Register `handler` for `subject`'s topic (and its retry sibling) and ensure that topic is actually
+   * consumed. A record on <topic>.retry is a retried delivery routed back to the base topic's handler
+   * so the retry loop converges on the same consumer.
+   *
+   * kafkajs forbids consumer.subscribe() while the poll loop is running, so a subject subscribed after
+   * the loop started is added via the supported stop -> subscribe -> run cycle (the consumer retains
+   * its existing subscriptions across stop), after provisioning the new topic and its retry/dead-letter
+   * siblings. A late subscribe is therefore genuinely consumed, never silently black-holed - matching
+   * the other four verticals, which add topics to a live consumer.
    */
   async subscribe(subject: string, handler: MessageHandler): Promise<void> {
     const consumer = this.requireConsumer('subscribe');
     const sink = this.sink as RecordSink;
+    const kafka = this.kafka as KafkaFactory;
     const tn = topicName(subject);
     this.handlers.set(tn, handler);
-    if (this.started) {
-      // The poll loop is running; kafkajs forbids subscribe() after run(), so the subject must be one
-      // of the already-subscribed topics (the configured topics or an earlier subscribe). The handler
-      // registration above is enough for it to receive records.
+
+    if (this.subscribedTopics.has(tn)) {
+      // Already consumed (a configured topic or an earlier subscribe); the handler registration above
+      // is enough. Start the poll loop if this is the first subscribe.
+      if (!this.started) {
+        this.started = true;
+        await this.runLoop(consumer, sink);
+      }
       return;
     }
+
+    // A topic not yet consumed: provision it (+ its retry/dead-letter siblings) with leaders elected
+    // before it is consumed, just like the configured topics on connect.
+    await this.provisionTopics(kafka, this.topicSpecsFor(tn));
+
+    if (!this.started) {
+      await this.subscribeTopic(consumer, tn);
+      this.started = true;
+      await this.runLoop(consumer, sink);
+      return;
+    }
+
+    // The poll loop is already running. kafkajs forbids subscribe() while running, so stop it, add the
+    // new topic (the consumer keeps its existing subscriptions across stop), and restart the loop.
+    await consumer.stop();
     await this.subscribeTopic(consumer, tn);
-    this.started = true;
-    await consumer.run({
-      autoCommit: false,
-      eachMessage: async ({ topic, partition, message }) => {
-        // A record on <topic>.retry is a retried delivery of the base topic; route it to the base
-        // topic's handler so the retry loop converges on the same consumer.
-        const base = topic.endsWith(RETRY_SUFFIX) ? topic.slice(0, -RETRY_SUFFIX.length) : topic;
-        const h = this.handlers.get(base);
-        if (!h) {
-          return;
-        }
-        await this.dispatch(sink, toConsumedRecord(topic, partition, message), h);
-      },
-    });
+    await this.runLoop(consumer, sink);
   }
 
   /**
@@ -400,6 +449,7 @@ export class KafkaMessageBus {
       await this.producer.disconnect();
       this.producer = undefined;
     }
+    this.kafka = undefined;
     this.sink = undefined;
     this.started = false;
     this.subscribedTopics.clear();
@@ -551,16 +601,20 @@ function headersToRecord(headers: IHeaders | undefined): Record<string, string> 
 }
 
 /**
- * The redelivery count from the keel-delivery-count header: the count of prior failed attempts, 0 when
- * absent (the first delivery) or unparseable; the caller adds 1 to get the 1-based num_delivered.
+ * The redelivery count from the keel-delivery-count header: the count of prior failed attempts; the
+ * caller adds 1 to get the 1-based num_delivered. Parsed strictly as a non-negative decimal integer -
+ * a missing, malformed (not clean decimal digits, e.g. "3abc", "", " 3", "3.5"), or negative value is
+ * treated as 0 prior deliveries (num_delivered = 1, the first delivery). The strictness is canonical
+ * across all five verticals: it denies a producer-injected negative count, which would otherwise make
+ * num_delivered small/negative and drive unbounded redelivery (an amplification DoS).
  */
 function deliveryCount(headers: Record<string, string>): number {
   const raw = headers[DELIVERY_COUNT_HEADER];
-  if (raw === undefined) {
+  if (raw === undefined || !/^\d+$/.test(raw)) {
     return 0;
   }
   const n = Number.parseInt(raw, 10);
-  return Number.isFinite(n) ? n : 0;
+  return Number.isSafeInteger(n) && n >= 0 ? n : 0;
 }
 
 function errorText(err: unknown): string {

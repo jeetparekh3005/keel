@@ -149,7 +149,16 @@ function fakeKafka(opts?: {
     adminDisconnected: false,
     createdTopics: undefined as string[] | undefined,
     createTopicsWaitForLeaders: undefined as boolean | undefined,
+    // Every createTopics call's topic list (connect provisions once; a dynamic subscribe adds more).
+    createTopicsCalls: [] as string[][],
+    runCount: 0,
+    stopCount: 0,
   };
+  // The flattened set of topics the consumer is currently subscribed to, and the messages already
+  // handed to eachMessage, so run() only delivers subscribed, not-yet-delivered records (a message on
+  // a topic subscribed later is delivered only after the stop -> subscribe -> run cycle adds it).
+  const subscribedFlat = new Set<string>();
+  const deliveredAlready = new Set<{ topic: string; partition: number; message: KafkaMessage }>();
   const producer = {
     connect: () =>
       opts?.connectErr
@@ -167,8 +176,12 @@ function fakeKafka(opts?: {
   const consumer = {
     connect: () => voidP(() => (state.consumerConnected = true)),
     disconnect: () => voidP(() => (state.consumerDisconnected = true)),
+    stop: () => voidP(() => (state.stopCount += 1)),
     subscribe: (s: { topics: string[]; fromBeginning: boolean }) => {
       state.subscribed.push(s);
+      for (const t of s.topics) {
+        subscribedFlat.add(t);
+      }
       return Promise.resolve();
     },
     run: async (config: {
@@ -179,7 +192,12 @@ function fakeKafka(opts?: {
         message: KafkaMessage;
       }) => Promise<void>;
     }) => {
+      state.runCount += 1;
       for (const d of opts?.delivered ?? []) {
+        if (!subscribedFlat.has(d.topic) || deliveredAlready.has(d)) {
+          continue;
+        }
+        deliveredAlready.add(d);
         await config.eachMessage(d);
       }
     },
@@ -194,6 +212,7 @@ function fakeKafka(opts?: {
     createTopics: (arg: { topics: { topic: string }[]; waitForLeaders?: boolean }) => {
       state.createdTopics = arg.topics.map((t) => t.topic);
       state.createTopicsWaitForLeaders = arg.waitForLeaders;
+      state.createTopicsCalls.push(arg.topics.map((t) => t.topic));
       // createTopics resolves false when the topics already existed; true when newly created.
       return Promise.resolve(true);
     },
@@ -443,6 +462,33 @@ describe('KafkaMessageBus.dispatch', () => {
     expect(lastProducedTo('.dlq')).toBeDefined();
   });
 
+  // A producer-injected negative or malformed keel-delivery-count must not be trusted: it is clamped
+  // to 0 prior deliveries (num_delivered = 1, first delivery), so a failing record retries as if fresh
+  // rather than being driven into unbounded redelivery (an amplification DoS).
+  it.each([
+    ['a negative value', '-1'],
+    ['a large negative value', '-100'],
+    ['a non-decimal suffix', '3abc'],
+    ['a decimal', '3.5'],
+    ['a leading-space value', ' 3'],
+    ['an empty value', ''],
+    ['a non-numeric value', 'nope'],
+  ])(
+    'clamps %s delivery count to the first delivery (retry, count stamped 1)',
+    async (_desc, raw) => {
+      const { sink, lastProducedTo } = fakeSink();
+      await makeBus({ maxDeliver: 5 }).dispatch(
+        sink,
+        newRecord(1, { headers: { 'keel-delivery-count': raw } }),
+        failHandler,
+      );
+      // Clamped to num_delivered 1: below the cap, so it retries (never dead-letters) and the re-produced
+      // record carries a clean count of 1.
+      expect(lastProducedTo('.dlq'), `${raw} must not dead-letter`).toBeUndefined();
+      expect(lastProducedTo('.retry')?.headers['keel-delivery-count']).toBe('1');
+    },
+  );
+
   it('extracts the producer trace context and runs the handler within it', async () => {
     const tracer = trace.getTracer('test');
     const span = tracer.startSpan('producer');
@@ -576,9 +622,11 @@ describe('KafkaMessageBus.subscribe', () => {
     await bus.subscribe('keel.test.events', handler);
 
     expect(received).toEqual(['hello']);
+    // fromBeginning:true so a fresh consumer group replays the backlog (earliest), matching the
+    // NATS JetStream DeliverAll baseline and the other four verticals' earliest offset reset.
     expect(kafka.state.subscribed).toContainEqual({
       topics: ['keel_test_events', 'keel_test_events.retry'],
-      fromBeginning: false,
+      fromBeginning: true,
     });
     // Committed the next offset to consume (one past the processed record).
     expect(kafka.state.committed).toContainEqual({
@@ -586,6 +634,54 @@ describe('KafkaMessageBus.subscribe', () => {
       partition: 0,
       offset: '8',
     });
+  });
+
+  it('dynamically subscribes a new topic after the poll loop started and actually consumes it', async () => {
+    // A record waiting on a topic that is NOT one of the configured topics. It must be delivered only
+    // after a later subscribe() adds that topic - never silently black-holed.
+    const kafka = fakeKafka({
+      delivered: [
+        {
+          topic: 'keel_test_events',
+          partition: 0,
+          message: kafkaMessage({ offset: '0', value: Buffer.from('configured') }),
+        },
+        {
+          topic: 'keel_other_events',
+          partition: 0,
+          message: kafkaMessage({ offset: '0', value: Buffer.from('dynamic') }),
+        },
+      ],
+    });
+    const bus = makeBus({ connectFn: kafka.connectFn });
+    await bus.connect();
+
+    const received: string[] = [];
+    const handler: MessageHandler = (m: InboundMessage) => {
+      received.push(new TextDecoder().decode(m.payload));
+      return Promise.resolve();
+    };
+    // First subscribe starts the poll loop on the configured topic.
+    await bus.subscribe('keel.test.events', handler);
+    expect(received).toEqual(['configured']);
+    expect(kafka.state.stopCount).toBe(0);
+
+    // Subscribe a brand-new, unconfigured subject AFTER the loop started: the adapter must provision
+    // it and run the stop -> subscribe -> run cycle so its record is genuinely consumed.
+    await bus.subscribe('keel.other.events', handler);
+    expect(received).toContain('dynamic');
+    // The stop -> subscribe -> run cycle ran exactly once for the late subscribe.
+    expect(kafka.state.stopCount).toBe(1);
+    expect(kafka.state.subscribed).toContainEqual({
+      topics: ['keel_other_events', 'keel_other_events.retry'],
+      fromBeginning: true,
+    });
+    // The new topic (+ its retry/dead-letter siblings) was provisioned before being consumed.
+    expect(kafka.state.createTopicsCalls).toContainEqual([
+      'keel_other_events',
+      'keel_other_events.retry',
+      'keel_other_events.dlq',
+    ]);
   });
 });
 
