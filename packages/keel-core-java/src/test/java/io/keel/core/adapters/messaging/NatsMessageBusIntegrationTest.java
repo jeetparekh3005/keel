@@ -25,19 +25,28 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 /**
  * Verifies the NATS JetStream adapter end to end against a real broker (epic #419, v0.6 parity).
  *
- * <p>Runs only when {@code KEEL_NATS_URL} is set; CI spins up a {@code nats:2.10 -js} container
- * (see {@code .github/workflows/java.yml}) and the test is skipped otherwise, exactly like the
- * Python vertical's {@code test_nats_integration.py}. It proves two things across the live broker:
- * the payload and caller headers are delivered intact, and the publisher's W3C trace context is
- * propagated so the subscriber's handler runs within the same trace (the distributed-tracing
- * guarantee the adapter exists to provide).
+ * <p>Runs only when {@code KEEL_MESSAGING_IT=1} is set; CI spins up a {@code nats:2.15 -js}
+ * container (see {@code .github/workflows/java.yml}) and the test is skipped otherwise. It gates on
+ * the single {@code KEEL_MESSAGING_IT} flag rather than on {@code KEEL_NATS_URL} so the three
+ * broker URLs stay out of the ambient surefire environment (an ambient {@code KEEL_NATS_URL} +
+ * {@code KEEL_KAFKA_BROKERS} + {@code KEEL_RABBITMQ_URL} would trip the fail-closed at-most-one
+ * selector in every full-context test, ADR-0025 section 3); it therefore constructs the adapter
+ * directly with its own CI-container URL. It proves two things across the live broker: the payload
+ * and caller headers are delivered intact, and the publisher's W3C trace context is propagated so
+ * the subscriber's handler runs within the same trace (the distributed-tracing guarantee the
+ * adapter exists to provide).
  */
 class NatsMessageBusIntegrationTest {
 
+  // The CI container address (java.yml). KEEL_NATS_IT_URL overrides it for a local broker; it is a
+  // non-gating var so it never leaks into a bound keel.* property and re-triggers the selector.
+  private static final String NATS_URL =
+      System.getenv().getOrDefault("KEEL_NATS_IT_URL", "nats://localhost:4222");
+
   @Test
-  @EnabledIfEnvironmentVariable(named = "KEEL_NATS_URL", matches = ".+")
+  @EnabledIfEnvironmentVariable(named = "KEEL_MESSAGING_IT", matches = "1")
   void roundTripsPayloadAndPropagatesTraceContext() throws Exception {
-    String url = System.getenv("KEEL_NATS_URL");
+    String url = NATS_URL;
 
     // A real SDK so the publisher has a sampled span (a valid trace id to propagate) and the
     // adapter has the W3C propagator the production OpenTelemetry bean also carries.

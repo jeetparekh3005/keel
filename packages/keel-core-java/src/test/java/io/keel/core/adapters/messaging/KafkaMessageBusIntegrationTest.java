@@ -32,10 +32,14 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 /**
  * Verifies the Kafka adapter end to end against a real broker (ADR-0025).
  *
- * <p>Runs only when {@code KEEL_KAFKA_BROKERS} is set; CI spins up an {@code apache/kafka} KRaft
+ * <p>Runs only when {@code KEEL_MESSAGING_IT=1} is set; CI spins up an {@code apache/kafka} KRaft
  * container (see {@code .github/workflows/java.yml}) and the test is skipped otherwise, exactly
- * like the NATS and RabbitMQ round-trips. It proves two things across the live broker: the payload
- * and caller headers are delivered intact and the publisher's W3C trace context is propagated (the
+ * like the NATS and RabbitMQ round-trips. It gates on the single {@code KEEL_MESSAGING_IT} flag
+ * rather than on {@code KEEL_KAFKA_BROKERS} so the broker URLs stay out of the ambient surefire
+ * environment (all three ambient would trip the fail-closed at-most-one selector in every
+ * full-context test, ADR-0025 section 3); it constructs the adapter directly with its own
+ * CI-container bootstrap servers. It proves two things across the live broker: the payload and
+ * caller headers are delivered intact and the publisher's W3C trace context is propagated (the
  * subscriber's handler runs within the same trace), and a poison record is driven through the retry
  * topic and lands on the dead-letter topic at the cap rather than looping forever.
  */
@@ -48,15 +52,15 @@ class KafkaMessageBusIntegrationTest {
     return prefix + "." + System.nanoTime();
   }
 
+  // The CI container bootstrap servers (java.yml). KEEL_KAFKA_IT_BROKERS overrides for a local
+  // broker; it is a non-gating var so it never leaks into a bound keel.* property.
   private static List<String> brokers() {
-    return Arrays.stream(System.getenv("KEEL_KAFKA_BROKERS").split(","))
-        .map(String::trim)
-        .filter(s -> !s.isEmpty())
-        .toList();
+    String bootstrap = System.getenv().getOrDefault("KEEL_KAFKA_IT_BROKERS", "localhost:9092");
+    return Arrays.stream(bootstrap.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList();
   }
 
   @Test
-  @EnabledIfEnvironmentVariable(named = "KEEL_KAFKA_BROKERS", matches = ".+")
+  @EnabledIfEnvironmentVariable(named = "KEEL_MESSAGING_IT", matches = "1")
   void roundTripsPayloadAndPropagatesTraceContext() throws Exception {
     List<String> brokers = brokers();
     String subject = uniqueSubject("keel.test.roundtrip");
@@ -125,7 +129,7 @@ class KafkaMessageBusIntegrationTest {
   }
 
   @Test
-  @EnabledIfEnvironmentVariable(named = "KEEL_KAFKA_BROKERS", matches = ".+")
+  @EnabledIfEnvironmentVariable(named = "KEEL_MESSAGING_IT", matches = "1")
   void poisonRecordDeadLettersEndToEnd() throws Exception {
     List<String> brokers = brokers();
     String subject = uniqueSubject("keel.test.poison");

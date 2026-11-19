@@ -78,7 +78,7 @@ jobs:
       - name: Start RabbitMQ
         # RabbitMQ for the RabbitMqMessageBus round-trip integration test (ADR-0025). Pinned to the
         # latest-stable 4.x line, mirroring the NATS step. The broker takes a few seconds to open the
-        # AMQP listener, so poll the port before the test step sets KEEL_RABBITMQ_URL.
+        # AMQP listener, so poll the port before the verify step runs the gated integration test.
         run: |
           docker run -d --name rabbitmq -p 5672:5672 rabbitmq:4
           for _ in $(seq 1 60); do
@@ -88,9 +88,9 @@ jobs:
       - name: Start Kafka (KRaft)
         # The messaging package integration test publishes and subscribes against this instance,
         # asserting payload/header delivery, trace-context propagation, and the poison-record
-        # dead-letter round-trip; it skips when KEEL_KAFKA_BROKERS is unset. Pinned to the
-        # latest-stable 4.x line (ADR-0025). This is the reference broker config for the Kafka
-        # sub-wave; the other four verticals copy the env below verbatim.
+        # dead-letter round-trip; it runs only when KEEL_MESSAGING_IT=1 (set on the verify step) and
+        # dials localhost:9092 directly. Pinned to the latest-stable 4.x line (ADR-0025). This is the
+        # reference broker config for the Kafka sub-wave; the other four verticals copy it verbatim.
         #
         # Single-node KRaft (no ZooKeeper): the broker is also the sole controller. The one setting
         # that must be exact is KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092 - the broker
@@ -152,9 +152,15 @@ jobs:
           for i in $(seq 1 60); do curl -sf http://localhost:4566/_localstack/health >/dev/null && break; sleep 1; done
       - name: Verify (spotless, tests, archunit, jacoco)
         env:
-          KEEL_NATS_URL: nats://localhost:4222
-          KEEL_RABBITMQ_URL: amqp://localhost:5672
-          KEEL_KAFKA_BROKERS: localhost:9092
+          # The messaging integration tests are gated on this single flag, NOT on the three broker
+          # URLs. The broker URLs (KEEL_NATS_URL / KEEL_RABBITMQ_URL / KEEL_KAFKA_BROKERS) are
+          # deliberately NOT set here: they are ambient for the whole surefire JVM, so setting all
+          # three would make every @SpringBootTest full-context boot see all three brokers and trip
+          # MessagingAutoConfiguration's fail-closed at-most-one selector (ADR-0025 section 3). Each
+          # messaging integration test self-provides its own single broker URL for the CI container
+          # (localhost:4222 / localhost:9092 / amqp://guest:guest@localhost:5672) and runs iff this
+          # flag is set, so the brokers are still exercised without an ambiguous ambient config.
+          KEEL_MESSAGING_IT: "1"
           KEEL_KEYCLOAK_URL: http://localhost:8080
           KEEL_KEYCLOAK_REALM: keel
           KEEL_KEYCLOAK_CLIENT_ID: keel-api
