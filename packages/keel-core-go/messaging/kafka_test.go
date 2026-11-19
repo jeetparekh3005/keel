@@ -15,7 +15,9 @@ import (
 	"errors"
 	"log/slog"
 	"strconv"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/twmb/franz-go/pkg/kgo"
 
@@ -209,8 +211,9 @@ func TestKafkaTerminatedMessageIsLoggedNotDroppedSilently(t *testing.T) {
 	var buf bytes.Buffer
 	kafkaBusWithLog(&buf, &fakeSink{}).dispatch(context.Background(), failHandler, newKafkaRecord(5))
 	rec := findLog(t, &buf, "ERROR", "terminated")
-	if rec["subject"] != "keel_test_events" {
-		t.Errorf("subject = %v, want keel_test_events", rec["subject"])
+	// The log pins the sanitized topic, not the keel-subject header.
+	if rec["topic"] != "keel_test_events" {
+		t.Errorf("topic = %v, want keel_test_events", rec["topic"])
 	}
 	// slog encodes numbers as JSON floats.
 	if rec["num_delivered"] != float64(5) {
@@ -221,7 +224,56 @@ func TestKafkaTerminatedMessageIsLoggedNotDroppedSilently(t *testing.T) {
 func TestKafkaScheduledRedeliveryIsLogged(t *testing.T) {
 	var buf bytes.Buffer
 	kafkaBusWithLog(&buf, &fakeSink{}).dispatch(context.Background(), failHandler, newKafkaRecord(1))
-	findLog(t, &buf, "WARN", "redelivery")
+	rec := findLog(t, &buf, "WARN", "redelivery")
+	if rec["topic"] != "keel_test_events" {
+		t.Errorf("topic = %v, want keel_test_events", rec["topic"])
+	}
+}
+
+// forgedSubject is a crafted keel-subject value: a newline plus a fake key=value pair that, if logged
+// verbatim, would forge an operator-log line.
+const forgedSubject = "evil\nlevel=ERROR msg=\"forged by attacker\""
+
+// TestKafkaForgedSubjectHeaderNotLogged proves the log-forging defense: a record carrying a crafted
+// keel-subject must never put that attacker value into the redelivery or terminate log lines; the
+// logged field stays the sanitized base topic. The handler still receives the original subject.
+func TestKafkaForgedSubjectHeaderNotLogged(t *testing.T) {
+	forged := func(numDelivered int) *kgo.Record {
+		rec := newKafkaRecord(numDelivered)
+		rec.Headers = append(rec.Headers, kgo.RecordHeader{Key: subjectHeader, Value: []byte(forgedSubject)})
+		return rec
+	}
+
+	// Redelivery (below the cap).
+	var warnBuf bytes.Buffer
+	var handlerSaw string
+	capture := func(ctx context.Context, m ports.InboundMessage) error {
+		handlerSaw = m.Subject
+		return failHandler(ctx, m)
+	}
+	kafkaBusWithLog(&warnBuf, &fakeSink{}).dispatch(context.Background(), capture, forged(1))
+	assertNoForgedSubject(t, &warnBuf, "WARN", "redelivery")
+	if handlerSaw != forgedSubject {
+		t.Errorf("handler subject = %q, want the original (forged) subject delivered verbatim", handlerSaw)
+	}
+
+	// Terminate (at the cap).
+	var errBuf bytes.Buffer
+	kafkaBusWithLog(&errBuf, &fakeSink{}).dispatch(context.Background(), failHandler, forged(5))
+	assertNoForgedSubject(t, &errBuf, "ERROR", "terminated")
+}
+
+// assertNoForgedSubject fails if the matched log line carries the forged subject anywhere, and checks
+// its topic field is the trusted sanitized topic.
+func assertNoForgedSubject(t *testing.T, buf *bytes.Buffer, level, want string) {
+	t.Helper()
+	if strings.Contains(buf.String(), "forged by attacker") {
+		t.Errorf("forged keel-subject value leaked into the %s log:\n%s", level, buf.String())
+	}
+	rec := findLog(t, buf, level, want)
+	if rec["topic"] != "keel_test_events" {
+		t.Errorf("logged topic = %v, want sanitized keel_test_events", rec["topic"])
+	}
 }
 
 func TestKafkaCommitCallFailureIsLoggedNotPanicking(t *testing.T) {
@@ -372,6 +424,72 @@ func TestKafkaDeliveryCountReadsHeader(t *testing.T) {
 	// A non-numeric value reads back as 0, not a panic.
 	if got := kafkaDeliveryCount([]kgo.RecordHeader{{Key: deliveryCountHeader, Value: []byte("nope")}}); got != 0 {
 		t.Errorf("unparseable count: got %d, want 0", got)
+	}
+	// A producer-injected negative count is clamped to 0, not trusted: otherwise numDelivered would
+	// stay below the cap forever and loop a poison record (redelivery-amplification DoS).
+	for _, bad := range []string{"-1", "-5", "-2147483648"} {
+		if got := kafkaDeliveryCount([]kgo.RecordHeader{{Key: deliveryCountHeader, Value: []byte(bad)}}); got != 0 {
+			t.Errorf("negative count %q: got %d, want 0", bad, got)
+		}
+	}
+	// An empty value is malformed and also reads back as 0.
+	if got := kafkaDeliveryCount([]kgo.RecordHeader{{Key: deliveryCountHeader, Value: []byte("")}}); got != 0 {
+		t.Errorf("empty count: got %d, want 0", got)
+	}
+}
+
+// TestKafkaDispatchClampsNegativeDeliveryCount proves the clamp end-to-end through dispatch: a record
+// bearing a forged negative keel-delivery-count must be treated as the first delivery (numDelivered
+// 1), so it retries once rather than looping, and advances toward the cap on later attempts.
+func TestKafkaDispatchClampsNegativeDeliveryCount(t *testing.T) {
+	var buf bytes.Buffer
+	sink := &fakeSink{}
+	rec := newKafkaRecord(1)
+	rec.Headers = []kgo.RecordHeader{{Key: deliveryCountHeader, Value: []byte("-100")}}
+	kafkaBusWithLog(&buf, sink).dispatch(context.Background(), failHandler, rec)
+	rec2 := findLog(t, &buf, "WARN", "redelivery")
+	if rec2["num_delivered"] != float64(1) {
+		t.Errorf("num_delivered with forged negative count = %v, want 1 (clamped to first delivery)", rec2["num_delivered"])
+	}
+	// The re-produced retry record carries the correct incremented count (1), not the forged value.
+	if got := kafkaDeliveryCount(sink.lastProducedTo(retrySuffix).Headers); got != 1 {
+		t.Errorf("retry keel-delivery-count = %d, want 1", got)
+	}
+}
+
+func TestKafkaConnectErrorIsSanitizedNoBrokerHost(t *testing.T) {
+	// Port 1 has no Kafka broker, so Ping fails; the returned error must describe the failure and
+	// chain the cause type but never echo the broker host:port.
+	const host = "127.0.0.1:1"
+	bus := NewKafka(KafkaConfig{Brokers: []string{host}, Topics: []string{"keel"}, GroupID: "keel"})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	err := bus.Connect(ctx)
+	if err == nil {
+		_ = bus.Close()
+		t.Fatal("expected a connection error against an unavailable broker")
+	}
+	if strings.Contains(err.Error(), host) || strings.Contains(err.Error(), "127.0.0.1") {
+		t.Errorf("connect error leaked the broker host: %q", err.Error())
+	}
+}
+
+// hostLeakSink mimics a franz-go produce dial error whose string embeds the broker host:port.
+type hostLeakSink struct{}
+
+func (hostLeakSink) produce(context.Context, *kgo.Record) error {
+	return errors.New("dial tcp 10.1.2.3:9092: connect: connection refused")
+}
+func (hostLeakSink) commit(context.Context, *kgo.Record) error { return nil }
+
+func TestKafkaPublishErrorIsSanitizedNoBrokerHost(t *testing.T) {
+	bus := kafkaBusWithLog(&bytes.Buffer{}, hostLeakSink{})
+	err := bus.Publish(context.Background(), "keel.test.events", []byte("x"), nil)
+	if err == nil {
+		t.Fatal("expected a publish error when the produce fails")
+	}
+	if strings.Contains(err.Error(), "10.1.2.3") || strings.Contains(err.Error(), "9092") {
+		t.Errorf("publish error leaked the broker host: %q", err.Error())
 	}
 }
 

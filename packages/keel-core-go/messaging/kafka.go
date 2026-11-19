@@ -14,6 +14,7 @@ package messaging
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -106,8 +107,10 @@ func NewKafka(cfg KafkaConfig) *KafkaMessageBus {
 
 // Connect creates the Kafka client (seed brokers, the consumer group, auto-commit off, pre-subscribed
 // to the configured topics and their retry siblings) and pings the cluster to fail fast on an
-// unreachable broker. The client error is returned as-is: the broker list and any SASL config are
-// never echoed into a connect-failure error, so credentials cannot leak through the logs.
+// unreachable broker. Connect- and ping-failure errors are sanitized before return: franz-go wraps a
+// net.Dial error whose string embeds the broker host:port, so the cause is chained by type only
+// (never its raw message), keeping the broker list and any SASL config out of the error and the logs
+// while still failing startup.
 func (b *KafkaMessageBus) Connect(ctx context.Context) error {
 	topics := make([]string, 0, len(b.cfg.Topics)*2)
 	for _, t := range b.cfg.Topics {
@@ -131,11 +134,11 @@ func (b *KafkaMessageBus) Connect(ctx context.Context) error {
 	}
 	client, err := kgo.NewClient(opts...)
 	if err != nil {
-		return err
+		return fmt.Errorf("kafka client init failed (%T)", err)
 	}
 	if err := client.Ping(ctx); err != nil {
 		client.Close()
-		return err
+		return fmt.Errorf("kafka connect failed (%T)", err)
 	}
 	b.client = client
 	b.sink = kgoSink{client: client}
@@ -155,7 +158,12 @@ func (b *KafkaMessageBus) Publish(ctx context.Context, subject string, payload [
 	carrier := kafkaHeaderCarrier{headers: &hdrs}
 	otel.GetTextMapPropagator().Inject(ctx, carrier)
 	rec := &kgo.Record{Topic: topicName(subject), Value: payload, Headers: hdrs}
-	return b.sink.produce(ctx, rec)
+	if err := b.sink.produce(ctx, rec); err != nil {
+		// Sanitize: a produce dial error embeds the broker host:port, so chain the cause by type
+		// only and never its raw message, keeping the broker address out of the returned error.
+		return fmt.Errorf("kafka publish failed (%T)", err)
+	}
+	return nil
 }
 
 // Subscribe registers handler for subject's topic (and its retry sibling), ensures the client
@@ -233,12 +241,16 @@ func (b *KafkaMessageBus) dispatch(parent context.Context, handler ports.Message
 
 	err := handler(ctx, inbound)
 	numDelivered := kafkaDeliveryCount(rec.Headers) + 1
+	// Logs record the sanitized base topic, never the keel-subject header: that header is
+	// attacker-controllable, so logging it verbatim would let a crafted subject (newlines, fake
+	// key=value) forge operator-log lines. The handler still sees the original subject
+	// (inbound.Subject); only the log field is pinned to the trusted topic.
 	switch disposition(err == nil, numDelivered, b.cfg.MaxDeliver) {
 	case actionAck:
-		b.control(func() error { return b.sink.commit(ctx, rec) }, "commit", subject)
+		b.control(func() error { return b.sink.commit(ctx, rec) }, "commit", base)
 	case actionRequeue:
 		b.cfg.Logger.Warn("message handler failed; scheduling redelivery",
-			"subject", subject,
+			"topic", base,
 			"retry_topic", base+retrySuffix,
 			"num_delivered", numDelivered,
 			"error", err,
@@ -248,14 +260,14 @@ func (b *KafkaMessageBus) dispatch(parent context.Context, handler ports.Message
 			// Preserve: the record has no home on the retry topic, so leave the offset uncommitted
 			// and let the consumer group redeliver it rather than silently drop it.
 			b.cfg.Logger.Error("retry produce failed; offset left uncommitted for redelivery",
-				"subject", subject, "retry_topic", base+retrySuffix, "error", prodErr)
+				"topic", base, "retry_topic", base+retrySuffix, "error", prodErr)
 			return
 		}
-		b.control(func() error { return b.sink.commit(ctx, rec) }, "commit", subject)
+		b.control(func() error { return b.sink.commit(ctx, rec) }, "commit", base)
 	case actionDeadLetter:
 		dlq := b.dlqTopic(base)
 		b.cfg.Logger.Error("message terminated after exhausting delivery attempts",
-			"subject", subject,
+			"topic", base,
 			"dlq_topic", dlq,
 			"num_delivered", numDelivered,
 			"max_deliver", b.cfg.MaxDeliver,
@@ -266,19 +278,19 @@ func (b *KafkaMessageBus) dispatch(parent context.Context, handler ports.Message
 			// Preserve: the record has no home on the dead-letter topic, so leave the offset
 			// uncommitted and let it be redelivered rather than lost.
 			b.cfg.Logger.Error("dead-letter produce failed; offset left uncommitted for redelivery",
-				"subject", subject, "dlq_topic", dlq, "error", prodErr)
+				"topic", base, "dlq_topic", dlq, "error", prodErr)
 			return
 		}
 		// Commit the original only after the record has a home on the dead-letter topic.
-		b.control(func() error { return b.sink.commit(ctx, rec) }, "commit", subject)
+		b.control(func() error { return b.sink.commit(ctx, rec) }, "commit", base)
 	}
 }
 
 // control runs a commit call, logging (not raising) a control-plane failure so a redelivery or
 // duplicate-processing anomaly stays diagnosable.
-func (b *KafkaMessageBus) control(op func() error, name, subject string) {
+func (b *KafkaMessageBus) control(op func() error, name, topic string) {
 	if err := op(); err != nil {
-		b.cfg.Logger.Error("kafka control call failed", "op", name, "subject", subject, "error", err)
+		b.cfg.Logger.Error("kafka control call failed", "op", name, "topic", topic, "error", err)
 	}
 }
 
@@ -350,13 +362,16 @@ func kafkaHeaderString(headers []kgo.RecordHeader, key string) string {
 	return ""
 }
 
-// kafkaDeliveryCount reads the redelivery count from the keel-delivery-count header, returning 0 when
-// it is absent (the first delivery) or unparseable. dispatch adds one to get a 1-based attempt count
-// matching the NATS adapter's NumDelivered.
+// kafkaDeliveryCount reads the prior-delivery count from the keel-delivery-count header as a
+// non-negative decimal integer. It returns 0 when the header is absent (the first delivery),
+// malformed, OR negative: a producer-injected negative count would otherwise push numDelivered below
+// the cap on every attempt and loop a poison record forever (a redelivery-amplification DoS), so a
+// hostile value is clamped to the first-delivery baseline. dispatch adds one to get a 1-based attempt
+// count matching the NATS adapter's NumDelivered.
 func kafkaDeliveryCount(headers []kgo.RecordHeader) int {
 	for _, h := range headers {
 		if h.Key == deliveryCountHeader {
-			if n, err := strconv.Atoi(string(h.Value)); err == nil {
+			if n, err := strconv.Atoi(string(h.Value)); err == nil && n >= 0 {
 				return n
 			}
 			return 0
