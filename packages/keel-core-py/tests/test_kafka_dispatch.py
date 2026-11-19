@@ -268,6 +268,44 @@ async def test_retried_record_routes_to_base_handler_subject() -> None:
     assert seen["subject"] == "keel_test_events"
 
 
+async def test_dispatch_subject_comes_from_keel_subject_header() -> None:
+    # subject -> topic is lossy (keel.test.events -> keel_test_events), so the delivered subject
+    # must be read from the keel-subject header (the original), not the sanitized topic name.
+    seen: dict[str, str] = {}
+
+    async def handler(message: InboundMessage) -> None:
+        seen["subject"] = message.subject
+
+    record = _Record(
+        topic="keel_test_events", value=b"x", headers=[("keel-subject", b"keel.test.events")]
+    )
+    await _bus()._dispatch(record, handler)  # noqa: SLF001
+    assert seen["subject"] == "keel.test.events"
+
+
+async def test_dispatch_subject_falls_back_to_topic_without_header() -> None:
+    # A record with no keel-subject header (e.g. produced outside this adapter) reports the topic.
+    seen: dict[str, str] = {}
+
+    async def handler(message: InboundMessage) -> None:
+        seen["subject"] = message.subject
+
+    record = _Record(topic="keel_test_events", value=b"x")
+    await _bus()._dispatch(record, handler)  # noqa: SLF001
+    assert seen["subject"] == "keel_test_events"
+
+
+async def test_publish_carries_original_subject_header() -> None:
+    # publish stamps the original subject so the consumer can report it verbatim; the produced
+    # record still targets the sanitized topic.
+    sink = _FakeSink()
+    await _bus(sink=sink).publish("keel.test.events", b"hello")
+    assert len(sink.produced) == 1
+    produced = sink.produced[0]
+    assert produced.topic == "keel_test_events"
+    assert dict(produced.headers)["keel-subject"] == b"keel.test.events"
+
+
 async def test_dlq_topic_override() -> None:
     sink = _FakeSink()
     bus = _bus(sink=sink, dlq_topic="keel.deadletters")

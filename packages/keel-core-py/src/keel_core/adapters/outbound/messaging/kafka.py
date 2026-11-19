@@ -44,6 +44,13 @@ if TYPE_CHECKING:
 # failed record is re-produced to the retry topic.
 _DELIVERY_COUNT_HEADER = "keel-delivery-count"
 
+# Carries the ORIGINAL subject so it survives the lossy subject -> topic sanitization: a dotted
+# subject (keel.test.events) maps to an underscored topic (keel_test_events), so the delivered
+# InboundMessage.subject must come from this header, not the topic name, to equal what was
+# published. Unlike NATS/RabbitMQ (whose subject IS the routing key, no transform), Kafka's topic
+# is a one-way transform, so the subject travels explicitly in a header.
+_SUBJECT_HEADER = "keel-subject"
+
 # The retry and dead-letter topics derived from a base topic.
 _RETRY_SUFFIX = ".retry"
 _DLQ_SUFFIX = ".dlq"
@@ -258,6 +265,9 @@ class KafkaMessageBus:
             msg = "KafkaMessageBus.connect() must be called before publish()"
             raise RuntimeError(msg)
         carrier: dict[str, str] = dict(headers or {})
+        # Carry the original subject so the consumer can report it verbatim; the topic name is a
+        # lossy sanitization and cannot be inverted back to the subject.
+        carrier[_SUBJECT_HEADER] = subject
         propagate.inject(carrier)
         record = _Record(topic=topic_name(subject), value=payload, headers=_encode_headers(carrier))
         await self._sink.produce(record)
@@ -303,7 +313,11 @@ class KafkaMessageBus:
         """Run ``handler`` with trace context; commit on success, retry/dead-letter on failure."""
         headers = _decode_headers(record.headers)
         base = _base_topic(record.topic)
-        inbound = InboundMessage(subject=base, payload=record.value, headers=headers)
+        # The subject is reported from the keel-subject header (the original, pre-sanitization
+        # subject); fall back to the topic name when the header is absent (e.g. a record produced
+        # outside this adapter). The retry/dlq topic derivation stays keyed on the sanitized topic.
+        subject = headers.get(_SUBJECT_HEADER, base)
+        inbound = InboundMessage(subject=subject, payload=record.value, headers=headers)
         num_delivered = _delivery_count(record.headers) + 1
         token = otel_context.attach(propagate.extract(headers))
         try:
