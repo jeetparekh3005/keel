@@ -8,8 +8,10 @@
 //! broker-agnostic [`disposition`](crate::messaging::disposition) policy from the NATS adapter,
 //! so the two buses behave identically: ack on handler success; `basic.nack(requeue=true)` while
 //! the delivery count is below the cap; at the cap publish the message to a **dead-letter
-//! exchange** and ack the original, always logging the terminate. A failed ack/nack is logged,
-//! never raised, so a control-plane hiccup cannot kill the consume loop.
+//! exchange** and ack the original only once that publish has durably succeeded, always logging
+//! the terminate. Dead-lettering is a durability operation: if the DLX publish fails the original
+//! is preserved (`basic.nack(requeue=true)`, never acked-and-dropped) so no message is lost. A
+//! failed ack/nack is logged, never raised, so a control-plane hiccup cannot kill the consume loop.
 //!
 //! The redelivery count rides in the AMQP `x-delivery-count` header (populated by quorum queues,
 //! which this adapter declares) with a `keel-delivery-count` fallback; trace context (W3C
@@ -378,26 +380,46 @@ async fn dispatch(
                     "message terminated after exhausting delivery attempts",
                 );
             }
-            // Publish the original payload + headers to the dead-letter exchange, then ack the
-            // original so it leaves the queue. A failed DLX publish is logged, not raised: the ack
-            // still runs so the poison message cannot loop forever.
-            if let Err(err) = publish_dead_letter(
+            // Dead-lettering is a durability operation: publish the original payload + headers to
+            // the dead-letter exchange, and ack the original (removing it from the queue) only once
+            // that publish has durably succeeded. If the DLX publish fails, PRESERVE the message -
+            // nack(requeue=true) so it is retried, never ack-and-drop - so a poison message is
+            // never lost to a DLX outage. The requeue loop self-heals when the DLX recovers, and a
+            // permanently-broken DLX is a loud, alertable misconfiguration rather than silent data
+            // loss. Matches the Python and Java adapters (ADR-0025). A failed DLX publish is logged,
+            // not raised, so the consume loop keeps running.
+            let dlx_result = publish_dead_letter(
                 channel,
                 dlx,
                 &subject,
                 &delivery.data,
                 delivery.properties.headers(),
             )
-            .await
-            {
-                error!(subject = %subject, dlx = %dlx, error = %err, "failed to publish to dead-letter exchange");
-            }
-            control(
-                delivery.acker.ack(BasicAckOptions::default()),
-                "ack (after dead-letter)",
-                &subject,
-            )
             .await;
+            if let Err(err) = &dlx_result {
+                error!(subject = %subject, dlx = %dlx, error = %err, "failed to publish to dead-letter exchange; preserving message for redelivery");
+            }
+            match dead_letter_disposition(dlx_result.is_ok()) {
+                Disposition::Ack => {
+                    control(
+                        delivery.acker.ack(BasicAckOptions::default()),
+                        "ack (after dead-letter)",
+                        &subject,
+                    )
+                    .await;
+                }
+                _ => {
+                    control(
+                        delivery.acker.nack(BasicNackOptions {
+                            multiple: false,
+                            requeue: true,
+                        }),
+                        "nack (dead-letter publish failed)",
+                        &subject,
+                    )
+                    .await;
+                }
+            }
         }
     }
 }
@@ -429,6 +451,21 @@ async fn publish_dead_letter(
         .await
         .map_err(|err| MessagingError::Publish(err.to_string()))?;
     Ok(())
+}
+
+/// Decide the fate of the original delivery after attempting the dead-letter publish, given
+/// whether that publish durably succeeded. Pure, so the preserve policy is unit-testable without a
+/// broker (mirroring the broker-agnostic [`disposition`](crate::messaging::disposition)):
+/// dead-lettering is a durability operation, so the original is safe to [`Disposition::Ack`]
+/// (remove from the queue) only once it is durably on the dead-letter exchange; if the DLX publish
+/// failed, PRESERVE it with [`Disposition::Redeliver`] (nack requeue=true) so it is retried and
+/// never dropped. Matches the Python and Java adapters (ADR-0025).
+fn dead_letter_disposition(dlx_publish_ok: bool) -> Disposition {
+    if dlx_publish_ok {
+        Disposition::Ack
+    } else {
+        Disposition::Redeliver
+    }
 }
 
 /// Await an ack/nack call, logging (not raising) a control-plane failure so a failed
@@ -520,7 +557,8 @@ impl Injector for FieldTableInjector<'_> {
 #[cfg(test)]
 mod tests {
     use super::{
-        amqp_value_to_string, consumer_tag, delivery_count, fields_to_string_map, RabbitMqConfig,
+        amqp_value_to_string, consumer_tag, dead_letter_disposition, delivery_count,
+        fields_to_string_map, RabbitMqConfig,
     };
     use crate::messaging::{disposition, extract_trace_context, Disposition};
     use lapin::types::{AMQPValue, FieldTable};
@@ -581,6 +619,17 @@ mod tests {
         assert_eq!(disposition(false, 5, cap), Disposition::DeadLetter);
         // Beyond the cap dead-letters (x-delivery-count 9 -> delivery 10).
         assert_eq!(disposition(false, 10, cap), Disposition::DeadLetter);
+    }
+
+    #[test]
+    fn dead_letter_preserves_the_message_when_the_dlx_publish_fails() {
+        // Dead-lettering is a durability operation: the original is only safe to ack (remove from
+        // the queue) once it is durably on the dead-letter exchange.
+        assert_eq!(dead_letter_disposition(true), Disposition::Ack);
+        // A failed DLX publish must PRESERVE the message - nack(requeue=true) for retry, never
+        // ack-and-drop - so a poison message is never lost to a DLX outage (ADR-0025 parity with
+        // the Python and Java adapters).
+        assert_eq!(dead_letter_disposition(false), Disposition::Redeliver);
     }
 
     #[test]
