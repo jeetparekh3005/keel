@@ -96,6 +96,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Install librdkafka C build headers (curl)
+        # The `kafka` feature's rdkafka pulls rdkafka-sys, which VENDORS and cmake-builds librdkafka
+        # 2.12.1 from source. Even with WITH_SSL=0/WITH_SASL=0/WITH_CURL=0 (so no openssl, keeping
+        # the deny.toml rustls/ring posture intact), librdkafka's source still `#include`s
+        # curl/curl.h at compile time (src/rdkafka_conf.c), and ubuntu-latest does not ship the
+        # libcurl dev headers. This installs ONLY the C header needed to compile the vendored
+        # library; it adds no Rust crate (deny.toml is unaffected) and the distroless release image
+        # does not build the kafka feature. cmake + a C compiler are already on ubuntu-latest. macOS
+        # ships curl headers, which is why a local build succeeds without this.
+        run: sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev
       # Installs the toolchain declared in rust-toolchain.toml (stable + rustfmt/clippy).
       # llvm-tools-preview ships llvm-cov/llvm-profdata, which cargo-llvm-cov drives to
       # instrument the build and render the coverage report for the floor below.
