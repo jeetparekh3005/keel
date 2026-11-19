@@ -44,6 +44,7 @@ dev = [
     "psycopg[binary]>=3.3.9",   # sync Postgres driver for Alembic migrations in CI
     "nats-py>=2.6",           # keel-core[nats] extra - installed for the NATS integration test
     "aio-pika>=9.5",          # keel-core[rabbitmq] extra - installed for the RabbitMQ tests
+    "aiokafka>=0.15",         # keel-core[kafka] extra - installed for the Kafka tests
     "boto3>=1.42",            # keel-core[aws] extra - installed for the AWS Secrets Manager tests
     "boto3-stubs[secretsmanager]>=1.44.3",  # type stubs for the AWS adapter (mypy strict)
     "google-cloud-secret-manager>=2.20",  # keel-core[gcp] extra - GCP Secret Manager tests + types
@@ -136,7 +137,7 @@ no_implicit_reexport = true
 exclude = ['(^|/)genproto/']
 
 [[tool.mypy.overrides]]
-module = ["grpc.*", "opentelemetry.instrumentation.*", "opentelemetry.exporter.*", "nats.*", "copier.*"]
+module = ["grpc.*", "opentelemetry.instrumentation.*", "opentelemetry.exporter.*", "nats.*", "aiokafka.*", "copier.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
