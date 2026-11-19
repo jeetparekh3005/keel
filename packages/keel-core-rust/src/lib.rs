@@ -35,12 +35,19 @@ pub mod grpc;
 pub mod http;
 pub mod jwks;
 pub mod logging;
-/// NATS JetStream `MessageBus` adapter. Opt-in: enable the `nats` feature (mirrors the
+/// The `MessageBus` port and the NATS JetStream adapter. The shared port (traits,
+/// `InboundMessage`, `MessagingError`, the pure `disposition` policy, trace-context helpers)
+/// compiles under either broker feature; the JetStream adapter is `nats`-only (mirrors the
 /// Python `keel-core[nats]` extra) so the default build needs no broker.
-#[cfg(feature = "nats")]
+#[cfg(any(feature = "nats", feature = "rabbitmq"))]
 pub mod messaging;
 pub mod persistence;
 pub mod ports;
+/// RabbitMQ `MessageBus` adapter over AMQP 0-9-1 (ADR-0025), reusing the shared port in
+/// [`messaging`]. Opt-in: enable the `rabbitmq` feature (mirrors the Python
+/// `keel-core[rabbitmq]` extra) so the default build pulls in neither `lapin` nor a broker.
+#[cfg(feature = "rabbitmq")]
+pub mod rabbitmq;
 pub mod redact;
 /// Shared caching core for the production `SecretProvider` backends (ADR-0024): the cache,
 /// background refresh, fail-closed construction, no-leak serving, and the fail-closed

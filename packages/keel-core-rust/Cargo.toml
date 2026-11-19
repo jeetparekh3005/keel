@@ -98,6 +98,20 @@ rustls = { version = "0.23", optional = true, default-features = false, features
     "ring",
     "std",
 ] }
+# Optional RabbitMQ MessageBus adapter (the `rabbitmq` feature, ADR-0025). lapin is the
+# pure-Rust async AMQP 0-9-1 client; like `async-nats` it is pulled in only when the feature is
+# enabled, so the default core build needs no broker. default-features are off on purpose: lapin's
+# umbrella `rustls` feature wires tcp-stream to the aws_lc_rs rustls provider (aws-lc-sys, a C
+# build), which `deny.toml` bans. Selecting only `rustls--ring` keeps the AMQPS path on the
+# ring-backed rustls already in the tree (reqwest's rustls-tls), so no aws-lc-sys/openssl-sys/
+# native-tls is pulled (proven by `cargo tree`). `rustls-native-certs` loads the OS trust store;
+# `default-runtime` gives lapin its executor/reactor for the socket (the consume loop itself is
+# driven from a tokio task, mirroring the NATS adapter).
+lapin = { version = "4.12.3", optional = true, default-features = false, features = [
+    "rustls--ring",
+    "rustls-native-certs",
+    "default-runtime",
+] }
 
 [features]
 # Opt-in NATS JetStream adapter. Off by default so `cargo build` stays broker-free,
@@ -109,6 +123,19 @@ nats = [
     "dep:futures",
     "dep:async-trait",
     "dep:bytes",
+    "opentelemetry_sdk/trace",
+]
+# Opt-in RabbitMQ MessageBus adapter (ADR-0025). Off by default so `cargo build` stays
+# broker-free, exactly like the `nats` feature. Pulls the pure-Rust `lapin` AMQP client plus the
+# same shared bits the NATS adapter needs: `futures` (the lapin consumer is a Stream driven from a
+# tokio task), `async-trait` (the `MessageBus`/`MessagePublisher` port impls), and
+# `opentelemetry_sdk/trace` (the W3C `TraceContextPropagator` for header inject/extract). The
+# shared port types in `keel_core::messaging` compile under either broker feature; the adapter
+# lives in `keel_core::rabbitmq`.
+rabbitmq = [
+    "dep:lapin",
+    "dep:futures",
+    "dep:async-trait",
     "opentelemetry_sdk/trace",
 ]
 # Opt-in gRPC stubs for the keel.reference.v1 contract (ADR-0022). Off by default so
