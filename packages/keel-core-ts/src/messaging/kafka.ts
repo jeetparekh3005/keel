@@ -44,11 +44,11 @@ export interface BusLogger {
 }
 
 /**
- * The slice of a Kafka client the adapter needs: a factory for a producer and a consumer. It is an
- * interface so the connectFn seam can supply a fake in a broker-free test; the real kafkajs `Kafka`
- * instance satisfies it structurally.
+ * The slice of a Kafka client the adapter needs: factories for a producer, a consumer, and an admin
+ * client. It is an interface so the connectFn seam can supply a fake in a broker-free test; the real
+ * kafkajs `Kafka` instance satisfies it structurally.
  */
-export type KafkaFactory = Pick<Kafka, 'producer' | 'consumer'>;
+export type KafkaFactory = Pick<Kafka, 'producer' | 'consumer' | 'admin'>;
 
 /** Connection factory, overridable as a test seam; defaults to a real kafkajs client. */
 export type ConnectFn = (config: { clientId: string; brokers: string[] }) => KafkaFactory;
@@ -180,7 +180,8 @@ export class KafkaMessageBus {
   }
 
   /**
-   * Create the producer and consumer (consumer group, auto-commit off), connect them, and subscribe
+   * Pre-create the configured topics and their retry/dead-letter siblings (with leaders elected),
+   * create the producer and consumer (consumer group, auto-commit off), connect them, and subscribe
    * the configured topics and their retry siblings so a published record is consumed (mirroring the
    * Go adapter's Connect, which pre-subscribes the configured topics). A connect failure is re-thrown
    * as a credential-free error: the broker list and any SASL config are never echoed into the error
@@ -190,12 +191,25 @@ export class KafkaMessageBus {
     const kafka = this.connectFn({ clientId: this.clientId, brokers: this.brokers });
     const producer = kafka.producer();
     const consumer = kafka.consumer({ groupId: this.groupId });
+    const admin = kafka.admin();
     try {
+      // Create every topic the adapter touches (base + <topic>.retry + dead-letter) BEFORE the first
+      // produce or fetch, waiting for leader election. A just-auto-created topic may have no elected
+      // leader yet, and kafkajs surfaces that as "This server does not host this topic-partition"
+      // rather than retrying metadata the way franz-go (Go) and aiokafka (Python) do; waitForLeaders
+      // closes that race. createTopics is idempotent - it resolves false when the topics already
+      // exist, which is fine; allowAutoTopicCreation on the client stays on as a fallback.
+      await admin.connect();
+      await admin.createTopics({ topics: this.topicSpecs(), waitForLeaders: true });
       await producer.connect();
       await consumer.connect();
     } catch {
       // Never echo brokers or SASL credentials into the error/logs - swallow the original.
       throw new Error('kafka connection failed');
+    } finally {
+      // The admin client is only needed for provisioning; drop it (swallow a disconnect error so it
+      // cannot leak broker/SASL detail or mask the thrown error).
+      await admin.disconnect().catch(() => undefined);
     }
     this.producer = producer;
     this.consumer = consumer;
@@ -204,6 +218,22 @@ export class KafkaMessageBus {
     for (const topic of this.topics) {
       await this.subscribeTopic(consumer, topicName(topic));
     }
+  }
+
+  /**
+   * The topics the adapter provisions on connect: for each configured topic, its sanitized base name,
+   * its <topic>.retry sibling, and its dead-letter destination (the KEEL_KAFKA_DLQ_TOPIC override when
+   * set, else <topic>.dlq). De-duplicated so a shared override topic is created once.
+   */
+  private topicSpecs(): { topic: string }[] {
+    const topics = new Set<string>();
+    for (const t of this.topics) {
+      const tn = topicName(t);
+      topics.add(tn);
+      topics.add(tn + RETRY_SUFFIX);
+      topics.add(this.dlqTopic(tn));
+    }
+    return [...topics].map((topic) => ({ topic }));
   }
 
   /** Subscribe `tn` and its retry sibling once (kafkajs permits subscribe() only before run()). */

@@ -9,7 +9,7 @@ import { context, propagation, trace } from '@opentelemetry/api';
 import { AsyncLocalStorageContextManager } from '@opentelemetry/context-async-hooks';
 import { W3CTraceContextPropagator } from '@opentelemetry/core';
 import { BasicTracerProvider } from '@opentelemetry/sdk-trace-base';
-import type { Consumer, KafkaMessage, Producer } from 'kafkajs';
+import type { Admin, Consumer, KafkaMessage, Producer } from 'kafkajs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import type { InboundMessage, MessageHandler } from './index.js';
@@ -145,6 +145,10 @@ function fakeKafka(opts?: {
     }[],
     committed: [] as { topic: string; partition: number; offset: string }[],
     subscribed: [] as { topics: string[]; fromBeginning: boolean }[],
+    adminConnected: false,
+    adminDisconnected: false,
+    createdTopics: undefined as string[] | undefined,
+    createTopicsWaitForLeaders: undefined as boolean | undefined,
   };
   const producer = {
     connect: () =>
@@ -184,9 +188,20 @@ function fakeKafka(opts?: {
       return Promise.resolve();
     },
   };
+  const admin = {
+    connect: () => voidP(() => (state.adminConnected = true)),
+    disconnect: () => voidP(() => (state.adminDisconnected = true)),
+    createTopics: (arg: { topics: { topic: string }[]; waitForLeaders?: boolean }) => {
+      state.createdTopics = arg.topics.map((t) => t.topic);
+      state.createTopicsWaitForLeaders = arg.waitForLeaders;
+      // createTopics resolves false when the topics already existed; true when newly created.
+      return Promise.resolve(true);
+    },
+  };
   const kafka: KafkaFactory = {
     producer: () => producer as unknown as Producer,
     consumer: () => consumer as unknown as Consumer,
+    admin: () => admin as unknown as Admin,
   };
   const connectFn: ConnectFn = () => kafka;
   return { connectFn, state };
@@ -455,6 +470,32 @@ describe('KafkaMessageBus.connect', () => {
     await makeBus({ connectFn: kafka.connectFn }).connect();
     expect(kafka.state.producerConnected).toBe(true);
     expect(kafka.state.consumerConnected).toBe(true);
+  });
+
+  it('pre-creates the base, retry, and dead-letter topics with waitForLeaders, then drops the admin client', async () => {
+    const kafka = fakeKafka();
+    // makeBus configures topics: ['keel.test.events'] -> sanitized base keel_test_events.
+    await makeBus({ connectFn: kafka.connectFn }).connect();
+    expect(kafka.state.adminConnected).toBe(true);
+    expect(kafka.state.createdTopics).toEqual([
+      'keel_test_events',
+      'keel_test_events.retry',
+      'keel_test_events.dlq',
+    ]);
+    // waitForLeaders avoids the "does not host this topic-partition" leader-election race.
+    expect(kafka.state.createTopicsWaitForLeaders).toBe(true);
+    // The admin client is provisioning-only and is disconnected once topics exist.
+    expect(kafka.state.adminDisconnected).toBe(true);
+  });
+
+  it('pre-creates the shared KEEL_KAFKA_DLQ_TOPIC override instead of <topic>.dlq when set', async () => {
+    const kafka = fakeKafka();
+    await makeBus({ connectFn: kafka.connectFn, dlqTopic: 'keel.deadletters' }).connect();
+    expect(kafka.state.createdTopics).toEqual([
+      'keel_test_events',
+      'keel_test_events.retry',
+      'keel.deadletters',
+    ]);
   });
 
   it('never leaks brokers or SASL credentials into a connect error', async () => {
