@@ -1,5 +1,75 @@
 # Changelog
 
+## [0.7.0](https://github.com/jeetparekh3005/keel/compare/v0.6.2...v0.7.0) (2026-11-19)
+
+
+### Features
+
+* **go:** add GCP Secret Manager SecretProvider backend (ADR-0024) ([#543](https://github.com/jeetparekh3005/keel/issues/543)) ([ebfa61c](https://github.com/jeetparekh3005/keel/commit/ebfa61c11b0a873d061f3e67da093d340445bb2b))
+* **go:** AWS Secrets Manager SecretProvider + shared caching core ([#519](https://github.com/jeetparekh3005/keel/issues/519)) ([6c1c2be](https://github.com/jeetparekh3005/keel/commit/6c1c2befaf2768604668a29681a09da5447df571))
+* **go:** fail-closed MessageBus env selector (ADR-0025) ([#577](https://github.com/jeetparekh3005/keel/issues/577)) ([c85294f](https://github.com/jeetparekh3005/keel/commit/c85294f1dfa1fd7006d1c0bbdef5f870b20cbfbc))
+* **go:** Kafka MessageBus adapter (ADR-0025) ([#564](https://github.com/jeetparekh3005/keel/issues/564)) ([c2907b7](https://github.com/jeetparekh3005/keel/commit/c2907b72533dd43b51408384a25fdfb4f76bf749))
+* **go:** OpenBao SecretProvider adapter ([#505](https://github.com/jeetparekh3005/keel/issues/505)) ([6320a36](https://github.com/jeetparekh3005/keel/commit/6320a36431a6c7fb8971e7af9fde6ec0f3f0b0cd))
+* **go:** RabbitMQ MessageBus adapter (ADR-0025) ([#555](https://github.com/jeetparekh3005/keel/issues/555)) ([0481ddd](https://github.com/jeetparekh3005/keel/commit/0481ddd42b467b1f7d972d2974dee0afd0de2432))
+* **java:** add GCP Secret Manager SecretProvider backend ([#545](https://github.com/jeetparekh3005/keel/issues/545)) ([d119f1b](https://github.com/jeetparekh3005/keel/commit/d119f1b4c3ca22a87c4816e5ccf7130cb4d99fc7))
+* **java:** AWS Secrets Manager SecretProvider + shared caching core ([#521](https://github.com/jeetparekh3005/keel/issues/521)) ([85574ba](https://github.com/jeetparekh3005/keel/commit/85574ba6ef8f3d74033cfdc1e57042fff422b4cd))
+* **java:** fail-closed at-most-one MessageBus selection (ADR-0025) ([#579](https://github.com/jeetparekh3005/keel/issues/579)) ([eeb27d8](https://github.com/jeetparekh3005/keel/commit/eeb27d802ea750340da9b91d720ad7f851491827))
+* **java:** Kafka MessageBus adapter (ADR-0025) ([#568](https://github.com/jeetparekh3005/keel/issues/568)) ([606e84a](https://github.com/jeetparekh3005/keel/commit/606e84a7d23e3ad7ec4aecd59246f39ef187a1b0))
+* **java:** OpenBao SecretProvider adapter (KV v2 over the Vault HTTP API) ([#507](https://github.com/jeetparekh3005/keel/issues/507)) ([c16c4b2](https://github.com/jeetparekh3005/keel/commit/c16c4b236ed39eb3c9fef2b306531615b93544de))
+* **java:** RabbitMQ MessageBus adapter (ADR-0025) ([#557](https://github.com/jeetparekh3005/keel/issues/557)) ([5f88933](https://github.com/jeetparekh3005/keel/commit/5f889334ee65048204f6e7efd9f53f920a124f8b))
+* **python:** add GCP Secret Manager SecretProvider backend (ADR-0024) ([#542](https://github.com/jeetparekh3005/keel/issues/542)) ([5ecb9e8](https://github.com/jeetparekh3005/keel/commit/5ecb9e8b6065a02ec5ffaf9b7e39c396bd865e08))
+* **python:** fail-closed MessageBus env selector (ADR-0025) ([#576](https://github.com/jeetparekh3005/keel/issues/576)) ([3e9a64c](https://github.com/jeetparekh3005/keel/commit/3e9a64c61f278629b10ef525759b932e1b3665ae))
+* **python:** Kafka MessageBus adapter (ADR-0025) ([#565](https://github.com/jeetparekh3005/keel/issues/565)) ([29e576b](https://github.com/jeetparekh3005/keel/commit/29e576bfbc43016f85e4f09b2cae6af7d08ae9ab))
+* **python:** OpenBao SecretProvider adapter (KV v2 over Vault HTTP API) ([#503](https://github.com/jeetparekh3005/keel/issues/503)) ([a946cbe](https://github.com/jeetparekh3005/keel/commit/a946cbe34d8880dfc2a49ae1d9a84aaff474d656))
+* **python:** RabbitMQ MessageBus adapter (ADR-0025) ([#554](https://github.com/jeetparekh3005/keel/issues/554)) ([aa534fd](https://github.com/jeetparekh3005/keel/commit/aa534fde0f6143bc5e1c1ed89b82aec9d1b0c443))
+* **rust:** add GCP Secret Manager SecretProvider adapter (ADR-0024) ([#546](https://github.com/jeetparekh3005/keel/issues/546)) ([76cdf9c](https://github.com/jeetparekh3005/keel/commit/76cdf9cdc1d942a0258e57558e5ba9c705e58105))
+* **rust:** add OpenBao SecretProvider adapter (ADR-0023) ([#506](https://github.com/jeetparekh3005/keel/issues/506)) ([43e02a0](https://github.com/jeetparekh3005/keel/commit/43e02a06e68ffee2f9bb091cbd6214150687c41e))
+* **rust:** AWS Secrets Manager SecretProvider + shared caching core ([#522](https://github.com/jeetparekh3005/keel/issues/522)) ([bf42588](https://github.com/jeetparekh3005/keel/commit/bf4258810decf10c0f1b4a4e19e694f49c60583b))
+* **rust:** fail-closed MessageBus env selector (ADR-0025) ([#580](https://github.com/jeetparekh3005/keel/issues/580)) ([7b25d4e](https://github.com/jeetparekh3005/keel/commit/7b25d4e61a8ba24d0f57905bd4c4a45618ec8df2))
+* **rust:** harden OpenBao SecretProvider adapter (lease renewal, strict TTL, field coercion) ([#511](https://github.com/jeetparekh3005/keel/issues/511)) ([6c3d009](https://github.com/jeetparekh3005/keel/commit/6c3d00943e528a0b111c9fd4a23bffecfb565785))
+* **rust:** Kafka MessageBus adapter (ADR-0025) ([#567](https://github.com/jeetparekh3005/keel/issues/567)) ([31a6649](https://github.com/jeetparekh3005/keel/commit/31a66491c246df1826eb12f7b0c2b739b56786df))
+* **rust:** RabbitMQ MessageBus adapter (ADR-0025) ([#558](https://github.com/jeetparekh3005/keel/issues/558)) ([87e0825](https://github.com/jeetparekh3005/keel/commit/87e0825d22940a55da61775c16b109b6e31d0f75))
+* **security:** ADR-0023 OpenBao SecretProvider backend + dev-stack service ([#502](https://github.com/jeetparekh3005/keel/issues/502)) ([7d5a08b](https://github.com/jeetparekh3005/keel/commit/7d5a08b51601e167fa8af61533cdc4c47cf40207))
+* **security:** ADR-0024 AWS/GCP SecretProvider adapters + LocalStack dev service ([#515](https://github.com/jeetparekh3005/keel/issues/515)) ([280018e](https://github.com/jeetparekh3005/keel/commit/280018ef3062e1795e1e2d484477d047e4b9e566))
+* **security:** AWS Secrets Manager SecretProvider + shared caching core (python) ([#517](https://github.com/jeetparekh3005/keel/issues/517)) ([be980d8](https://github.com/jeetparekh3005/keel/commit/be980d829924ed8685cf07ff5fdbd9008f482467))
+* **security:** AWS Secrets Manager SecretProvider + shared caching core (ts) ([#518](https://github.com/jeetparekh3005/keel/issues/518)) ([6080515](https://github.com/jeetparekh3005/keel/commit/6080515a5b23b4fe8c72264f7a0006ba77e5ae83))
+* **ts:** add GCP Secret Manager SecretProvider backend (ADR-0024) ([#544](https://github.com/jeetparekh3005/keel/issues/544)) ([9440ec8](https://github.com/jeetparekh3005/keel/commit/9440ec8c23e3dca66ba11dde5877aee91f286b99))
+* **ts:** fail-closed MessageBus env selector (ADR-0025) ([#578](https://github.com/jeetparekh3005/keel/issues/578)) ([779f95c](https://github.com/jeetparekh3005/keel/commit/779f95c096f0fe56f9f6729fe6975c2475c633c0))
+* **ts:** Kafka MessageBus adapter (ADR-0025) ([#566](https://github.com/jeetparekh3005/keel/issues/566)) ([42b4863](https://github.com/jeetparekh3005/keel/commit/42b48637770338fd26a069a48274cab90e7b942e))
+* **ts:** OpenBao SecretProvider adapter (KV v2 over Vault HTTP API) ([#504](https://github.com/jeetparekh3005/keel/issues/504)) ([8b915c9](https://github.com/jeetparekh3005/keel/commit/8b915c9839d70df9f3986b1f7c380d0333f1aaf3))
+* **ts:** RabbitMQ MessageBus adapter (ADR-0025) ([#556](https://github.com/jeetparekh3005/keel/issues/556)) ([d3d0641](https://github.com/jeetparekh3005/keel/commit/d3d06417439f777a2a0c2bfcce2aed903b52355a))
+
+
+### Bug Fixes
+
+* **go:** bound AWS Secrets Manager calls and stop decoder-error leak ([#537](https://github.com/jeetparekh3005/keel/issues/537)) ([c0a5ec4](https://github.com/jeetparekh3005/keel/commit/c0a5ec4925825105762672af8b411358fd8b4993))
+* **go:** harden OpenBao SecretProvider per ADR-0023 review ([#509](https://github.com/jeetparekh3005/keel/issues/509)) ([a6595c1](https://github.com/jeetparekh3005/keel/commit/a6595c116527cb58e6e45e7120ee8ae8298c8e7a))
+* **go:** preserve original subject across Kafka topic sanitization (ADR-0025) ([#569](https://github.com/jeetparekh3005/keel/issues/569)) ([fcea00e](https://github.com/jeetparekh3005/keel/commit/fcea00e1cc6b8e340d87d67016f91649536867cc))
+* **go:** quorum queue + preserve-on-DLX-failure in RabbitMQ adapter ([#561](https://github.com/jeetparekh3005/keel/issues/561)) ([02b14bb](https://github.com/jeetparekh3005/keel/commit/02b14bb235cecadc1fdd126d0c0979a55e1796e1))
+* **go:** sanitize Kafka logs/connect errors and clamp delivery-count ([#573](https://github.com/jeetparekh3005/keel/issues/573)) ([6245c5f](https://github.com/jeetparekh3005/keel/commit/6245c5f41ef85fd900cfcc62704a3ad505525ab8))
+* **java:** bound AWS Secrets Manager client timeout and cap retries ([#539](https://github.com/jeetparekh3005/keel/issues/539)) ([ce39166](https://github.com/jeetparekh3005/keel/commit/ce391668236492e959a890826ec0bd3eacf30cea))
+* **java:** clamp negative Kafka delivery-count to prevent redelivery amplification ([#571](https://github.com/jeetparekh3005/keel/issues/571)) ([53677cc](https://github.com/jeetparekh3005/keel/commit/53677cc03641fb3dc56328a3c52c0676979b8ad5))
+* **java:** stop leaking broker URL credentials in messaging connect errors ([#563](https://github.com/jeetparekh3005/keel/issues/563)) ([ffec92e](https://github.com/jeetparekh3005/keel/commit/ffec92e3f3682a79e28b13df248eaa1c68eba662))
+* **java:** trim trailing slash + guard empty payload in GCP adapter (parity) ([#550](https://github.com/jeetparekh3005/keel/issues/550)) ([b9fafbf](https://github.com/jeetparekh3005/keel/commit/b9fafbfff126858b722ab94398f26b69562b16f8))
+* **python:** bound AWS Secrets Manager client timeouts and retries ([#535](https://github.com/jeetparekh3005/keel/issues/535)) ([1c194ca](https://github.com/jeetparekh3005/keel/commit/1c194ca8ec062c4a00c3f8b9774545855343b8c5))
+* **python:** clamp negative Kafka delivery-count to prevent redelivery amplification ([#570](https://github.com/jeetparekh3005/keel/issues/570)) ([af397ee](https://github.com/jeetparekh3005/keel/commit/af397eedc83ca99171d68264548807d0c471f72b))
+* **python:** trim trailing slash in GCP secret resource name (parity) ([#548](https://github.com/jeetparekh3005/keel/issues/548)) ([4626472](https://github.com/jeetparekh3005/keel/commit/4626472c358d49c8ba4f835322823b1568891fd5))
+* **rust:** bound the AWS Secrets Manager client with hard timeouts and a retry cap ([#536](https://github.com/jeetparekh3005/keel/issues/536)) ([f0847b9](https://github.com/jeetparekh3005/keel/commit/f0847b97844d470d3f9c19ad0c5655727edaeed1))
+* **rust:** clamp Kafka delivery-count and enforce deny.toml bans in CI ([#572](https://github.com/jeetparekh3005/keel/issues/572)) ([994514f](https://github.com/jeetparekh3005/keel/commit/994514fec77232996c5d944c3249273a093d825d))
+* **rust:** preserve message on DLX-publish failure in RabbitMQ adapter ([#560](https://github.com/jeetparekh3005/keel/issues/560)) ([0dc16c7](https://github.com/jeetparekh3005/keel/commit/0dc16c736cb289b29fea8449396e5c408edce018))
+* **security:** bound AWS Secrets Manager client timeouts and retries ([#538](https://github.com/jeetparekh3005/keel/issues/538)) ([ff98e58](https://github.com/jeetparekh3005/keel/commit/ff98e5812122af39324109ec15adeac81c8c38b2))
+* **security:** harden Java OpenBao SecretProvider adapter ([#513](https://github.com/jeetparekh3005/keel/issues/513)) ([58869ee](https://github.com/jeetparekh3005/keel/commit/58869ee23c699c588efb7eafa522b18398e71458))
+* **security:** harden Python OpenBao adapter per ADR-0023 cross-vertical review ([#510](https://github.com/jeetparekh3005/keel/issues/510)) ([c3a9162](https://github.com/jeetparekh3005/keel/commit/c3a9162f07ad5973b217d63146cee4fb59bfea89))
+* **ts:** dynamic subscribe, earliest offset, clamp delivery-count in Kafka adapter ([#574](https://github.com/jeetparekh3005/keel/issues/574)) ([3cd1cb9](https://github.com/jeetparekh3005/keel/commit/3cd1cb9ad34f5c402436fc53d59f368346247a4a))
+* **ts:** harden OpenBao SecretProvider adapter per cross-vertical review ([#512](https://github.com/jeetparekh3005/keel/issues/512)) ([ced5e94](https://github.com/jeetparekh3005/keel/commit/ced5e94470cb444102259420537087e3701ded01))
+* **ts:** quorum queue, delivery-count +1, preserve-on-DLX-failure in RabbitMQ adapter ([#562](https://github.com/jeetparekh3005/keel/issues/562)) ([d912c54](https://github.com/jeetparekh3005/keel/commit/d912c54164fe4c99ea759558d8f2f3ceb8a2d5fc))
+* **ts:** trim trailing slash in GCP secret resource name (parity) ([#549](https://github.com/jeetparekh3005/keel/issues/549)) ([4bde6e7](https://github.com/jeetparekh3005/keel/commit/4bde6e740f05f3deb30539bf90285d21eef1dded))
+
+
+### Miscellaneous Chores
+
+* release v0.7.0 (dev to main) ([50ae7ed](https://github.com/jeetparekh3005/keel/commit/50ae7ed0530ec45c594a021edd6a70e813b4c911))
+
 ## [0.6.2](https://github.com/jeetparekh3005/keel/compare/v0.6.1...v0.6.2) (2026-11-17)
 
 
