@@ -322,6 +322,41 @@ def test_delivery_count_reads_header() -> None:
     assert _delivery_count([(_DELIVERY_COUNT_HEADER, b"nope")]) == 0
 
 
+def test_delivery_count_clamps_negative_to_zero() -> None:
+    # A forged negative header must not push num_delivered below a first delivery: it is clamped
+    # to 0 (num_delivered = 1), so an attacker cannot delay the dead-letter past the honest cap
+    # and drive a redelivery-amplification loop.
+    assert _delivery_count([(_DELIVERY_COUNT_HEADER, b"-100000000")]) == 0
+    assert _delivery_count([(_DELIVERY_COUNT_HEADER, b"-1")]) == 0
+
+
+async def test_forged_negative_delivery_count_still_dead_letters_at_cap() -> None:
+    # End-to-end: a poison record carrying keel-delivery-count: -100000000 resolves to
+    # num_delivered = 1 (a first delivery), so a repeatedly-failing record still dead-letters on
+    # the honest fifth attempt rather than cycling ~100M times.
+    logger = _RecordingLogger()
+    record = _Record(
+        topic="keel_test_events",
+        value=b"payload",
+        headers=[(_DELIVERY_COUNT_HEADER, b"-100000000")],
+    )
+    attempts = 0
+    dead_lettered = False
+    while attempts < 100:
+        attempts += 1
+        sink = _FakeSink()
+        await _bus(logger, sink)._dispatch(record, _fail_handler)  # noqa: SLF001
+        if sink.last_produced_to(_DLQ_SUFFIX) is not None:
+            dead_lettered = True
+            break
+        retry = sink.last_produced_to(_RETRY_SUFFIX)
+        assert retry is not None
+        record = _Record(topic="keel_test_events", value=retry.value, headers=list(retry.headers))
+
+    assert dead_lettered
+    assert attempts == 5, f"forged count delayed dead-letter to attempt {attempts}, want 5"
+
+
 def test_topic_name_sanitizes_subject() -> None:
     assert topic_name("keel") == "keel"
     assert topic_name("keel.test.events") == "keel_test_events"

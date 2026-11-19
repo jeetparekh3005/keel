@@ -107,16 +107,24 @@ def _encode_headers(carrier: Mapping[str, str]) -> list[tuple[str, bytes]]:
 def _delivery_count(headers: Sequence[tuple[str, bytes]]) -> int:
     """Read the 0-based redelivery count from the keel-delivery-count header.
 
-    Returns 0 when the header is absent (the first delivery) or unparseable; the
-    dispatch adds one to get the 1-based attempt count the disposition compares
+    Returns 0 when the header is absent (the first delivery), malformed, or negative;
+    the dispatch adds one to get the 1-based attempt count the disposition compares
     against, matching the NATS ``metadata.num_delivered`` convention.
+
+    The count is parsed as a non-negative decimal integer. A principal with produce
+    rights could otherwise stamp a large negative value (e.g. -100000000) to keep
+    num_delivered far below the cap and drive ~100M consume->fail->re-produce cycles
+    before dead-lettering - a redelivery-amplification DoS. int() strips surrounding
+    whitespace and rejects non-decimal input; a negative value is clamped to 0, so a
+    forged header can never delay the dead-letter past the honest cap.
     """
     for key, value in headers:
         if key == _DELIVERY_COUNT_HEADER:
             try:
-                return int(value)
+                count = int(value)
             except ValueError:
                 return 0
+            return max(count, 0)
     return 0
 
 
