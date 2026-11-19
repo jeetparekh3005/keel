@@ -38,14 +38,14 @@ interface Published {
 }
 
 /** A fake AMQP channel recording ack/nack/publish so the disposition is asserted broker-free. */
-function fakeChannel(opts?: { failAck?: boolean }) {
+function fakeChannel(opts?: { failAck?: boolean; failPublish?: boolean }) {
   const state = {
     acked: 0,
     nacked: 0,
     lastNackRequeue: undefined as boolean | undefined,
     published: [] as Published[],
     exchanges: [] as { exchange: string; type: string }[],
-    queues: [] as string[],
+    queues: [] as { queue: string; arguments?: Record<string, unknown> }[],
     bindings: [] as { queue: string; source: string; pattern: string }[],
     prefetchCount: undefined as number | undefined,
     closed: false,
@@ -56,8 +56,8 @@ function fakeChannel(opts?: { failAck?: boolean }) {
       state.exchanges.push({ exchange, type });
       return Promise.resolve({ exchange });
     },
-    assertQueue(queue: string) {
-      state.queues.push(queue);
+    assertQueue(queue: string, options?: { arguments?: Record<string, unknown> }) {
+      state.queues.push({ queue, arguments: options?.arguments });
       return Promise.resolve({ queue, messageCount: 0, consumerCount: 0 });
     },
     bindQueue(queue: string, source: string, pattern: string) {
@@ -74,6 +74,9 @@ function fakeChannel(opts?: { failAck?: boolean }) {
       content: Buffer,
       options?: { headers?: MessagePropertyHeaders },
     ): boolean {
+      if (opts?.failPublish) {
+        throw new Error('publish failed');
+      }
       state.published.push({ exchange, routingKey, content, headers: options?.headers });
       return true;
     },
@@ -227,7 +230,8 @@ describe('RabbitMqMessageBus.dispatch', () => {
     const { logger, calls } = recordingLogger();
     const { ch, state } = fakeChannel();
     const handler: MessageHandler = () => Promise.reject(new Error('poison'));
-    await makeBus({ logger, maxDeliver: 5 }).dispatch(ch, fakeMsg({ deliveryCount: 5 }), handler);
+    // x-delivery-count is 0-based (4 prior attempts), so this IS the 5th delivery == the cap.
+    await makeBus({ logger, maxDeliver: 5 }).dispatch(ch, fakeMsg({ deliveryCount: 4 }), handler);
     // Published to the dead-letter exchange with the original subject as routing key, then acked.
     expect(state.published).toHaveLength(1);
     expect(state.published[0].exchange).toBe('keel.dlx');
@@ -240,6 +244,48 @@ describe('RabbitMqMessageBus.dispatch', () => {
     expect(terminated?.obj.num_delivered).toBe(5);
     expect(terminated?.obj.max_deliver).toBe(5);
     expect(terminated?.obj.dlx).toBe('keel.dlx');
+  });
+
+  it('dead-letters on the 5th delivery, not the 6th, as x-delivery-count grows', async () => {
+    const handler: MessageHandler = () => Promise.reject(new Error('poison'));
+    // x-delivery-count is 0-based: the broker sends it as the count of prior failed attempts, so
+    // num_delivered = x-delivery-count + 1. With maxDeliver=5 the message must still redeliver
+    // through the 4th attempt and dead-letter exactly on the 5th - never a 6th delivery.
+    for (let xDeliveryCount = 0; xDeliveryCount <= 3; xDeliveryCount++) {
+      const { ch, state } = fakeChannel();
+      await makeBus({ maxDeliver: 5 }).dispatch(
+        ch,
+        fakeMsg({ deliveryCount: xDeliveryCount }),
+        handler,
+      );
+      expect(state.nacked, `delivery ${xDeliveryCount + 1} should redeliver`).toBe(1);
+      expect(state.lastNackRequeue).toBe(true);
+      expect(state.acked).toBe(0);
+      expect(state.published).toHaveLength(0);
+    }
+    // x-delivery-count == 4 is the 5th delivery: dead-letter and ack, no further nak-requeue.
+    const { ch, state } = fakeChannel();
+    await makeBus({ maxDeliver: 5 }).dispatch(ch, fakeMsg({ deliveryCount: 4 }), handler);
+    expect(state.published, 'the 5th delivery must dead-letter').toHaveLength(1);
+    expect(state.published[0].exchange).toBe('keel.dlx');
+    expect(state.acked).toBe(1);
+    expect(state.nacked).toBe(0);
+  });
+
+  it('preserves the message by nack-requeue (not ack) when the DLX publish fails', async () => {
+    const { logger, calls } = recordingLogger();
+    // publish throws on the DLX attempt at the cap; the message must NOT be acked-and-dropped.
+    const { ch, state } = fakeChannel({ failPublish: true });
+    const handler: MessageHandler = () => Promise.reject(new Error('poison'));
+    await makeBus({ logger, maxDeliver: 5 }).dispatch(ch, fakeMsg({ deliveryCount: 4 }), handler);
+    expect(state.published, 'the failed publish records nothing').toHaveLength(0);
+    expect(state.acked, 'a failed dead-letter must never ack (data loss)').toBe(0);
+    expect(state.nacked).toBe(1);
+    expect(state.lastNackRequeue).toBe(true);
+    expect(
+      calls.some((c) => c.level === 'error' && c.msg.includes('dead-letter publish failed')),
+      'the dead-letter publish failure must be logged',
+    ).toBe(true);
   });
 
   it('reads the delivery count from the keel-delivery-count fallback header', async () => {
@@ -289,14 +335,16 @@ describe('RabbitMqMessageBus.dispatch', () => {
 });
 
 describe('RabbitMqMessageBus.connect', () => {
-  it('declares the exchange, dead-letter exchange, queue, bindings, and prefetch', async () => {
+  it('declares the exchange, dead-letter exchange, quorum queue, bindings, and prefetch', async () => {
     const conn = fakeConnection();
     const bus = makeBus({ connectFn: conn.connectFn });
     await bus.connect();
     const { state } = conn.channel;
     expect(state.exchanges).toContainEqual({ exchange: 'keel', type: 'topic' });
     expect(state.exchanges).toContainEqual({ exchange: 'keel.dlx', type: 'topic' });
-    expect(state.queues).toEqual(['keel']);
+    // A quorum queue (x-queue-type=quorum) so the broker populates x-delivery-count; a classic
+    // queue would never emit it, leaving a poison message requeued forever.
+    expect(state.queues).toEqual([{ queue: 'keel', arguments: { 'x-queue-type': 'quorum' } }]);
     expect(state.bindings).toContainEqual({ queue: 'keel', source: 'keel', pattern: 'keel.#' });
     expect(state.prefetchCount).toBe(256);
   });

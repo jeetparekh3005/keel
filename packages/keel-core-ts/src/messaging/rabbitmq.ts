@@ -4,10 +4,13 @@
 //
 // Delivery contract is identical to NATS, mapped onto RabbitMQ primitives: handler success ->
 // basic.ack; failure below the redelivery cap -> basic.nack(requeue=true); at the cap -> publish to
-// a dead-letter exchange then basic.ack the original (always logging the terminate). The redelivery
-// count is read from the AMQP `x-delivery-count` header (quorum queues expose it) with a portable
-// `keel-delivery-count` fallback. Trace context is injected into AMQP headers on publish (via the
-// global OpenTelemetry propagator, configured by the telemetry SDK as W3C trace-context) and
+// a dead-letter exchange then basic.ack the original (always logging the terminate) - but if that
+// dead-letter publish fails the original is nack(requeue)'d instead of acked, so a poison message
+// is never dropped (preserve policy). The redelivery count is read from the AMQP `x-delivery-count`
+// header (the queue is declared as a quorum queue so the broker populates it) with a portable
+// `keel-delivery-count` fallback, +1 to make it the 1-based num_delivered the cap compares. Trace
+// context is injected into AMQP headers on publish (via the global OpenTelemetry propagator,
+// configured by the telemetry SDK as W3C trace-context) and
 // re-attached around each handler so a consumer's work joins the producer's trace.
 //
 // amqplib is pinned to 0.10.9, the genuine stable line (it needs the separate @types/amqplib typings
@@ -114,7 +117,11 @@ export class RabbitMqMessageBus {
     // The dead-letter exchange a terminated message is routed to; declared so publish at the cap
     // cannot fail for a missing exchange.
     await ch.assertExchange(this.dlx, 'topic', { durable: true });
-    await ch.assertQueue(this.queue, { durable: true });
+    // Declared as a quorum queue so the broker maintains a native per-message x-delivery-count
+    // (classic queues do not emit it) - without it the redelivery count never advances and a
+    // poison message is nack(requeue)'d forever instead of dead-lettering. Parity with the
+    // Python/Rust adapters, which also declare x-queue-type=quorum.
+    await ch.assertQueue(this.queue, { durable: true, arguments: { 'x-queue-type': 'quorum' } });
     for (const subject of this.subjects) {
       await ch.bindQueue(this.queue, this.exchange, subject);
     }
@@ -162,9 +169,10 @@ export class RabbitMqMessageBus {
 
   /**
    * Run `handler` for one delivered message within its extracted trace context; ack on success,
-   * nak (redeliver) on failure below the cap, dead-letter (publish to the DLX, then ack) at the cap.
-   * The channel is passed in so the disposition is exercised without a live connection. Invoked by
-   * the consume callback; exposed for contract tests.
+   * nak (redeliver) on failure below the cap, dead-letter at the cap (publish to the DLX, then ack
+   * only if that publish succeeded - otherwise nak(requeue) to preserve the message). The channel
+   * is passed in so the disposition is exercised without a live connection. Invoked by the consume
+   * callback; exposed for contract tests.
    */
   async dispatch(ch: Channel, message: ConsumeMessage, handler: MessageHandler): Promise<void> {
     const headers = headersToRecord(message.properties.headers);
@@ -186,7 +194,11 @@ export class RabbitMqMessageBus {
         err = caught;
       }
 
-      const numDelivered = deliveryCount(headers);
+      // x-delivery-count is the broker's count of prior failed attempts (0 on first delivery), so
+      // +1 yields the 1-based num_delivered the disposition cap compares against - matching the
+      // Go/Rust adapters. Without the +1 the cap is reached one delivery late (dead-letters on the
+      // 6th attempt instead of the 5th for maxDeliver=5).
+      const numDelivered = deliveryCount(headers) + 1;
       const decision = disposition(ok, numDelivered, this.maxDeliver);
       switch (decision) {
         case 'ack':
@@ -200,9 +212,11 @@ export class RabbitMqMessageBus {
           );
           await this.control(() => ch.nack(message, false, true), 'nak', subject);
           return;
-        case 'term':
+        case 'term': {
           // At the cap the message is dead-lettered. The terminate decision is always logged - a
-          // dead-letter must never be silent - then the original is acked so it leaves the queue.
+          // dead-letter must never be silent. Preserve policy: the original is acked ONLY after the
+          // DLX publish succeeds; if that publish fails the message is nack(requeue)'d so it is
+          // retried rather than ack-and-dropped (data loss). Parity with the Python/Java adapters.
           this.logger.error(
             {
               subject,
@@ -215,17 +229,25 @@ export class RabbitMqMessageBus {
             },
             'message terminated after exhausting delivery attempts',
           );
-          await this.control(
-            () => {
-              ch.publish(this.dlx, subject, message.content, {
-                headers: message.properties.headers ?? {},
-              });
-            },
-            'dlx',
-            subject,
-          );
+          let dlxPublished = false;
+          try {
+            ch.publish(this.dlx, subject, message.content, {
+              headers: message.properties.headers ?? {},
+            });
+            dlxPublished = true;
+          } catch (dlxErr) {
+            this.logger.error(
+              { op: 'dlx', subject, err: errorText(dlxErr) },
+              'dead-letter publish failed; requeueing to preserve the message',
+            );
+          }
+          if (!dlxPublished) {
+            await this.control(() => ch.nack(message, false, true), 'nak', subject);
+            return;
+          }
           await this.control(() => ch.ack(message), 'ack', subject);
           return;
+        }
       }
     });
   }
@@ -279,8 +301,9 @@ function headersToRecord(headers: MessagePropertyHeaders | undefined): Record<st
 }
 
 /**
- * The broker's redelivery count: the quorum-queue `x-delivery-count` header, falling back to the
- * portable `keel-delivery-count` header. Absent (first delivery) reads as 0.
+ * The broker's raw redelivery count: the quorum-queue `x-delivery-count` header, falling back to
+ * the portable `keel-delivery-count` header. This is the count of prior failed attempts, 0 on the
+ * first delivery; the caller adds 1 to get the 1-based num_delivered the delivery cap compares.
  */
 function deliveryCount(headers: Record<string, string>): number {
   const raw = headers['x-delivery-count'] ?? headers['keel-delivery-count'];
