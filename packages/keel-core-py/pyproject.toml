@@ -24,6 +24,11 @@ grpc = [
 nats = [
     "nats-py>=2.6",
 ]
+# RabbitMQ is opt-in (ADR-0025): REST-only services should not pull the client.
+# aio-pika is the async client (over aiormq); it carries its own type hints.
+rabbitmq = [
+    "aio-pika>=9.5",
+]
 # AWS Secrets Manager backend (ADR-0024) is opt-in: only services using it pull boto3.
 # boto3 handles SigV4 signing and the default credential chain (env, IRSA, instance
 # profile, SSO); the standard AWS_ENDPOINT_URL_SECRETS_MANAGER env var points it at
