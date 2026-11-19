@@ -34,12 +34,18 @@ pub mod genproto;
 pub mod grpc;
 pub mod http;
 pub mod jwks;
+/// Kafka `MessageBus` adapter over `rdkafka`/librdkafka (ADR-0025), reusing the shared port in
+/// [`messaging`]. Opt-in: enable the `kafka` feature (mirrors the Python `keel-core[kafka]` extra)
+/// so the default build pulls in neither `rdkafka` nor a broker. librdkafka is the ADR-0025
+/// C-dependency exception, vendored and built without SSL/SASL.
+#[cfg(feature = "kafka")]
+pub mod kafka;
 pub mod logging;
 /// The `MessageBus` port and the NATS JetStream adapter. The shared port (traits,
 /// `InboundMessage`, `MessagingError`, the pure `disposition` policy, trace-context helpers)
-/// compiles under either broker feature; the JetStream adapter is `nats`-only (mirrors the
+/// compiles under any broker feature; the JetStream adapter is `nats`-only (mirrors the
 /// Python `keel-core[nats]` extra) so the default build needs no broker.
-#[cfg(any(feature = "nats", feature = "rabbitmq"))]
+#[cfg(any(feature = "nats", feature = "rabbitmq", feature = "kafka"))]
 pub mod messaging;
 pub mod persistence;
 pub mod ports;
