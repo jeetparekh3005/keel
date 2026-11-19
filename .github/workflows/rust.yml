@@ -60,6 +60,21 @@ jobs:
           --health-interval 5s
           --health-timeout 3s
           --health-retries 10
+      # RabbitMQ for the RabbitMqMessageBus round-trip integration test (ADR-0025), gated on
+      # KEEL_RABBITMQ_URL below. Unlike the other four lanes, which start rabbitmq:4 with a plain
+      # `docker run` step, this lane runs it as a GitHub-managed service container: the `docker run`
+      # approach reproducibly hit an Erlang-cookie "eacces" boot failure here (a /var/lib/rabbitmq
+      # overlay-permission quirk specific to this job), whereas the service-container lifecycle boots
+      # rabbitmq:4 cleanly. Health-gated on the AMQP listener so the job waits for the broker.
+      rabbitmq:
+        image: rabbitmq:4
+        ports:
+          - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q check_port_connectivity"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     env:
       KEEL_TEST_DATABASE_URL: postgres://keel:keel@localhost:5432/reference
       # Backs the OpenBaoSecretProvider KV v2 round-trip integration test (ADR-0023), gated
@@ -116,40 +131,9 @@ jobs:
             (echo > /dev/tcp/127.0.0.1/4222) >/dev/null 2>&1 && break
             sleep 1
           done
-      - name: Start RabbitMQ
-        # Backs the RabbitMqMessageBus round-trip integration test (ADR-0025) gated on
-        # KEEL_RABBITMQ_URL below. rabbitmq:4 is the current stable major, pinned to the major so a
-        # patch refresh is automatic but a major bump is deliberate.
-        #
-        # Started with a plain `docker run` identical to the other four lanes (python/go/ts/java),
-        # which boot rabbitmq:4 fine and run their RabbitMQ integration tests for real. A
-        # `--memory 1g` cap was tried and REMOVED: under this lane's contention it starved the
-        # entrypoint mid-setup, leaving a root-owned /var/lib/rabbitmq/.erlang.cookie, so the broker
-        # hard-failed to boot with "Error when reading .erlang.cookie: eacces" (surfaced only once
-        # the readiness check below started failing loud). No memory cap is needed.
-        #
-        # Readiness polls check_port_connectivity, which verifies the AMQP listener on 5672 is
-        # actually accepting -- `ping` only proves the Erlang node is up, not that the socket binds,
-        # so it can pass while connect still refuses. The loop then ASSERTS readiness and fails loud
-        # (dumping `docker logs` + `docker ps -a`) if the broker never comes up, so a future failure
-        # shows the real cause here instead of a misleading connection-refused in the test step.
-        run: |
-          docker run -d --name rabbitmq -p 5672:5672 rabbitmq:4
-          ready=""
-          for _ in $(seq 1 60); do
-            if docker exec rabbitmq rabbitmq-diagnostics -q check_port_connectivity >/dev/null 2>&1; then
-              ready=1
-              break
-            fi
-            sleep 2
-          done
-          if [ -z "$ready" ]; then
-            echo "::error::RabbitMQ did not become ready (AMQP listener on 5672 never accepted)"
-            docker logs rabbitmq || true
-            docker ps -a || true
-            exit 1
-          fi
-          echo "RabbitMQ AMQP listener is ready."
+      # RabbitMQ runs as a health-gated service container (see the `services:` block above), not a
+      # `docker run` step, because the step approach reproducibly hit an Erlang-cookie eacces boot
+      # failure in this lane. No start step is needed here; the job waits for its health check.
       - name: Start Keycloak (import realm)
         # Keycloak imports the shared realm on boot, so it can't run as a service
         # container (those can't pass `--import-realm`); run it as a step like python.yml.
