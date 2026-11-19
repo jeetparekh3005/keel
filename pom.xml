@@ -53,6 +53,14 @@
          image (Trivy gate), so the version property is overridden here to carry the patched client
          to every module in the reactor. 5.38.0 is the current stable. -->
     <rabbit-amqp-client.version>5.38.0</rabbit-amqp-client.version>
+    <!-- Override Spring Boot's managed Kafka client to the pinned release (ADR-0025). The
+         spring-boot-dependencies BOM (inherited via spring-boot-starter-parent) manages
+         org.apache.kafka:kafka-clients to 4.2.2 via this property; keel-core-java's Kafka
+         MessageBus adapter pins 4.4.0 directly, but Spring's managed version wins over that
+         transitive version in the reference-service image (Trivy gate), so the property is
+         overridden here to carry the pinned client to every module in the reactor. 4.4.0 is the
+         current stable 4.x line and matches the apache/kafka:4.4.0 KRaft broker the CI starts. -->
+    <kafka.version>4.4.0</kafka.version>
     <!-- Per-module JaCoCo floors (epic #419, v0.6 parity). These are the default (keel-core-java)
          minima; reference-service-java overrides them with its own, higher floors in its pom.
          The values lock the real measured coverage just under the observed number so the gate
