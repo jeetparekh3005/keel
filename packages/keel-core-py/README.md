@@ -13,9 +13,9 @@ keel_core/
     inbound/rpc/       # gRPC server factory (OTel-instrumented)
     outbound/          # StructuredLogger, SystemClock
     outbound/rpc/      # gRPC ServiceClient channel factory (trace-propagating)
-    outbound/messaging/ # MessageBus port + InMemory and NATS JetStream adapters
+    outbound/messaging/ # MessageBus port + InMemory, NATS JetStream, Kafka, RabbitMQ adapters
     outbound/auth/     # OIDCAuthenticator + ApiKeyAuthenticator
-    outbound/secrets/  # EnvSecretProvider (prod: OpenBao)
+    outbound/secrets/  # SecretProvider: Env (dev); OpenBao, AWS, GCP (prod)
     outbound/telemetry/ # OpenTelemetry tracing + metrics + saturation
     outbound/persistence/  # async SQLAlchemy: Database, UnitOfWork (repos are service-defined)
   config.py     # BaseServiceConfig (typed, 12-factor, fail-fast)
@@ -30,10 +30,10 @@ keel_core/
 - **Typed config** - `BaseServiceConfig` (Pydantic Settings), `KEEL_`-prefixed, immutable, fails fast.
 - **Clock** - injectable time for testability.
 - **Auth** - `Authenticator` / `Principal` port with `OIDCAuthenticator` (Bearer JWTs verified against the issuer JWKS; issuer/audience/expiry enforced; claims mapped to a `Principal`) and `ApiKeyAuthenticator` (SHA-256-hashed keys, accepted via `X-API-Key`).
-- **Secrets** - `SecretProvider` port + `EnvSecretProvider` (dev); production uses OpenBao (ADR-0007). Secrets are reached only through the port.
+- **Secrets** - `SecretProvider` port + `EnvSecretProvider` (dev); production backends OpenBao/Vault ([ADR-0023](../../docs/adr/0023-openbao-secretprovider-adapter.md)), AWS Secrets Manager, and GCP Secret Manager ([ADR-0024](../../docs/adr/0024-cloud-secret-manager-adapters.md)) over one caching core, selected fail-closed at most one (`KEEL_VAULT_ADDR` / `KEEL_AWS_SECRET_ID` / `KEEL_GCP_SECRET`); opt-in `[openbao]`/`[aws]`/`[gcp]` extras. Secrets are reached only through the port.
 - **Distributed tracing** - `configure_tracing()` installs an OpenTelemetry provider; FastAPI/Starlette then emit spans and continue inbound W3C trace context natively. The structured logger reads the active span, so every log line carries the correct `trace_id`/`span_id` with no wiring. OTLP export is configured at deployment.
 - **gRPC** - `create_channel` (ServiceClient) and `create_server` (GrpcApi) factories carry the OpenTelemetry interceptors; the server enforces deny-by-default auth + scope authorization and publishes the `Principal` on a contextvar. mTLS credential builders (`mtls_channel_credentials`/`mtls_server_credentials`) via OpenBao PKI.
-- **Messaging** - `MessageBus` port with `InMemoryMessageBus` (dev/test) and a durable `NatsMessageBus` (JetStream, explicit-ack, nak/DLQ), both injecting/extracting trace context. A reusable `assert_pubsub_roundtrip` contract both satisfy.
+- **Messaging** - `MessageBus` port with `InMemoryMessageBus` (dev/test) and durable `NatsMessageBus` (JetStream), `KafkaMessageBus` (`aiokafka`), and `RabbitMqMessageBus` (`aio-pika`) adapters - all at-least-once with ack/nak/dead-letter and W3C trace propagation, selected fail-closed at most one via `message_bus_from_env` (`KEEL_NATS_URL` / `KEEL_KAFKA_BROKERS` / `KEEL_RABBITMQ_URL`; [ADR-0025](../../docs/adr/0025-kafka-and-rabbitmq-messagebus-adapters.md)); opt-in `[nats]`/`[kafka]`/`[rabbitmq]` extras. A reusable `assert_pubsub_roundtrip` contract they all satisfy.
 - **FastAPI app factory** ([ADR-0013](../../docs/adr/0013-python-web-framework.md)) - `create_app` wires request-id, problem+json (RFC 9457, incl. `invalid-params`), health, metrics, optional rate limiting, default-deny CORS, environment-gated docs, and a deny-by-default auth dependency. Requires an `Authenticator`.
 - **Persistence** - async SQLAlchemy 2.0 plumbing: `Database`, `UnitOfWork`, the `Entity` base, and a bounded readiness `ping()`. Repositories are **service-defined** per aggregate (mapping ORM<->domain); keel-core ships no generic repository.
 - **Test kit** - fakes + reusable contracts (messaging, health/problem conformance) so services test against the ports.
