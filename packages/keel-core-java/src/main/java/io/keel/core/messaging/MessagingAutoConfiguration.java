@@ -1,5 +1,6 @@
 package io.keel.core.messaging;
 
+import io.keel.core.adapters.messaging.KafkaMessageBus;
 import io.keel.core.adapters.messaging.NatsMessageBus;
 import io.keel.core.adapters.messaging.RabbitMqMessageBus;
 import io.keel.core.config.KeelProperties;
@@ -61,6 +62,27 @@ public class MessagingAutoConfiguration {
         properties.rabbitmqQueue(),
         properties.rabbitmqDlx(),
         properties.rabbitmqSubjects(),
+        openTelemetry);
+  }
+
+  /**
+   * Build and expose the Kafka bus (ADR-0025). Gated on {@code keel.kafka-brokers} (env {@code
+   * KEEL_KAFKA_BROKERS}) exactly as the NATS and RabbitMQ beans are gated on their URL. It connects
+   * lazily on first use; {@code destroyMethod = "close"} drains the clients at shutdown. The
+   * OpenTelemetry bean supplies the W3C propagator so published messages carry the trace context
+   * and consumers continue the publisher's trace. The at-most-one cross-broker selector is a later
+   * slice (ADR-0025), so this bean only parallels the conditional beans above.
+   */
+  @Bean(destroyMethod = "close")
+  @ConditionalOnClass({KafkaMessageBus.class, OpenTelemetry.class})
+  @ConditionalOnProperty(prefix = "keel", name = "kafka-brokers")
+  @ConditionalOnMissingBean(MessageBus.class)
+  public MessageBus kafkaMessageBus(KeelProperties properties, OpenTelemetry openTelemetry) {
+    return new KafkaMessageBus(
+        properties.kafkaBrokers(),
+        properties.kafkaTopics(),
+        properties.kafkaGroupId(),
+        properties.kafkaDlqTopic(),
         openTelemetry);
   }
 }

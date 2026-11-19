@@ -27,6 +27,14 @@ import org.springframework.validation.annotation.Validated;
  * hit, and {@code KEEL_RABBITMQ_SUBJECTS} (comma-separated, default {@code keel.#}) the default
  * routing keys the queue is bound to at connect, parallel to {@code KEEL_NATS_SUBJECTS}.
  *
+ * <p>The Kafka fields gate the Kafka {@code MessageBus} adapter (ADR-0025): it is wired only when
+ * {@code KEEL_KAFKA_BROKERS} ({@code keel.kafka-brokers}, comma-separated bootstrap servers) is
+ * set, parallel to NATS and RabbitMQ. {@code KEEL_KAFKA_TOPICS} (comma-separated, default {@code
+ * keel}) names the subjects the consumer group subscribes to (each sanitized to a legal topic, with
+ * its {@code <topic>.retry} sibling consumed too), {@code KEEL_KAFKA_GROUP_ID} ({@code keel}) the
+ * consumer group, and {@code KEEL_KAFKA_DLQ_TOPIC} optionally overrides the per-topic {@code
+ * <topic>.dlq} dead-letter destination with a single shared dead-letter topic.
+ *
  * <p>The gRPC fields gate the inbound gRPC server (ADR-0022): it is wired only when {@code
  * KEEL_GRPC_PORT} ({@code keel.grpc-port}) is set, so a service without gRPC is unaffected. The TLS
  * PEM fields ({@code KEEL_GRPC_TLS_CERT_PEM}, {@code KEEL_GRPC_TLS_KEY_PEM}, {@code
@@ -73,6 +81,10 @@ public record KeelProperties(
     @DefaultValue("keel") String rabbitmqQueue,
     @DefaultValue("keel.dlx") String rabbitmqDlx,
     @DefaultValue({"keel.#"}) List<String> rabbitmqSubjects,
+    @DefaultValue List<String> kafkaBrokers,
+    @DefaultValue({"keel"}) List<String> kafkaTopics,
+    @DefaultValue("keel") String kafkaGroupId,
+    @DefaultValue("") String kafkaDlqTopic,
     @DefaultValue("0") int grpcPort,
     @DefaultValue("") String grpcTlsCertPem,
     @DefaultValue("") String grpcTlsKeyPem,
