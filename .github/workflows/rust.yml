@@ -121,23 +121,20 @@ jobs:
         # KEEL_RABBITMQ_URL below. rabbitmq:4 is the current stable major, pinned to the major so a
         # patch refresh is automatic but a major bump is deliberate.
         #
-        # The Rust job starts the most containers of any lane (postgres service + nats + keycloak +
-        # openbao + localstack + rabbitmq) alongside a heavy cargo build, so RabbitMQ is the most
-        # memory- and CPU-contended broker here. Two hardening measures:
-        #  - A 1g container memory cap so the broker is bounded under contention. RabbitMQ 4 is
-        #    cgroup-aware and derives its vm_memory_high_watermark from the container limit, so it
-        #    self-throttles publishers well below the cap instead of being OOM-killed (an OOM-killed
-        #    broker is exactly what produced the downstream "connection refused" the test saw). The
-        #    legacy RABBITMQ_VM_MEMORY_HIGH_WATERMARK env var is NOT used: it is deprecated and the
-        #    rabbitmq:4 image's entrypoint hard-exits on it, which would itself prevent startup.
-        #  - Readiness polls check_port_connectivity, which verifies the AMQP listener on 5672 is
-        #    actually accepting -- `ping` only proves the Erlang node is up, not that the socket
-        #    binds, so it can pass while connect still refuses. The loop then ASSERTS readiness and
-        #    fails loud (dumping `docker logs` + `docker ps -a`) if the broker never comes up, so a
-        #    future failure shows the real cause here instead of a misleading connection-refused in
-        #    the test step.
+        # Started with a plain `docker run` identical to the other four lanes (python/go/ts/java),
+        # which boot rabbitmq:4 fine and run their RabbitMQ integration tests for real. A
+        # `--memory 1g` cap was tried and REMOVED: under this lane's contention it starved the
+        # entrypoint mid-setup, leaving a root-owned /var/lib/rabbitmq/.erlang.cookie, so the broker
+        # hard-failed to boot with "Error when reading .erlang.cookie: eacces" (surfaced only once
+        # the readiness check below started failing loud). No memory cap is needed.
+        #
+        # Readiness polls check_port_connectivity, which verifies the AMQP listener on 5672 is
+        # actually accepting -- `ping` only proves the Erlang node is up, not that the socket binds,
+        # so it can pass while connect still refuses. The loop then ASSERTS readiness and fails loud
+        # (dumping `docker logs` + `docker ps -a`) if the broker never comes up, so a future failure
+        # shows the real cause here instead of a misleading connection-refused in the test step.
         run: |
-          docker run -d --name rabbitmq -p 5672:5672 --memory 1g rabbitmq:4
+          docker run -d --name rabbitmq -p 5672:5672 rabbitmq:4
           ready=""
           for _ in $(seq 1 60); do
             if docker exec rabbitmq rabbitmq-diagnostics -q check_port_connectivity >/dev/null 2>&1; then
