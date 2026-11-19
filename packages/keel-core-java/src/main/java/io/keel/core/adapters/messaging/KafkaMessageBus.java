@@ -545,9 +545,15 @@ public final class KafkaMessageBus implements MessageBus {
   }
 
   /**
-   * Read the redelivery count from the {@code keel-delivery-count} header, returning 0 when it is
-   * absent (the first delivery) or unparseable; {@code dispatch} adds one for a 1-based attempt
-   * count matching the other verticals' numDelivered.
+   * Read the redelivery count from the {@code keel-delivery-count} header as a non-negative decimal
+   * integer, returning 0 when it is absent (the first delivery), malformed, or negative; {@code
+   * dispatch} adds one for a 1-based attempt count matching the other verticals' numDelivered.
+   *
+   * <p>A negative value is clamped to 0 rather than trusted: the header is attacker-controllable,
+   * so a published {@code keel-delivery-count: -100000000} would otherwise keep numDelivered far
+   * below the cap and cycle the record consume -> fail -> re-produce ~100M times before
+   * dead-lettering (a redelivery-amplification DoS). Clamping treats a hostile count as the first
+   * delivery.
    */
   private static int deliveryCount(Headers headers) {
     Header header = headers.lastHeader(DELIVERY_COUNT_HEADER);
@@ -555,7 +561,8 @@ public final class KafkaMessageBus implements MessageBus {
       return 0;
     }
     try {
-      return Integer.parseInt(new String(header.value(), StandardCharsets.UTF_8).trim());
+      int parsed = Integer.parseInt(new String(header.value(), StandardCharsets.UTF_8).trim());
+      return Math.max(parsed, 0);
     } catch (NumberFormatException e) {
       return 0;
     }

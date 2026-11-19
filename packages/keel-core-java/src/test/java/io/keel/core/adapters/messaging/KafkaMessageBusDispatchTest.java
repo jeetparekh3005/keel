@@ -419,6 +419,34 @@ class KafkaMessageBusDispatchTest {
   }
 
   @Test
+  void negativeDeliveryCountIsClampedToZero() {
+    FakeSink sink = new FakeSink();
+    // keel-delivery-count is attacker-controllable; a huge negative value would otherwise keep
+    // numDelivered far below the cap and cycle the record ~100M times (redelivery amplification).
+    // It must resolve to 0, i.e. the first delivery (numDelivered 1), so the record retries once
+    // rather than dead-lettering or looping.
+    bus()
+        .dispatch(
+            sink,
+            record(BASE_TOPIC, 1, Map.of("keel-delivery-count", "-100000000")),
+            inbound -> {
+              throw new IllegalStateException("fail");
+            });
+
+    ProducerRecord<byte[], byte[]> retry = sink.lastProducedTo(".retry");
+    assertNotNull(
+        retry,
+        "a negative prior-count resolves to numDelivered 1 (below the cap), so the record retries");
+    assertNull(
+        sink.lastProducedTo(".dlq"),
+        "a clamped negative count must not dead-letter on the first delivery");
+    // The retry stamps the just-attempted numDelivered (1), proving the negative prior-count became
+    // 0.
+    assertEquals(
+        1, deliveryCount(retry), "a negative keel-delivery-count resolves to 0 (numDelivered 1)");
+  }
+
+  @Test
   void topicNameSanitizesSubject() {
     assertEquals("keel", KafkaMessageBus.topicName("keel"));
     assertEquals("keel_test_events", KafkaMessageBus.topicName("keel.test.events"));
