@@ -112,6 +112,20 @@ lapin = { version = "4.12.3", optional = true, default-features = false, feature
     "rustls-native-certs",
     "default-runtime",
 ] }
+# Optional Kafka MessageBus adapter (the `kafka` feature, ADR-0025). rdkafka wraps librdkafka;
+# ADR-0025 accepts the librdkafka C dependency as the documented exception (the one non-pure-Rust
+# broker client). default-features are off and only `cmake-build` + `tokio` are selected on purpose:
+# `cmake-build` vendors and statically compiles librdkafka from source (needs cmake + a C compiler),
+# and crucially the `ssl`/`sasl`/`gssapi` features are NOT enabled, so librdkafka is built WITHOUT
+# SSL/SASL and rdkafka-sys pulls neither `openssl-sys` nor `libsasl` - keeping the tree clean of the
+# C/assembly-crypto and native-tls crates `deny.toml` bans (proven by `cargo tree` +
+# `cargo deny check bans`). keel's CI/dev Kafka is PLAINTEXT, so TLS is not needed. `tokio` gives
+# rdkafka its async runtime (the FutureProducer and StreamConsumer), the same executor the consume
+# loop runs on, mirroring the NATS/RabbitMQ adapters.
+rdkafka = { version = "0.39", optional = true, default-features = false, features = [
+    "cmake-build",
+    "tokio",
+] }
 
 [features]
 # Opt-in NATS JetStream adapter. Off by default so `cargo build` stays broker-free,
@@ -135,6 +149,19 @@ nats = [
 rabbitmq = [
     "dep:lapin",
     "dep:futures",
+    "dep:async-trait",
+    "opentelemetry_sdk/trace",
+]
+# Opt-in Kafka MessageBus adapter (ADR-0025). Off by default so `cargo build` stays broker-free,
+# exactly like the `nats`/`rabbitmq` features. Pulls `rdkafka` (librdkafka via cmake-build, built
+# without ssl/sasl) plus the shared bits the port needs: `async-trait` (the
+# `MessageBus`/`MessagePublisher` port impls) and `opentelemetry_sdk/trace` (the W3C
+# `TraceContextPropagator` for header inject/extract). The shared port types in
+# `keel_core::messaging` compile under this feature too; the adapter lives in `keel_core::kafka`.
+# Unlike `nats`/`rabbitmq` it needs no `futures`: the adapter drives `consumer.recv()` in a tokio
+# task rather than consuming a `Stream`.
+kafka = [
+    "dep:rdkafka",
     "dep:async-trait",
     "opentelemetry_sdk/trace",
 ]

@@ -134,6 +134,47 @@ jobs:
       # RabbitMQ runs as a health-gated service container (see the `services:` block above), not a
       # `docker run` step, because the step approach reproducibly hit an Erlang-cookie eacces boot
       # failure in this lane. No start step is needed here; the job waits for its health check.
+      - name: Start Kafka (KRaft)
+        # The messaging package integration test publishes and subscribes against this instance,
+        # asserting payload/header delivery, trace-context propagation, and the poison-record
+        # dead-letter round-trip; it skips when KEEL_KAFKA_BROKERS is unset. Pinned to the
+        # latest-stable 4.x line (ADR-0025). This is the reference broker config for the Kafka
+        # sub-wave; the other four verticals copy the env below verbatim.
+        #
+        # Single-node KRaft (no ZooKeeper): the broker is also the sole controller. The one setting
+        # that must be exact is KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092 - the broker
+        # hands this address back to a client after the bootstrap connect, so a client on the runner
+        # host (reaching the broker through the -p 9092:9092 mapping) must be told to reconnect to
+        # localhost:9092, not the container's internal hostname. Get this wrong and the bootstrap
+        # succeeds but every produce/fetch then dials an unresolvable broker and hangs. The CONTROLLER
+        # listener stays on 9093 (internal only, not mapped). Replication/ISR factors are forced to 1
+        # because there is a single broker, and auto-create is left on so publish and the adapter's
+        # <topic>.retry / <topic>.dlq produce create their topics on first use.
+        run: |
+          docker run -d --name kafka -p 9092:9092 \
+            -e KAFKA_NODE_ID=1 \
+            -e KAFKA_PROCESS_ROLES=broker,controller \
+            -e KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093 \
+            -e KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092 \
+            -e KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER \
+            -e KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT \
+            -e KAFKA_CONTROLLER_QUORUM_VOTERS=1@localhost:9093 \
+            -e KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1 \
+            -e KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1 \
+            -e KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1 \
+            -e KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS=0 \
+            -e KAFKA_AUTO_CREATE_TOPICS_ENABLE=true \
+            apache/kafka:4.4.0
+          # Readiness must gate on the broker actually serving a client API request, not just the TCP
+          # port being open (a KRaft broker accepts connections before it finishes forming the quorum
+          # and can serve metadata). kafka-topics --list drives a real client round-trip, so the step
+          # proceeds only once produce/consume will succeed.
+          echo "waiting for Kafka to accept client connections..."
+          for _ in $(seq 1 60); do
+            docker exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1 && break
+            sleep 2
+          done
+          docker exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list
       - name: Start Keycloak (import realm)
         # Keycloak imports the shared realm on boot, so it can't run as a service
         # container (those can't pass `--import-realm`); run it as a step like python.yml.
@@ -178,21 +219,24 @@ jobs:
         # JetStream publish->subscribe round-trip (the NATS container above + KEEL_NATS_URL),
         # the RabbitMQ publish->subscribe round-trip (the RabbitMQ container above + KEEL_RABBITMQ_URL),
         # the OpenBao KV v2 write/read round-trip (the OpenBao container above + KEEL_VAULT_* at
-        # job level), and the AWS Secrets Manager GetSecretValue round-trip (the LocalStack
-        # container above + AWS_*/KEEL_AWS_SECRET_ID at job level). The NATS/AWS/secret round-trips
-        # fail loudly if their backing service is missing; the RabbitMQ test self-skips when
-        # KEEL_RABBITMQ_URL is unset (so it is a no-op locally) but runs for real here where the
-        # container and URL are present. They are the paths that carry the service's
-        # composition/http/repository, each broker adapter's connect/publish/subscribe/dispatch, and
-        # the secret adapters' authenticate/load lines over the floor, so the coverage number is
-        # only honest with them in. --features nats,grpc,vault,aws,gcp,rabbitmq builds the opt-in
-        # NatsMessageBus and RabbitMqMessageBus adapters (and their integration tests), the opt-in
+        # job level), the AWS Secrets Manager GetSecretValue round-trip (the LocalStack
+        # container above + AWS_*/KEEL_AWS_SECRET_ID at job level), and the Kafka publish->subscribe
+        # round-trip + poison dead-letter round-trip (the Kafka container above + KEEL_KAFKA_BROKERS).
+        # The NATS/AWS/secret round-trips fail loudly if their backing service is missing; the
+        # RabbitMQ and Kafka tests self-skip when KEEL_RABBITMQ_URL / KEEL_KAFKA_BROKERS are unset
+        # (so they are a no-op locally) but run for real here where the container and URL/brokers are
+        # present. They are the paths that carry the service's composition/http/repository, each
+        # broker adapter's connect/publish/subscribe/dispatch, and the secret adapters'
+        # authenticate/load lines over the floor, so the coverage number is only honest with them in.
+        # --features nats,grpc,vault,aws,gcp,rabbitmq,kafka builds the opt-in NatsMessageBus,
+        # RabbitMqMessageBus, and KafkaMessageBus adapters (and their integration tests), the opt-in
         # gRPC server factory/mTLS module (keel_core::grpc, ADR-0022), the opt-in OpenBaoSecretProvider
         # (keel_core::vault, ADR-0023), and the opt-in AwsSecretsManagerSecretProvider and
         # GcpSecretManagerSecretProvider over the shared caching core (keel_core::aws + keel_core::gcp
         # + keel_core::secret, ADR-0024) so all are exercised and counted here -- without them in the
         # feature set the new code is not compiled under test/coverage and the floor could not see it.
-        # rabbitmq is new in this split (ADR-0025): the RabbitMqMessageBus adapter over lapin.
+        # rabbitmq and kafka are new in this split (ADR-0025): the RabbitMqMessageBus adapter over
+        # lapin and the KafkaMessageBus adapter over rdkafka/librdkafka (built without ssl/sasl).
         env:
           KEEL_KEYCLOAK_URL: http://localhost:8080
           KEEL_KEYCLOAK_REALM: keel
@@ -200,6 +244,11 @@ jobs:
           KEEL_KEYCLOAK_CLIENT_SECRET: test-secret
           KEEL_OIDC_AUDIENCE: keel-api
           KEEL_NATS_URL: nats://localhost:4222
+          # Backs the KafkaMessageBus round-trip + poison dead-letter integration test (ADR-0025),
+          # gated on this var against the single-node KRaft broker started as a step above. PLAINTEXT,
+          # so no TLS/SASL (librdkafka is built without SSL/SASL). The integration test self-skips
+          # when this is unset, so it is a no-op locally but runs for real here.
+          KEEL_KAFKA_BROKERS: localhost:9092
           # lapin parses the AMQP URI strictly per spec: a bare trailing slash (`.../`) names the
           # EMPTY vhost, not the default `/`, so `%2f` is the explicit, canonical way to select the
           # default vhost. Other verticals' clients default an empty path to `/`; the Rust client
@@ -225,10 +274,10 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             # Fast PR gate: full suite, non-instrumented, cached. No coverage measurement here.
-            cargo test --all --locked --features nats,grpc,vault,aws,gcp,rabbitmq -- --include-ignored
+            cargo test --all --locked --features nats,grpc,vault,aws,gcp,rabbitmq,kafka -- --include-ignored
           else
             # Merge/nightly: same suite under instrumentation, 85% line floor enforced.
-            cargo llvm-cov --all --locked --features nats,grpc,vault,aws,gcp,rabbitmq --ignore-filename-regex genproto --fail-under-lines 85 -- --include-ignored
+            cargo llvm-cov --all --locked --features nats,grpc,vault,aws,gcp,rabbitmq,kafka --ignore-filename-regex genproto --fail-under-lines 85 -- --include-ignored
           fi
       - name: Install cargo-audit
         uses: taiki-e/install-action@4a76afe23f9e08d2d9550fb56e556444e8611d21 # v2.90.4
