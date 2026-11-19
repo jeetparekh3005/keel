@@ -24,13 +24,18 @@ type fakeDelivery struct {
 	ackErr  error
 
 	acked, nacked bool
+	nackRequeue   bool
 }
 
-func (d *fakeDelivery) Ack(bool) error        { d.acked = true; return d.ackErr }
-func (d *fakeDelivery) Nack(bool, bool) error { d.nacked = true; return nil }
-func (d *fakeDelivery) Headers() amqp.Table   { return d.headers }
-func (d *fakeDelivery) Body() []byte          { return d.body }
-func (d *fakeDelivery) RoutingKey() string    { return d.subject }
+func (d *fakeDelivery) Ack(bool) error { d.acked = true; return d.ackErr }
+func (d *fakeDelivery) Nack(_ bool, requeue bool) error {
+	d.nacked = true
+	d.nackRequeue = requeue
+	return nil
+}
+func (d *fakeDelivery) Headers() amqp.Table { return d.headers }
+func (d *fakeDelivery) Body() []byte        { return d.body }
+func (d *fakeDelivery) RoutingKey() string  { return d.subject }
 
 // newFakeDelivery builds a delivery whose x-delivery-count header encodes a 1-based numDelivered
 // (count = numDelivered-1), so the attempt dispatch computes matches the NATS adapter's convention.
@@ -105,6 +110,41 @@ func TestRabbitDispatchDeadLettersAtMaxDeliver(t *testing.T) {
 	}
 }
 
+// TestRabbitRepeatedFailureDeadLettersAtMaxDeliver walks the quorum queue's x-delivery-count up
+// over successive redeliveries and asserts the message is nack-requeued for attempts 1..4 and then
+// dead-lettered on the 5th (== MaxDeliver), never looping forever. This is the broker-free proof of
+// FIX 1: without a quorum queue x-delivery-count stays 0 (numDelivered stuck at 1), so the message
+// would requeue indefinitely and never reach this terminal step.
+func TestRabbitRepeatedFailureDeadLettersAtMaxDeliver(t *testing.T) {
+	bus := rabbitBusWithLog(&bytes.Buffer{})
+	var deadLettered bool
+	bus.deadLetter = func(context.Context, delivery) error { deadLettered = true; return nil }
+
+	// Attempts 1..4: still under the cap, so each failing delivery is nack(requeue=true)'d and the
+	// broker re-delivers with x-delivery-count incremented.
+	for numDelivered := 1; numDelivered < 5; numDelivered++ {
+		d := newFakeDelivery(numDelivered)
+		bus.dispatch(context.Background(), failHandler, d)
+		if d.acked || !d.nacked || !d.nackRequeue {
+			t.Fatalf("attempt %d: want nack(requeue=true), got acked=%v nacked=%v requeue=%v",
+				numDelivered, d.acked, d.nacked, d.nackRequeue)
+		}
+		if deadLettered {
+			t.Fatalf("attempt %d: dead-lettered before reaching the cap", numDelivered)
+		}
+	}
+
+	// 5th delivery (x-delivery-count 4 -> numDelivered 5 == MaxDeliver): terminal dead-letter.
+	final := newFakeDelivery(5)
+	bus.dispatch(context.Background(), failHandler, final)
+	if !deadLettered {
+		t.Error("want the message dead-lettered on the 5th delivery, not requeued forever")
+	}
+	if !final.acked || final.nacked {
+		t.Fatalf("want ack after dead-letter, got acked=%v nacked=%v", final.acked, final.nacked)
+	}
+}
+
 func TestRabbitTerminatedMessageIsLoggedNotDroppedSilently(t *testing.T) {
 	var buf bytes.Buffer
 	bus := rabbitBusWithLog(&buf)
@@ -120,16 +160,20 @@ func TestRabbitTerminatedMessageIsLoggedNotDroppedSilently(t *testing.T) {
 	}
 }
 
-func TestRabbitDeadLetterPublishFailureIsLogged(t *testing.T) {
+func TestRabbitDeadLetterPublishFailurePreservesMessage(t *testing.T) {
 	var buf bytes.Buffer
 	d := newFakeDelivery(5)
 	bus := rabbitBusWithLog(&buf)
 	bus.deadLetter = func(context.Context, delivery) error { return errors.New("dlx down") }
 	bus.dispatch(context.Background(), failHandler, d)
-	// A failed dead-letter publish is logged; the original is still ack'd so it is not re-looped.
+	// Dead-lettering is a durability operation: a failed DLX publish must preserve the message,
+	// never ack-and-drop it. The original is nack(requeue=true)'d (retried), not ack'd.
 	findLog(t, &buf, "ERROR", "dead-letter publish failed")
-	if !d.acked {
-		t.Error("original should still be ack'd after a failed dead-letter publish")
+	if d.acked {
+		t.Error("original must not be ack'd when the dead-letter publish failed (data loss)")
+	}
+	if !d.nacked || !d.nackRequeue {
+		t.Fatalf("want nack(requeue=true) to preserve the message, got nacked=%v requeue=%v", d.nacked, d.nackRequeue)
 	}
 }
 
