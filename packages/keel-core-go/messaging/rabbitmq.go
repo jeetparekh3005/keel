@@ -110,7 +110,12 @@ func (b *RabbitMessageBus) Connect(ctx context.Context) error {
 		_ = conn.Close()
 		return err
 	}
-	if _, err := ch.QueueDeclare(b.cfg.Queue, true, false, false, false, nil); err != nil {
+	// Declare a quorum queue: the broker then maintains a per-message x-delivery-count, the native
+	// redelivery counter deliveryCount reads to enforce the cap (ADR-0025, matching Python/Java/
+	// Rust). A classic queue never populates it, so numDelivered would be stuck at 1 and a poison
+	// message would nack-requeue forever instead of dead-lettering.
+	queueArgs := amqp.Table{"x-queue-type": "quorum"}
+	if _, err := ch.QueueDeclare(b.cfg.Queue, true, false, false, false, queueArgs); err != nil {
 		_ = conn.Close()
 		return err
 	}
@@ -199,11 +204,16 @@ func (b *RabbitMessageBus) dispatch(parent context.Context, handler ports.Messag
 			"error", err,
 		)
 		if dlErr := b.deadLetter(ctx, d); dlErr != nil {
-			b.cfg.Logger.Error("dead-letter publish failed",
+			// Dead-lettering is a durability operation: never ack-and-drop when the DLX publish
+			// failed. Preserve the message by nack(requeue=true) so it is retried rather than lost
+			// (matching Python/Java). Only ack once the message has a home in the DLX.
+			b.cfg.Logger.Error("dead-letter publish failed; requeueing to preserve the message",
 				"subject", d.RoutingKey(), "dlx", b.cfg.DLX, "error", dlErr)
+			b.control(func() error { return d.Nack(false, true) }, "nack", d.RoutingKey())
+			return
 		}
-		// Ack the original only after dead-lettering, so the message leaves the source queue once
-		// it has a home in the DLX.
+		// Ack the original only after a successful dead-letter publish, so the message leaves the
+		// source queue once it has a home in the DLX.
 		b.control(func() error { return d.Ack(false) }, "ack", d.RoutingKey())
 	}
 }
