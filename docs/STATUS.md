@@ -16,7 +16,8 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   `Repository` ports are service-defined (one per aggregate, mapping ORM<->domain); keel-core
   does not ship a generic repository.
 - Distributed **tracing** (OpenTelemetry) with log correlation; gRPC, in-memory MessageBus,
-  and a **NATS JetStream** MessageBus adapter (`keel-core[nats]`), all propagating trace context.
+  and **NATS JetStream / Kafka / RabbitMQ** MessageBus adapters (opt-in per broker), all
+  propagating trace context.
 - RFC 9457 problem+json (incl. `invalid-params`); health/readiness endpoints.
 - Edge hardening: always-on security headers (CSP, nosniff, frame-options DENY,
   referrer-policy, Permissions-Policy, HSTS over HTTPS) and a body-size limit (header
@@ -203,6 +204,9 @@ wired to a sink/gate; `none` = absent.
 | `api_key` authentication (hashed, X-API-Key) | full | full | full | full | full |
 | mTLS credentials | full (gRPC) | full | full | full | full |
 | NATS JetStream MessageBus adapter | full | full | full | full | full |
+| Kafka MessageBus adapter | full | full | full | full | full |
+| RabbitMQ MessageBus adapter | full | full | full | full | full |
+| Fail-closed MessageBus selector (at most one of NATS/Kafka/RabbitMQ) | full | full | full | full | full |
 | gRPC server (deny-by-default auth + mTLS) | full | full | full | full | full |
 | Enforced CI coverage floor | full (85%) | full (85%) | full (85%) | full (85% aggregate) | full (lib + service) |
 | DB pool saturation metric (emitted, not just readable) | full | full | full | full | full |
@@ -241,7 +245,8 @@ all five (trusted succeeds, untrusted-CA rejected); the Java edge fails startup 
 serving plaintext when TLS material is incomplete unless plaintext is explicitly opted into.
 
 **v0.6 cross-vertical parity is complete:** every capability in the matrix is full across all five
-verticals. The remaining backend-integration work (Kafka/RabbitMQ brokers, AsyncAPI) is v0.7.
+verticals. v0.7 adds the production secret backends (OpenBao/Vault, AWS, GCP) and the messaging
+breadth (Kafka and RabbitMQ `MessageBus` adapters + the AsyncAPI artifact), each across all five.
 
 ## Planned - described in the contract/ADRs but NOT yet implemented
 
@@ -252,8 +257,8 @@ verticals. The remaining backend-integration work (Kafka/RabbitMQ brokers, Async
 | **Keycloak / NATS integration tests** | ADR-0010 | **Implemented** - CI integration job runs Postgres, a NATS JetStream container (MessageBus roundtrip), and Keycloak with an imported realm (OIDC authenticate against a real JWKS via client_credentials) |
 | **Kubernetes/Helm** + runtime `securityContext`, NetworkPolicy | ADR-0004/0008 | **Implemented** - Helm chart at `deploy/charts/reference-service` (non-root, read-only rootfs, drop-all caps, seccomp RuntimeDefault, no SA token, default-deny NetworkPolicy, liveness/readiness probes); lint + kubeconform in CI |
 | Base-image **digest pinning** | platform.yaml image; ADR-0008 | **Deliberately not pinned.** Chainguard bases are rolling/continuously-rebuilt, so every build is Trivy-scanned instead; a static digest pin would freeze stale CVEs. The published image is cosign-signed and attested by its built digest. (No Renovate in this repo; Dependabot covers the github-actions, uv, and npm ecosystems.) |
-| **gRPC IDL/buf**, **Kafka/RabbitMQ** broker adapters | platform.yaml interservice; ADR-0012 | **Mostly implemented.** The buf/protobuf IDL (`keel.reference.v1`, ADR-0022) + a gRPC server with deny-by-default auth + mTLS are implemented in all five verticals; the NATS JetStream `MessageBus` adapter too. **Kafka/RabbitMQ** broker adapters + AsyncAPI are the remaining planned items (v0.7). |
-| Production **secret backends** (Vault, AWS/GCP secret managers) | platform.yaml `secrets.prod_adapters` | **Not implemented.** The `SecretProvider` port exists with an env-backed adapter (dev). The `vault` / `aws_secrets_manager` / `gcp_secret_manager` production adapters named in the contract are not yet built; deployments inject secrets via env (Kubernetes Secret) today. |
+| **gRPC IDL/buf**, **Kafka/RabbitMQ** broker adapters | platform.yaml interservice; ADR-0012, ADR-0025 | **Implemented.** The buf/protobuf IDL (`keel.reference.v1`, ADR-0022) + a gRPC server with deny-by-default auth + mTLS are implemented in all five verticals. All three `MessageBus` broker adapters are implemented across all five: NATS JetStream (ADR-0012), Kafka (`franz-go` / `aiokafka` / `kafkajs` / `kafka-clients` / `rdkafka`), and RabbitMQ (`amqp091-go` / `aio-pika` / `amqplib` / `amqp-client` / `lapin`) - each durable/at-least-once with ack/nak/dead-letter and W3C trace propagation, opt-in per client, and selected by a fail-closed at-most-one `message_bus_from_env` (one of `KEEL_NATS_URL` / `KEEL_KAFKA_BROKERS` / `KEEL_RABBITMQ_URL`; ADR-0025). The async contract has an AsyncAPI 3.0 artifact (`schemas/asyncapi.yaml`) linted in CI. Each adapter carries broker-free unit tests plus a gated real-broker integration round-trip (NATS/Kafka/RabbitMQ containers in CI). |
+| Production **secret backends** (Vault/OpenBao, AWS/GCP secret managers) | platform.yaml `secrets.prod_adapters`; ADR-0023, ADR-0024 | **Implemented (v0.7), all three backends in all five verticals.** All share one caching core (cache + background refresh, scalar-only field coercion, fail-closed, no-secret-in-logs) parameterized by a per-backend loader, and one at-most-one-backend selection that fails closed when more than one gating variable is set. (1) **OpenBao/Vault** (`prod_adapters[0]`): thin KV v2 HTTP client (no vault SDK), token + Kubernetes auth, proactive lease renewal, gated on `KEEL_VAULT_ADDR`; mock unit tests + a gated real-OpenBao (2.7.2) integration test (ADR-0023). (2) **AWS Secrets Manager**: official SDK, one-secret = JSON field map, default credential chain (IRSA), bounded client timeout + capped retries, gated on `KEEL_AWS_SECRET_ID`; hermetic SDK-mocked unit tests + a gated LocalStack (4.9.1) integration test (ADR-0024). (3) **GCP Secret Manager**: official SDK (Rust uses `gcloud-sdk` on a ring-only crypto tree, ADR-0024), one-secret = JSON field map, ADC / Workload Identity, bounded client timeout + capped retries, gated on `KEEL_GCP_SECRET`; hermetic SDK-mocked unit tests. GCP has no emulator, so its real-ADC integration test is gated and skipped in CI (unit coverage is correspondingly thorough: round-trip, coercion, not-found-as-empty, fail-closed, no-leak, bounded-timeout). The env-backed adapter is still the default when none of the three gating variables is set. A configured-but-missing secret (NOT_FOUND) resolves to an empty field map, mirroring Vault's 404, so fail-closed-on-missing is deferred to downstream consumers. |
 
 This table shrinks as the gaps close. v0.1 delivered the Python vertical and its review
 hardening; v0.2 added the deployment surface (frontend, Helm, image pipeline, brokers,

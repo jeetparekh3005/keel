@@ -19,6 +19,22 @@ import org.springframework.validation.annotation.Validated;
  * {@code KEEL_NATS_STREAM} and {@code KEEL_NATS_SUBJECTS} (comma-separated) name the stream and the
  * subjects it captures.
  *
+ * <p>The RabbitMQ fields gate the AMQP {@code MessageBus} adapter (ADR-0025): it is wired only when
+ * {@code KEEL_RABBITMQ_URL} ({@code keel.rabbitmq-url}) is set, parallel to NATS. {@code
+ * KEEL_RABBITMQ_EXCHANGE} ({@code keel}) is the durable topic exchange, {@code KEEL_RABBITMQ_QUEUE}
+ * ({@code keel}) the durable queue bound to the subscribed subjects, {@code KEEL_RABBITMQ_DLX}
+ * ({@code keel.dlx}) the dead-letter exchange a message is published to once the delivery cap is
+ * hit, and {@code KEEL_RABBITMQ_SUBJECTS} (comma-separated, default {@code keel.#}) the default
+ * routing keys the queue is bound to at connect, parallel to {@code KEEL_NATS_SUBJECTS}.
+ *
+ * <p>The Kafka fields gate the Kafka {@code MessageBus} adapter (ADR-0025): it is wired only when
+ * {@code KEEL_KAFKA_BROKERS} ({@code keel.kafka-brokers}, comma-separated bootstrap servers) is
+ * set, parallel to NATS and RabbitMQ. {@code KEEL_KAFKA_TOPICS} (comma-separated, default {@code
+ * keel}) names the subjects the consumer group subscribes to (each sanitized to a legal topic, with
+ * its {@code <topic>.retry} sibling consumed too), {@code KEEL_KAFKA_GROUP_ID} ({@code keel}) the
+ * consumer group, and {@code KEEL_KAFKA_DLQ_TOPIC} optionally overrides the per-topic {@code
+ * <topic>.dlq} dead-letter destination with a single shared dead-letter topic.
+ *
  * <p>The gRPC fields gate the inbound gRPC server (ADR-0022): it is wired only when {@code
  * KEEL_GRPC_PORT} ({@code keel.grpc-port}) is set, so a service without gRPC is unaffected. The TLS
  * PEM fields ({@code KEEL_GRPC_TLS_CERT_PEM}, {@code KEEL_GRPC_TLS_KEY_PEM}, {@code
@@ -29,6 +45,23 @@ import org.springframework.validation.annotation.Validated;
  * Serving plaintext on an exposed gRPC port is fail-closed: it requires the explicit opt-in {@code
  * KEEL_GRPC_TLS_INSECURE} ({@code keel.grpc-tls-insecure}), false by default, so a production
  * deployment that forgets to supply the PEM triple fails to start rather than binding in the clear.
+ *
+ * <p>The secret-backend fields select one production {@link io.keel.core.ports.SecretProvider}
+ * (ADR-0023, ADR-0024). At most one of {@code KEEL_VAULT_ADDR} ({@code keel.vault-addr}), {@code
+ * KEEL_AWS_SECRET_ID} ({@code keel.aws-secret-id}), and {@code KEEL_GCP_SECRET} ({@code
+ * keel.gcp-secret}) may be set; more than one fails construction, and none selects the dev {@code
+ * EnvSecretProvider}. For OpenBao, {@code KEEL_VAULT_TOKEN} (static token) or {@code
+ * KEEL_VAULT_ROLE} (Kubernetes auth role) authenticates; {@code KEEL_VAULT_MOUNT}/{@code
+ * KEEL_VAULT_PATH} name the KV v2 secret, and the remaining {@code KEEL_VAULT_*} fields tune the
+ * Kubernetes auth mount/JWT path, the Vault namespace, and the TLS CA. For AWS Secrets Manager,
+ * {@code KEEL_AWS_SECRET_ID} names the secret (name or ARN) and {@code KEEL_AWS_REGION} optionally
+ * pins the region (else the SDK default chain); credentials come from the default AWS provider
+ * chain. For GCP Secret Manager, {@code KEEL_GCP_SECRET} names the secret ({@code
+ * projects/<project>/secrets/<name>} or the full {@code .../versions/<v>}) and {@code
+ * KEEL_GCP_SECRET_VERSION} ({@code keel.gcp-secret-version}, default {@code latest}) selects the
+ * version when the resource name carries none; credentials come from Application Default
+ * Credentials. {@code KEEL_SECRET_CACHE_TTL_SECONDS} ({@code keel.secret-cache-ttl-seconds},
+ * positive or fail, default 60) is the shared field-map cache TTL for every backend.
  */
 @ConfigurationProperties(prefix = "keel")
 @Validated
@@ -43,11 +76,34 @@ public record KeelProperties(
     @DefaultValue("") String natsUrl,
     @DefaultValue("keel") String natsStream,
     @DefaultValue({"keel.>"}) List<String> natsSubjects,
+    @DefaultValue("") String rabbitmqUrl,
+    @DefaultValue("keel") String rabbitmqExchange,
+    @DefaultValue("keel") String rabbitmqQueue,
+    @DefaultValue("keel.dlx") String rabbitmqDlx,
+    @DefaultValue({"keel.#"}) List<String> rabbitmqSubjects,
+    @DefaultValue List<String> kafkaBrokers,
+    @DefaultValue({"keel"}) List<String> kafkaTopics,
+    @DefaultValue("keel") String kafkaGroupId,
+    @DefaultValue("") String kafkaDlqTopic,
     @DefaultValue("0") int grpcPort,
     @DefaultValue("") String grpcTlsCertPem,
     @DefaultValue("") String grpcTlsKeyPem,
     @DefaultValue("") String grpcTlsCaPem,
-    @DefaultValue("false") boolean grpcTlsInsecure) {
+    @DefaultValue("false") boolean grpcTlsInsecure,
+    @DefaultValue("") String vaultAddr,
+    @DefaultValue("") String vaultToken,
+    @DefaultValue("") String vaultRole,
+    @DefaultValue("kubernetes") String vaultK8sMount,
+    @DefaultValue("/var/run/secrets/kubernetes.io/serviceaccount/token") String vaultK8sJwtPath,
+    @DefaultValue("secret") String vaultMount,
+    @DefaultValue("") String vaultPath,
+    @DefaultValue("") String vaultNamespace,
+    @DefaultValue("") String vaultCacert,
+    @DefaultValue("60") int secretCacheTtlSeconds,
+    @DefaultValue("") String awsSecretId,
+    @DefaultValue("") String awsRegion,
+    @DefaultValue("") String gcpSecret,
+    @DefaultValue("latest") String gcpSecretVersion) {
 
   /**
    * One configured API-key credential (platform.yaml auth: api_key). The key is stored only as its

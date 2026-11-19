@@ -21,7 +21,12 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
 tracing-opentelemetry = "0.34"
 opentelemetry = "0.33"
-opentelemetry_sdk = { version = "0.33", features = ["rt-tokio", "metrics"] }
+# `trace` is on in the base build (not just under a broker feature) because the always-compiled
+# message-bus port and the in-memory dev bus in `messaging` use the W3C `TraceContextPropagator`
+# (opentelemetry_sdk::propagation) to inject/extract trace context across the bus. It is already
+# pulled transitively by opentelemetry-otlp's `trace` feature below; stating it here makes the
+# dependency explicit rather than relying on cross-crate feature unification.
+opentelemetry_sdk = { version = "0.33", features = ["rt-tokio", "metrics", "trace"] }
 opentelemetry-otlp = { version = "0.33", features = ["grpc-tonic", "trace", "metrics"] }
 uuid = { version = "1", features = ["v4"] }
 axum = "0.8"
@@ -29,7 +34,7 @@ tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.7", features = ["cors", "limit", "set-header", "request-id"] }
 http-body-util = "0.1"
 jsonwebtoken = "9"
-sha2 = "0.10"
+sha2 = "0.11"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 # rt + time: background JWKS refresh task (tokio::spawn + interval).
 tokio = { version = "1", features = ["rt", "time"] }
@@ -44,7 +49,12 @@ sqlx = { version = "0.9", default-features = false, features = [
 # enabled, so the default core build needs no broker and no NATS crates.
 async-nats = { version = "0.52", optional = true }
 futures = { version = "0.3", optional = true }
-async-trait = { version = "0.1", optional = true }
+# Non-optional (unlike the broker clients): the always-compiled `MessageBus`/`MessagePublisher`
+# port traits and the in-memory dev bus in `messaging` are object-safe (`Arc<dyn MessageBus>`),
+# which async fns in traits are not on their own, so the port needs `async-trait` in every build,
+# not just under a broker feature. It is a proc-macro over syn/quote already in the tree, so it
+# adds no broker and no new transitive weight; the default build stays broker-free.
+async-trait = { version = "0.1" }
 bytes = { version = "1", optional = true }
 # Opt-in gRPC stubs (the `grpc` feature). prost backs the generated messages and
 # tonic the generated client/server; off by default so `cargo build` stays
@@ -52,18 +62,109 @@ bytes = { version = "1", optional = true }
 prost = { version = "0.14", optional = true }
 tonic = { version = "0.14", optional = true }
 tonic-prost = { version = "0.14", optional = true }
+# Opt-in AWS Secrets Manager SecretProvider adapter (the `aws` feature, ADR-0024). The
+# official SDK carries correct SigV4 signing + the default credential chain (env, IRSA,
+# instance profile, SSO), which ADR-0024 deliberately prefers over hand-rolled HTTP; off by
+# default so the default `cargo build` pulls in neither, mirroring the `vault` feature.
+#
+# Crypto backend is pinned to `ring` to match reqwest's `rustls-tls` already in the tree: no
+# aws-lc-sys C build, one crypto provider, and no extra RUSTSEC surface for the audit gate. Both
+# the SDK and aws-config run with `default-features = false` and NO TLS/default-client feature,
+# so neither the aws-lc-rs HTTPS client nor the legacy hyper-0.14 client (which pulls the
+# RUSTSEC-2026-0258-affected h2 0.3) is compiled. Instead the adapter builds an explicit modern
+# hyper-1 + rustls-ring client via `aws-smithy-http-client` (which resolves h2 to the patched
+# 0.4.x already in the tree) and hands it to the config loader. `BehaviorVersion::latest()` is
+# pinned in code, so the SDK's behavior-version-latest feature is intentionally omitted.
+aws-config = { version = "1", optional = true, default-features = false, features = [
+    "rt-tokio",
+    "credentials-process",
+    "sso",
+] }
+aws-sdk-secretsmanager = { version = "1", optional = true, default-features = false, features = [
+    "rt-tokio",
+] }
+# The modern (hyper 1.x) smithy HTTP client with rustls + ring: the explicit client the adapter
+# builds and passes to aws-config, replacing any default/legacy connector so h2 stays on the
+# patched 0.4.x and aws-lc-sys is never pulled in.
+aws-smithy-http-client = { version = "1", optional = true, default-features = false, features = [
+    "rustls-ring",
+] }
+# Opt-in GCP Secret Manager SecretProvider adapter (the `gcp` feature, ADR-0024). The Rust vertical
+# uses `gcloud-sdk` rather than the official google-cloud-rust `google-cloud-secretmanager-v1`: that
+# crate's `google-cloud-auth` hard-wires `aws-lc-rs` (a C/assembly crypto build) plus `native-tls`,
+# with no `ring` path, which violates keel's rustls/no-openssl posture. `gcloud-sdk` with no bundled
+# TLS feature, plus `reqwest/rustls-no-provider` (pulled transitively by google-cloud-auth) and
+# `tonic/tls-ring`, resolves to a ring-only tree: no aws-lc-sys, no openssl, no native-tls (proven by
+# `cargo tree` and guarded by `deny.toml`). `jwt-rust-crypto` keeps the unused id-token JWT path on
+# pure-Rust crypto rather than aws-lc-rs. `BehaviorVersion`-style endpoint selection is in code.
+gcloud-sdk = { version = "0.34", optional = true, default-features = false, features = [
+    "google-cloud-secretmanager-v1",
+    "jwt-rust-crypto",
+] }
+# The ring-backed rustls crypto provider the adapter installs as the process default: reqwest's
+# `rustls-no-provider` (used by google-cloud-auth for the ADC token calls) ships no default provider,
+# so keel installs `ring` to keep the whole tree off aws-lc-rs/aws-lc-sys.
+rustls = { version = "0.23", optional = true, default-features = false, features = [
+    "ring",
+    "std",
+] }
+# Optional RabbitMQ MessageBus adapter (the `rabbitmq` feature, ADR-0025). lapin is the
+# pure-Rust async AMQP 0-9-1 client; like `async-nats` it is pulled in only when the feature is
+# enabled, so the default core build needs no broker. default-features are off on purpose: lapin's
+# umbrella `rustls` feature wires tcp-stream to the aws_lc_rs rustls provider (aws-lc-sys, a C
+# build), which `deny.toml` bans. Selecting only `rustls--ring` keeps the AMQPS path on the
+# ring-backed rustls already in the tree (reqwest's rustls-tls), so no aws-lc-sys/openssl-sys/
+# native-tls is pulled (proven by `cargo tree`). `rustls-native-certs` loads the OS trust store;
+# `default-runtime` gives lapin its executor/reactor for the socket (the consume loop itself is
+# driven from a tokio task, mirroring the NATS adapter).
+lapin = { version = "4.12.3", optional = true, default-features = false, features = [
+    "rustls--ring",
+    "rustls-native-certs",
+    "default-runtime",
+] }
+# Optional Kafka MessageBus adapter (the `kafka` feature, ADR-0025). rdkafka wraps librdkafka;
+# ADR-0025 accepts the librdkafka C dependency as the documented exception (the one non-pure-Rust
+# broker client). default-features are off and only `cmake-build` + `tokio` are selected on purpose:
+# `cmake-build` vendors and statically compiles librdkafka from source (needs cmake + a C compiler),
+# and crucially the `ssl`/`sasl`/`gssapi` features are NOT enabled, so librdkafka is built WITHOUT
+# SSL/SASL and rdkafka-sys pulls neither `openssl-sys` nor `libsasl` - keeping the tree clean of the
+# C/assembly-crypto and native-tls crates `deny.toml` bans (proven by `cargo tree` +
+# `cargo deny check bans`). keel's CI/dev Kafka is PLAINTEXT, so TLS is not needed. `tokio` gives
+# rdkafka its async runtime (the FutureProducer and StreamConsumer), the same executor the consume
+# loop runs on, mirroring the NATS/RabbitMQ adapters.
+rdkafka = { version = "0.39", optional = true, default-features = false, features = [
+    "cmake-build",
+    "tokio",
+] }
 
 [features]
 # Opt-in NATS JetStream adapter. Off by default so `cargo build` stays broker-free,
 # the same way `pip install keel-core` omits nats-py until you ask for the `nats` extra.
-# `opentelemetry_sdk/trace` makes `propagation::TraceContextPropagator` available for the
-# W3C trace-context inject/extract over message headers.
+# `async-trait` and `opentelemetry_sdk/trace` are no longer listed here: the shared port and the
+# in-memory dev bus in `messaging` need both in every build, so they are base dependencies now
+# (the port is always compiled, not just under a broker feature).
 nats = [
     "dep:async-nats",
     "dep:futures",
-    "dep:async-trait",
     "dep:bytes",
-    "opentelemetry_sdk/trace",
+]
+# Opt-in RabbitMQ MessageBus adapter (ADR-0025). Off by default so `cargo build` stays
+# broker-free, exactly like the `nats` feature. Pulls the pure-Rust `lapin` AMQP client plus
+# `futures` (the lapin consumer is a Stream driven from a tokio task). `async-trait` and the
+# trace propagator are base dependencies (the shared `MessageBus` port is always compiled); the
+# adapter lives in `keel_core::rabbitmq`.
+rabbitmq = [
+    "dep:lapin",
+    "dep:futures",
+]
+# Opt-in Kafka MessageBus adapter (ADR-0025). Off by default so `cargo build` stays broker-free,
+# exactly like the `nats`/`rabbitmq` features. Pulls `rdkafka` (librdkafka via cmake-build, built
+# without ssl/sasl). The shared `MessageBus` port in `keel_core::messaging` is always compiled
+# (its `async-trait` + trace-propagator deps are base deps now); the adapter lives in
+# `keel_core::kafka`. Unlike `nats`/`rabbitmq` it needs no `futures`: the adapter drives
+# `consumer.recv()` in a tokio task rather than consuming a `Stream`.
+kafka = [
+    "dep:rdkafka",
 ]
 # Opt-in gRPC stubs for the keel.reference.v1 contract (ADR-0022). Off by default so
 # the default `cargo build` pulls in neither prost nor tonic (parity with Python's
@@ -76,6 +177,39 @@ grpc = [
     "dep:tonic",
     "dep:tonic-prost",
     "tonic/tls-ring",
+]
+# Opt-in OpenBao/Vault SecretProvider adapter (ADR-0023). Off by default so the default
+# `cargo build` stays env-only; enabling it turns on reqwest's blocking client (the adapter
+# does all HTTP on a dedicated std::thread, so no new HTTP/TLS stack is pulled in - reqwest
+# with rustls-tls is already in the tree). Mirrors the `nats` feature gating the broker.
+vault = ["reqwest/blocking"]
+# Opt-in AWS Secrets Manager SecretProvider adapter (ADR-0024). Off by default so the default
+# `cargo build` pulls in neither the AWS SDK nor an async IO driver; enabling it turns on the
+# official aws-config/aws-sdk-secretsmanager crates and the tokio `net` feature so the adapter
+# can drive the async SDK on a dedicated current-thread runtime inside its blocking refresh
+# thread (never on the app's async runtime). Mirrors the `vault` feature gating OpenBao; both
+# share the ADR-0024 caching core in `crate::secret`.
+aws = [
+    "dep:aws-config",
+    "dep:aws-sdk-secretsmanager",
+    "dep:aws-smithy-http-client",
+    "tokio/net",
+    "tokio/rt",
+    "tokio/time",
+]
+# Opt-in GCP Secret Manager SecretProvider adapter (ADR-0024). Off by default so the default
+# `cargo build` pulls in neither the GCP SDK nor an async IO driver; enabling it turns on gcloud-sdk
+# and tonic's ring-backed TLS (`tonic/tls-ring`), plus the tokio features the adapter's dedicated
+# current-thread runtime needs to drive the async gRPC calls inside its blocking refresh thread
+# (never on the app's async runtime). Mirrors the `aws`/`vault` features; all three share the
+# ADR-0024 caching core in `crate::secret`.
+gcp = [
+    "dep:gcloud-sdk",
+    "dep:rustls",
+    "tonic/tls-ring",
+    "tokio/net",
+    "tokio/rt",
+    "tokio/time",
 ]
 
 [dev-dependencies]
@@ -98,3 +232,15 @@ tokio-stream = { version = "0.1", features = ["net"] }
 # Ephemeral CA + leaf certs for the mTLS handshake tests; ring-backed to match tls-ring,
 # and (like the OIDC keys) generated in-test so no key material is committed.
 rcgen = { version = "0.14", default-features = false, features = ["pem", "ring"] }
+# The official AWS SDK mocking crate: intercepts the Secrets Manager operation at the SDK
+# boundary so the `aws` unit tests assert field-map round-trip, coercion, not-found-as-empty,
+# fail-closed, and the no-leak invariant with no network (ADR-0024 "AWS unit (non-gated)").
+aws-smithy-mocks = "0.3"
+# The `gcp` unit tests stand up an in-process tonic SecretManagerService mock on a loopback port
+# and drive a single unary AccessSecretVersion via `tonic::server::Grpc` + `ProstCodec`, so they
+# assert field-map round-trip, coercion, not-found-as-empty, fail-closed, the no-leak invariant,
+# and the bounded-timeout path with no real ADC, no metadata server, and no external socket
+# (ADR-0024 "GCP unit (non-gated)"). `http` provides the Request/Response + header types the mock
+# service and the static-bearer credentials use; both unify with the versions gcloud-sdk pulls.
+tonic-prost = "0.14"
+http = "1"

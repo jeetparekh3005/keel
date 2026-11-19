@@ -45,6 +45,22 @@
   <properties>
     <java.version>25</java.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <!-- Override Spring Boot's managed RabbitMQ client to the patched release (ADR-0025). The
+         spring-boot-dependencies BOM (inherited via spring-boot-starter-parent) manages
+         com.rabbitmq:amqp-client to 5.30.0, which carries HIGH CVEs (CVE-2026-63337/69219/69220/
+         75516, fixed in 5.33.0-5.34.0). keel-core-java's MessageBus adapter pins 5.38.0 directly,
+         but Spring's managed version wins over that transitive version in the reference-service
+         image (Trivy gate), so the version property is overridden here to carry the patched client
+         to every module in the reactor. 5.38.0 is the current stable. -->
+    <rabbit-amqp-client.version>5.38.0</rabbit-amqp-client.version>
+    <!-- Override Spring Boot's managed Kafka client to the pinned release (ADR-0025). The
+         spring-boot-dependencies BOM (inherited via spring-boot-starter-parent) manages
+         org.apache.kafka:kafka-clients to 4.2.2 via this property; keel-core-java's Kafka
+         MessageBus adapter pins 4.4.0 directly, but Spring's managed version wins over that
+         transitive version in the reference-service image (Trivy gate), so the property is
+         overridden here to carry the pinned client to every module in the reactor. 4.4.0 is the
+         current stable 4.x line and matches the apache/kafka:4.4.0 KRaft broker the CI starts. -->
+    <kafka.version>4.4.0</kafka.version>
     <!-- Per-module JaCoCo floors (epic #419, v0.6 parity). These are the default (keel-core-java)
          minima; reference-service-java overrides them with its own, higher floors in its pom.
          The values lock the real measured coverage just under the observed number so the gate
@@ -63,6 +79,24 @@
         <groupId>com.google.guava</groupId>
         <artifactId>guava</artifactId>
         <version>33.8.0-jre</version>
+      </dependency>
+      <!-- Force the patched Kafka compression codecs (ADR-0025). kafka-clients 4.4.0 pulls these
+           transitively into the reference-service image, where Trivy flags HIGH CVEs in the versions
+           it ships: snappy-java 1.1.10.7 (CVE-2026-108106 DoS, CVE-2026-93451 buffer overflow, fixed
+           in 1.1.10.9) and lz4-java 1.11.2 (CVE-2026-106451 arbitrary code execution, fixed in
+           1.11.4). Spring Boot's BOM does not manage either, so a version property override would not
+           take; these direct dependencyManagement pins force the patched versions for every module in
+           the reactor so the image resolves them (the groupId is at.yawk.lz4, the maintained lz4-java
+           fork Kafka 4.x uses, exactly as Trivy reports it). -->
+      <dependency>
+        <groupId>org.xerial.snappy</groupId>
+        <artifactId>snappy-java</artifactId>
+        <version>1.1.10.9</version>
+      </dependency>
+      <dependency>
+        <groupId>at.yawk.lz4</groupId>
+        <artifactId>lz4-java</artifactId>
+        <version>1.11.4</version>
       </dependency>
     </dependencies>
   </dependencyManagement>

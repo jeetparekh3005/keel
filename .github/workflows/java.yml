@@ -59,7 +59,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
           distribution: temurin
           java-version: "25"
@@ -75,6 +75,57 @@ jobs:
             (echo > /dev/tcp/127.0.0.1/4222) >/dev/null 2>&1 && break
             sleep 1
           done
+      - name: Start RabbitMQ
+        # RabbitMQ for the RabbitMqMessageBus round-trip integration test (ADR-0025). Pinned to the
+        # latest-stable 4.x line, mirroring the NATS step. The broker takes a few seconds to open the
+        # AMQP listener, so poll the port before the verify step runs the gated integration test.
+        run: |
+          docker run -d --name rabbitmq -p 5672:5672 rabbitmq:4
+          for _ in $(seq 1 60); do
+            (echo > /dev/tcp/127.0.0.1/5672) >/dev/null 2>&1 && break
+            sleep 1
+          done
+      - name: Start Kafka (KRaft)
+        # The messaging package integration test publishes and subscribes against this instance,
+        # asserting payload/header delivery, trace-context propagation, and the poison-record
+        # dead-letter round-trip; it runs only when KEEL_MESSAGING_IT=1 (set on the verify step) and
+        # dials localhost:9092 directly. Pinned to the latest-stable 4.x line (ADR-0025). This is the
+        # reference broker config for the Kafka sub-wave; the other four verticals copy it verbatim.
+        #
+        # Single-node KRaft (no ZooKeeper): the broker is also the sole controller. The one setting
+        # that must be exact is KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092 - the broker
+        # hands this address back to a client after the bootstrap connect, so a client on the runner
+        # host (reaching the broker through the -p 9092:9092 mapping) must be told to reconnect to
+        # localhost:9092, not the container's internal hostname. Get this wrong and the bootstrap
+        # succeeds but every produce/fetch then dials an unresolvable broker and hangs. The CONTROLLER
+        # listener stays on 9093 (internal only, not mapped). Replication/ISR factors are forced to 1
+        # because there is a single broker, and auto-create is left on so publish and the adapter's
+        # <topic>.retry / <topic>.dlq produce create their topics on first use.
+        run: |
+          docker run -d --name kafka -p 9092:9092 \
+            -e KAFKA_NODE_ID=1 \
+            -e KAFKA_PROCESS_ROLES=broker,controller \
+            -e KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093 \
+            -e KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092 \
+            -e KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER \
+            -e KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT \
+            -e KAFKA_CONTROLLER_QUORUM_VOTERS=1@localhost:9093 \
+            -e KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1 \
+            -e KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1 \
+            -e KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1 \
+            -e KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS=0 \
+            -e KAFKA_AUTO_CREATE_TOPICS_ENABLE=true \
+            apache/kafka:4.4.0
+          # Readiness must gate on the broker actually serving a client API request, not just the TCP
+          # port being open (a KRaft broker accepts connections before it finishes forming the quorum
+          # and can serve metadata). kafka-topics --list drives a real client round-trip, so the step
+          # proceeds only once produce/consume will succeed.
+          echo "waiting for Kafka to accept client connections..."
+          for _ in $(seq 1 60); do
+            docker exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1 && break
+            sleep 2
+          done
+          docker exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list
       - name: Start Keycloak (import realm)
         run: |
           docker run -d --name keycloak -p 8080:8080 \
@@ -86,14 +137,44 @@ jobs:
             curl -sf http://localhost:8080/realms/keel/.well-known/openid-configuration >/dev/null 2>&1 && break
             sleep 3
           done
+      - name: Start OpenBao (dev)
+        # Dev-mode OpenBao for the OpenBaoSecretProvider KV v2 integration test (ADR-0023); started
+        # as a docker run step like NATS/Keycloak so the realm/import timing matches the other lanes.
+        run: |
+          docker run -d --name openbao -p 8200:8200 --cap-add IPC_LOCK -e BAO_DEV_ROOT_TOKEN_ID=root openbao/openbao:2.7.2 server -dev -dev-root-token-id=root -dev-listen-address=0.0.0.0:8200
+          for i in $(seq 1 30); do curl -sf http://localhost:8200/v1/sys/health >/dev/null && break; sleep 1; done
+      - name: Start LocalStack (Secrets Manager)
+        # LocalStack Secrets Manager for the AwsSecretsManagerSecretProvider integration test
+        # (ADR-0024); started as a docker run step like the others. The SDK routes here via the
+        # standard AWS_ENDPOINT_URL_SECRETS_MANAGER env var below.
+        run: |
+          docker run -d --name localstack -p 4566:4566 -e SERVICES=secretsmanager localstack/localstack:4.9.1
+          for i in $(seq 1 60); do curl -sf http://localhost:4566/_localstack/health >/dev/null && break; sleep 1; done
       - name: Verify (spotless, tests, archunit, jacoco)
         env:
-          KEEL_NATS_URL: nats://localhost:4222
+          # The messaging integration tests are gated on this single flag, NOT on the three broker
+          # URLs. The broker URLs (KEEL_NATS_URL / KEEL_RABBITMQ_URL / KEEL_KAFKA_BROKERS) are
+          # deliberately NOT set here: they are ambient for the whole surefire JVM, so setting all
+          # three would make every @SpringBootTest full-context boot see all three brokers and trip
+          # MessagingAutoConfiguration's fail-closed at-most-one selector (ADR-0025 section 3). Each
+          # messaging integration test self-provides its own single broker URL for the CI container
+          # (localhost:4222 / localhost:9092 / amqp://guest:guest@localhost:5672) and runs iff this
+          # flag is set, so the brokers are still exercised without an ambiguous ambient config.
+          KEEL_MESSAGING_IT: "1"
           KEEL_KEYCLOAK_URL: http://localhost:8080
           KEEL_KEYCLOAK_REALM: keel
           KEEL_KEYCLOAK_CLIENT_ID: keel-api
           KEEL_KEYCLOAK_CLIENT_SECRET: test-secret
           KEEL_OIDC_AUDIENCE: keel-api
+          KEEL_VAULT_ADDR: http://localhost:8200
+          KEEL_VAULT_TOKEN: root
+          KEEL_VAULT_MOUNT: secret
+          KEEL_VAULT_PATH: keel-test
+          AWS_ENDPOINT_URL_SECRETS_MANAGER: http://localhost:4566
+          AWS_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          KEEL_AWS_SECRET_ID: keel-test
         run: mvn -B -Pcoverage-aggregate verify
       - name: Dependency CVEs (Trivy)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0

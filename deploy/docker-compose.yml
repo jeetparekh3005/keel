@@ -1,5 +1,6 @@
 # Local development stack for the reference service: real runnable adapters
-# (Postgres, Keycloak OIDC, OpenTelemetry collector, NATS JetStream).
+# (Postgres, Keycloak OIDC, OpenTelemetry collector, NATS JetStream / Kafka / RabbitMQ
+# message buses, OpenBao + LocalStack secret backends).
 # Not for production - Kubernetes/Helm is the deployment target (ADR-0004).
 
 services:
@@ -35,6 +36,52 @@ services:
     image: nats:2.15
     command: ["--jetstream"]
     ports: ["4222:4222"]
+
+  # OpenBao (the default SecretProvider backend, ADR-0007/0023) in dev mode: auto-unsealed,
+  # KV v2 mounted at secret/, root token "root". Dev only - never run -dev in production.
+  openbao:
+    image: openbao/openbao:2.7.2
+    command: ["server", "-dev", "-dev-root-token-id=root", "-dev-listen-address=0.0.0.0:8200"]
+    environment:
+      BAO_DEV_ROOT_TOKEN_ID: root
+    cap_add: ["IPC_LOCK"]
+    ports: ["8200:8200"]
+
+  # LocalStack for the AWS Secrets Manager adapter integration tests (ADR-0024). The AWS SDKs
+  # route here via the standard AWS_ENDPOINT_URL_SECRETS_MANAGER env var; dummy creds only. Dev
+  # only. GCP Secret Manager has no official emulator, so it has no local-stack equivalent.
+  # Pinned to 4.9.1 (the last token-free Community image) by exception: from the 2026.03 single-image
+  # consolidation, every CalVer (2026.x) tag requires a registered LOCALSTACK_AUTH_TOKEN to start.
+  localstack:
+    image: localstack/localstack:4.9.1
+    environment:
+      SERVICES: secretsmanager
+    ports: ["4566:4566"]
+
+  # Kafka (KRaft, single-node) for the Kafka MessageBus adapter (ADR-0025). The load-bearing
+  # setting is KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092: a client on the host reaches
+  # the broker through the mapped port and must be told to reconnect to localhost:9092. Dev only.
+  kafka:
+    image: apache/kafka:4.4.0
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    ports: ["9092:9092"]
+
+  # RabbitMQ for the RabbitMQ MessageBus adapter (ADR-0025). Default guest/guest on the default
+  # vhost; the adapters create their quorum queue + dead-letter exchange on connect. Dev only.
+  rabbitmq:
+    image: rabbitmq:4
+    ports: ["5672:5672"]
 
   reference-service:
     build:

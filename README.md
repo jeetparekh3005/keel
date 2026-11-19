@@ -16,7 +16,7 @@ The goal: go from zero to a secure, observable, deployable service in minutes, n
 
 ## Status
 
-**Active development.** keel is built vertical-by-vertical. Five backend verticals are released - **Python** (v0.1), **Rust** (v0.3), and **Go, Java, and TypeScript/NestJS** (v0.4) - alongside the **frontend monorepo + deployment surface** (v0.2). The **v0.5 generator** is in progress: Copier templates for all five verticals, the `keel` CLI (`new` / `update` / `check`), the `keel update` propagation round-trip, and Tier-3 (a base Helm chart + reusable CI workflows) are done. See the [roadmap](#roadmap) and [docs/STATUS.md](docs/STATUS.md) for implemented-vs-planned detail.
+**Active development.** keel is built vertical-by-vertical. Five backend verticals are released - **Python** (v0.1), **Rust** (v0.3), and **Go, Java, and TypeScript/NestJS** (v0.4) - alongside the **frontend monorepo + deployment surface** (v0.2). The **v0.5 generator** (Copier templates for all five verticals, the `keel` CLI, the `keel update` propagation round-trip, and Tier-3 base Helm chart + reusable workflows), **v0.6 cross-vertical parity**, and **v0.7 production integrations** - secret backends (OpenBao/Vault, AWS Secrets Manager, GCP Secret Manager) and messaging breadth (NATS JetStream, Kafka, and RabbitMQ `MessageBus` adapters + an AsyncAPI contract) - are released, each across all five verticals. See the [roadmap](#roadmap) and [docs/STATUS.md](docs/STATUS.md) for implemented-vs-planned detail.
 
 ## Why keel
 
@@ -35,7 +35,12 @@ Teams re-derive the same "right way" to start a service over and over - and get 
 | **v0.2** | Monorepo + Next.js frontend + deployment surface | released |
 | **v0.3** | Rust vertical (contract stress-test) | released |
 | **v0.4** | Go, Java & TypeScript/NestJS verticals | released |
-| **v0.5** | Copier generator + `keel update` propagation + reusable workflows | in progress |
+| **v0.5** | Copier generator + `keel update` propagation + reusable workflows | released |
+| **v0.6** | Cross-vertical parity closure (one documented bar across all five) | released |
+| **v0.7** | Production secret backends (Vault/AWS/GCP) + messaging breadth (Kafka/RabbitMQ) + AsyncAPI | released |
+| **v0.8** | Supply-chain + deploy completion | planned |
+| **v0.9** | Publishing + generator hardening | planned |
+| **v1.0 (LTS)** | Contract freeze + docs + support policy | planned |
 
 ## Development
 

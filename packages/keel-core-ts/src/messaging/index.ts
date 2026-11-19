@@ -36,3 +36,7 @@ export interface MessageBus extends MessagePublisher {
 
 /** DI token for the MessageBus port. */
 export const MESSAGE_BUS = Symbol('keel.MessageBus');
+
+// The in-memory dev/test default bus is broker-free (pulls in no broker client), so unlike the
+// NATS/Kafka/RabbitMQ adapters it is safe to re-export from the default entry point.
+export { InMemoryMessageBus } from './memory.js';

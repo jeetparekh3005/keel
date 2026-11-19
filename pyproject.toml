@@ -25,10 +25,10 @@ exclude = [
 
 [dependency-groups]
 dev = [
-    "ruff>=0.17.4",
+    "ruff>=0.17.5",
     "mypy>=1.13",
     "pytest>=8",
-    "pytest-asyncio>=0.24",
+    "pytest-asyncio>=1.5.0",
     "pytest-cov>=6",
     "import-linter>=2.16",
     "codespell>=2.3",
@@ -41,8 +41,14 @@ dev = [
     "alembic>=1.13",          # migration tool (run by the service image at deploy)
     "grpcio>=1.60",           # keel-core[grpc] extra - installed for the gRPC tests
     "opentelemetry-instrumentation-grpc>=0.48b0",
-    "psycopg[binary]>=3.3.8",   # sync Postgres driver for Alembic migrations in CI
+    "psycopg[binary]>=3.3.9",   # sync Postgres driver for Alembic migrations in CI
     "nats-py>=2.6",           # keel-core[nats] extra - installed for the NATS integration test
+    "aio-pika>=9.5",          # keel-core[rabbitmq] extra - installed for the RabbitMQ tests
+    "aiokafka>=0.15",         # keel-core[kafka] extra - installed for the Kafka tests
+    "boto3>=1.42",            # keel-core[aws] extra - installed for the AWS Secrets Manager tests
+    "boto3-stubs[secretsmanager]>=1.44.3",  # type stubs for the AWS adapter (mypy strict)
+    "google-cloud-secret-manager>=2.20",  # keel-core[gcp] extra - GCP Secret Manager tests + types
+    "google-api-core>=2.20",  # NotFound + bounded Retry imported by the GCP adapter
 ]
 
 # ---------------------------------------------------------------------------
@@ -131,7 +137,7 @@ no_implicit_reexport = true
 exclude = ['(^|/)genproto/']
 
 [[tool.mypy.overrides]]
-module = ["grpc.*", "opentelemetry.instrumentation.*", "opentelemetry.exporter.*", "nats.*", "copier.*"]
+module = ["grpc.*", "opentelemetry.instrumentation.*", "opentelemetry.exporter.*", "nats.*", "aiokafka.*", "copier.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
@@ -177,7 +183,7 @@ exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError", "^\\s*\\.\\.\\
 # regeneration dogfood (proto.yml) is their gate, not codespell.
 [tool.codespell]
 skip = "*.lock,./.git,./.venv,*/genproto/*,*/io/keel/reference/*"
-ignore-words-list = "dependant,afterall,atmost"  # FastAPI route.dependant + vitest afterAll + Awaitility atMost, not typos
+ignore-words-list = "dependant,afterall,atmost,unparseable"  # FastAPI route.dependant + vitest afterAll + Awaitility atMost + ADR-0023 "unparseable" spelling, not typos
 
 # First-party workspace modules (extend as packages/services are added).
 [tool.deptry]

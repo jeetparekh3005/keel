@@ -20,8 +20,14 @@ the stdlib-first Go/Rust verticals: batteries-included, dependency-injected.
   structurally deny-by-default guard with `@Public` / `@Scopes` decorators.
 - **Persistence** - `Database` (pg pool) + `UnitOfWork`; services define their own repository
   per aggregate (ADR-0009).
-- **Ports / adapters / testkit** - `Clock` / `SecretProvider` seams, their production adapters,
-  and in-memory fakes.
+- **Ports / adapters / testkit** - `Clock` / `SecretProvider` / `MessageBus` seams and in-memory
+  fakes. Production `SecretProvider` backends: OpenBao/Vault (ADR-0023), AWS Secrets Manager, and
+  GCP Secret Manager (ADR-0024) over one caching core, selected fail-closed at most one.
+- **Messaging** - `MessageBus` port with an in-memory bus and durable NATS JetStream, Kafka
+  (`kafkajs`), and RabbitMQ (`amqplib`) adapters (at-least-once, ack/nak/dead-letter, W3C trace
+  propagation), selected fail-closed at most one via `messageBusFromEnv` (`KEEL_NATS_URL` /
+  `KEEL_KAFKA_BROKERS` / `KEEL_RABBITMQ_URL`; ADR-0025). Broker clients are subpath-only imports,
+  so the default build stays broker-free.
 - **Conformance** (`@keel/core/conformance`) - the behavioral contract suite a service runs
   against its composed app, so an over-claim fails a test.
 

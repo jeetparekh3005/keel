@@ -36,11 +36,32 @@ export {
 
 export { type Clock, CLOCK, type SecretProvider, SECRET_PROVIDER } from './ports/index.js';
 export { EnvSecretProvider, SystemClock } from './adapters/index.js';
+export { type SecretProviderLogger } from './adapters/caching-secret-provider.js';
+export {
+  createOpenBaoSecretProvider,
+  OpenBaoSecretProvider,
+  type OpenBaoOptions,
+} from './adapters/openbao.secret-provider.js';
+export {
+  AwsSecretsManagerSecretProvider,
+  type AwsSecretsManagerOptions,
+  createAwsSecretsManagerSecretProvider,
+} from './adapters/aws-secrets-manager.secret-provider.js';
+export {
+  createGcpSecretManagerSecretProvider,
+  GcpSecretManagerSecretProvider,
+  type GcpSecretManagerOptions,
+} from './adapters/gcp-secret-manager.secret-provider.js';
+export {
+  secretProviderFromEnv,
+  type SecretProviderFromEnvOptions,
+} from './adapters/secret-provider.factory.js';
 
 export { Database, DATABASE, type PoolStats, UnitOfWork } from './persistence/index.js';
 
 export {
   type InboundMessage,
+  InMemoryMessageBus,
   MESSAGE_BUS,
   type MessageBus,
   type MessageHandler,

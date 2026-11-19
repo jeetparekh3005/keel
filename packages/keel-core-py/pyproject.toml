@@ -24,6 +24,35 @@ grpc = [
 nats = [
     "nats-py>=2.6",
 ]
+# RabbitMQ is opt-in (ADR-0025): REST-only services should not pull the client.
+# aio-pika is the async client (over aiormq); it carries its own type hints.
+rabbitmq = [
+    "aio-pika>=9.5",
+]
+# Kafka is opt-in (ADR-0025): REST-only services should not pull the client.
+# aiokafka is the pure-Python asyncio client; it has no type stubs (mypy ignores its imports).
+kafka = [
+    "aiokafka>=0.15",
+]
+# AWS Secrets Manager backend (ADR-0024) is opt-in: only services using it pull boto3.
+# boto3 handles SigV4 signing and the default credential chain (env, IRSA, instance
+# profile, SSO); the standard AWS_ENDPOINT_URL_SECRETS_MANAGER env var points it at
+# LocalStack in tests, so no custom endpoint config is carried here.
+aws = [
+    "boto3>=1.42",
+    # botocore is imported directly for botocore.config.Config (bounded client timeouts/retries).
+    # It ships with boto3, but declare it since we import it (deptry DEP003).
+    "botocore>=1.42",
+]
+# GCP Secret Manager backend (ADR-0024) is opt-in: only services using it pull the SDK.
+# google-cloud-secret-manager handles the OAuth2 exchange and Application Default
+# Credentials (env, Workload Identity, metadata server). google-api-core is imported
+# directly for NotFound and the bounded Retry, so declare it (deptry DEP003) even though
+# it ships transitively with the client.
+gcp = [
+    "google-cloud-secret-manager>=2.20",
+    "google-api-core>=2.20",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -41,4 +70,6 @@ extend_exclude = ["src/keel_core/genproto"]
 [tool.deptry.per_rule_ignores]
 # `keel` is not a distribution: it is the vendored keel.reference.v1 stub tree reached via the
 # genproto sys.path shim (ADR-0022), imported by the ItemService adapter. Not a missing dep.
-DEP001 = ["keel"]
+# `mypy_boto3_secretsmanager` is a type-only stub (boto3-stubs) imported under TYPE_CHECKING in
+# the AWS adapter (ADR-0024); it is a dev/type dependency, never imported at runtime.
+DEP001 = ["keel", "mypy_boto3_secretsmanager"]

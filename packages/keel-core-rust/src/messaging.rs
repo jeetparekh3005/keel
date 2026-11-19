@@ -1,35 +1,60 @@
-//! NATS JetStream `MessageBus` adapter (parity with the Python `keel-core[nats]` extra).
+//! The `MessageBus` port, its in-memory dev default, the fail-closed env selector, and the NATS
+//! JetStream adapter (parity with the Python `keel-core[nats]` extra).
 //!
-//! Implements the [`MessageBus`] port over NATS JetStream with durable, explicit-ack,
-//! at-least-once delivery. Trace context is injected into message headers on publish and
-//! re-attached around each handler, so a consumer span links to the producer's trace
-//! across the broker. On handler failure the message is nak'd (redelivered) until
-//! `max_deliver`, then term'd and logged at error, so a poison message neither loops
-//! forever nor is dropped silently.
+//! The shared `MessageBus` port lives here - [`InboundMessage`], [`MessagePublisher`],
+//! [`MessageBus`], [`MessagingError`], and the W3C trace-context helpers - alongside two things
+//! that are always compiled so a broker-free service still resolves a working bus (ADR-0025
+//! decision 3): the in-memory dev default [`InMemoryMessageBus`] and the fail-closed
+//! [`message_bus_from_env`] selector (at most one of `KEEL_NATS_URL` / `KEEL_KAFKA_BROKERS` /
+//! `KEEL_RABBITMQ_URL`; none yields the in-memory bus), mirroring
+//! [`secret_provider_from_env`](crate::secret::secret_provider_from_env).
 //!
-//! This whole module is gated behind the `nats` feature (it pulls in `async-nats`); the
-//! default core build stays broker-free, exactly like `pip install keel-core` omitting
-//! `nats-py` until you ask for the `nats` extra.
+//! The broker adapters are opt-in: [`NatsMessageBus`] here is gated behind `nats` (it pulls in
+//! `async-nats`), Kafka lives in [`crate::kafka`] (`kafka`), and RabbitMQ in [`crate::rabbitmq`]
+//! (`rabbitmq`); each reuses this port plus the pure `disposition` policy rather than redefining
+//! the contract. The JetStream adapter gives durable, explicit-ack, at-least-once delivery: trace
+//! context propagates through message headers so a consumer span links to the producer's trace,
+//! and on handler failure the message is nak'd (redelivered) until `max_deliver`, then term'd and
+//! logged at error, so a poison message neither loops forever nor is dropped silently. The default
+//! core build stays broker-free, exactly like `pip install keel-core` omitting `nats-py` until you
+//! ask for the `nats` extra.
 
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
 
-use async_nats::jetstream::consumer::pull::Config as PullConfig;
-use async_nats::jetstream::consumer::AckPolicy;
-use async_nats::jetstream::message::{AckKind, Message};
-use async_nats::jetstream::stream::Config as StreamConfig;
-use async_nats::jetstream::Context as JetStreamContext;
-use async_nats::{Client, HeaderMap};
-use bytes::Bytes;
-use futures::StreamExt;
 use opentelemetry::propagation::{Extractor, Injector, TextMapPropagator};
 use opentelemetry::Context as OtelContext;
 use opentelemetry_sdk::propagation::TraceContextPropagator;
-use tracing::{error, warn, Instrument};
+// The in-memory bus and the selector are always compiled (ADR-0025 dev default), so the
+// trace-span bridge they use is an always-on import, not a broker-gated one.
+use tracing::Instrument;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
+
+// NATS-specific imports. The shared port above compiles under either broker feature
+// (`nats` or `rabbitmq`); the JetStream adapter below is `nats`-only.
+#[cfg(feature = "nats")]
+use std::time::Duration;
+
+#[cfg(feature = "nats")]
+use async_nats::jetstream::consumer::pull::Config as PullConfig;
+#[cfg(feature = "nats")]
+use async_nats::jetstream::consumer::AckPolicy;
+#[cfg(feature = "nats")]
+use async_nats::jetstream::message::{AckKind, Message};
+#[cfg(feature = "nats")]
+use async_nats::jetstream::stream::Config as StreamConfig;
+#[cfg(feature = "nats")]
+use async_nats::jetstream::Context as JetStreamContext;
+#[cfg(feature = "nats")]
+use async_nats::{Client, HeaderMap};
+#[cfg(feature = "nats")]
+use bytes::Bytes;
+#[cfg(feature = "nats")]
+use futures::StreamExt;
+#[cfg(feature = "nats")]
+use tracing::{error, warn};
 
 /// A message delivered to a subscriber: subject, raw payload, and propagation headers.
 #[derive(Debug, Clone)]
@@ -54,17 +79,18 @@ pub type HandlerFuture = Pin<Box<dyn Future<Output = HandlerResult> + Send>>;
 pub type MessageHandler = Arc<dyn Fn(InboundMessage) -> HandlerFuture + Send + Sync>;
 
 /// Failures surfaced by the bus itself (connecting, publishing, subscribing). Handler
-/// failures are not errors here: they drive ack/nak/term inside the dispatch loop.
+/// failures are not errors here: they drive ack/nak/term inside the dispatch loop. Shared by
+/// both broker adapters, so the wording is broker-neutral.
 #[derive(Debug, thiserror::Error)]
 pub enum MessagingError {
-    /// Connecting to the server or ensuring the JetStream stream failed.
-    #[error("nats connect failed: {0}")]
+    /// Connecting to the broker or ensuring the stream/exchange topology failed.
+    #[error("message bus connect failed: {0}")]
     Connect(String),
-    /// Publishing to JetStream (or awaiting its ack) failed.
-    #[error("jetstream publish failed: {0}")]
+    /// Publishing (or awaiting the broker's publish acknowledgement) failed.
+    #[error("message bus publish failed: {0}")]
     Publish(String),
     /// Creating the durable consumer or its message stream failed.
-    #[error("jetstream subscribe failed: {0}")]
+    #[error("message bus subscribe failed: {0}")]
     Subscribe(String),
 }
 
@@ -90,8 +116,204 @@ pub trait MessageBus: MessagePublisher {
         -> Result<(), MessagingError>;
 }
 
+/// A process-local [`MessageBus`] for development and tests (ADR-0025 decision 3, the dev
+/// default): `publish` dispatches synchronously and in-process to every handler subscribed to the
+/// subject, with no broker, no durability, and no redelivery. Trace context is injected into the
+/// message headers on publish and re-attached around each handler exactly as a real broker adapter
+/// does, so handler spans and logs correlate to the publisher's trace. This is what
+/// [`message_bus_from_env`] returns when no broker gating variable is set, mirroring the Python
+/// `InMemoryMessageBus`.
+#[derive(Clone, Default)]
+pub struct InMemoryMessageBus {
+    /// subject -> the handlers subscribed to it. Cloned out under the lock before dispatch so the
+    /// lock is never held across a handler `await`.
+    subscribers: Arc<Mutex<HashMap<String, Vec<MessageHandler>>>>,
+}
+
+impl InMemoryMessageBus {
+    /// Create an empty in-memory bus.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+#[async_trait::async_trait]
+impl MessagePublisher for InMemoryMessageBus {
+    async fn publish(
+        &self,
+        subject: &str,
+        payload: &[u8],
+        headers: &HashMap<String, String>,
+    ) -> Result<(), MessagingError> {
+        let mut carrier = headers.clone();
+        inject_trace_context_into_map(&mut carrier);
+        // Snapshot the handler list under the lock, then release it: a handler is async and must
+        // never be awaited while the subscribers mutex is held.
+        let handlers = {
+            let guard = self
+                .subscribers
+                .lock()
+                .expect("in-memory bus subscribers lock");
+            guard.get(subject).cloned().unwrap_or_default()
+        };
+        for handler in handlers {
+            let inbound = InboundMessage {
+                subject: subject.to_string(),
+                payload: payload.to_vec(),
+                headers: carrier.clone(),
+            };
+            // A consume span parented on the publisher's trace, so handler log lines link back to
+            // the publish side, mirroring the real broker adapters' consume span.
+            let span = tracing::info_span!(
+                "messaging.consume",
+                messaging.system = "in_memory",
+                messaging.destination = %subject,
+            );
+            let _ = span.set_parent(extract_trace_context(&carrier));
+            if let Err(err) = handler(inbound).instrument(span).await {
+                // The dev bus has no redelivery or dead-letter; surface a handler failure so a
+                // broken subscriber is visible rather than silently swallowed.
+                tracing::warn!(subject = %subject, error = %err, "in-memory message handler failed");
+            }
+        }
+        Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl MessageBus for InMemoryMessageBus {
+    async fn subscribe(
+        &self,
+        subject: &str,
+        handler: MessageHandler,
+    ) -> Result<(), MessagingError> {
+        self.subscribers
+            .lock()
+            .expect("in-memory bus subscribers lock")
+            .entry(subject.to_string())
+            .or_default()
+            .push(handler);
+        Ok(())
+    }
+}
+
+/// Read an environment variable, treating empty or whitespace-only as unset and trimming
+/// surrounding whitespace. This is the gating-var convention shared with the secret-provider
+/// selector (`crate::secret::env_var`), so "set" means the same thing for both.
+fn env_var(key: &str) -> Option<String> {
+    std::env::var(key)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+/// Failure selecting or constructing the message bus (ADR-0025 decision 3, fail-closed
+/// selection). Selection failures fail loudly at startup rather than silently falling through to
+/// the in-memory dev bus, exactly like the [`SecretProviderError`](crate::secret::SecretProviderError)
+/// selector.
+#[derive(Debug, thiserror::Error)]
+pub enum MessageBusError {
+    /// More than one broker gating variable is set - an ambiguous misconfiguration.
+    #[error(
+        "multiple message bus backends configured: set at most one of KEEL_NATS_URL, KEEL_KAFKA_BROKERS, KEEL_RABBITMQ_URL"
+    )]
+    MultipleBackends,
+    /// A broker's gating variable is set but that broker's cargo feature is not compiled into this
+    /// build. Surfaced (not silently ignored) so configuration never falls through to the in-memory
+    /// dev bus when a real broker was asked for. Never constructed in an all-brokers build, where
+    /// every adapter is present.
+    #[allow(dead_code)]
+    #[error(
+        "message bus backend {0} is configured but its cargo feature is not enabled in this build"
+    )]
+    BackendNotCompiled(&'static str),
+    /// The selected broker adapter failed to connect/construct (bad config, unreachable broker).
+    /// Only reachable when a broker feature is on; in the default (broker-free) build no branch
+    /// attempts a connect, so the variant is compiled out there.
+    #[cfg(any(feature = "nats", feature = "rabbitmq", feature = "kafka"))]
+    #[error(transparent)]
+    Connect(#[from] MessagingError),
+}
+
+/// Select the message bus fail-closed from the environment (ADR-0025 decision 3): at most one of
+/// `KEEL_NATS_URL` (NATS JetStream), `KEEL_KAFKA_BROKERS` (Kafka), or `KEEL_RABBITMQ_URL`
+/// (RabbitMQ) may be set; more than one is an ambiguous misconfiguration that fails. A gating var
+/// whose adapter feature is not compiled in also fails (never a silent fall-through). None set
+/// yields the in-memory [`InMemoryMessageBus`] dev default. Async because the broker adapters
+/// connect asynchronously; boxed as `Arc<dyn MessageBus>` for the service composition root,
+/// mirroring [`secret_provider_from_env`](crate::secret::secret_provider_from_env).
+///
+/// # Errors
+/// Returns [`MessageBusError`] when more than one broker is configured, when a configured broker's
+/// feature is not compiled in, or when the selected adapter cannot connect: the service fails to
+/// start rather than silently running on the in-memory dev bus.
+pub async fn message_bus_from_env() -> Result<Arc<dyn MessageBus>, MessageBusError> {
+    let nats_set = env_var("KEEL_NATS_URL").is_some();
+    let kafka_set = env_var("KEEL_KAFKA_BROKERS").is_some();
+    let rabbitmq_set = env_var("KEEL_RABBITMQ_URL").is_some();
+
+    if [nats_set, kafka_set, rabbitmq_set]
+        .into_iter()
+        .filter(|set| *set)
+        .count()
+        > 1
+    {
+        return Err(MessageBusError::MultipleBackends);
+    }
+
+    if nats_set {
+        #[cfg(feature = "nats")]
+        {
+            let config = NatsConfig::from_env().ok_or_else(|| {
+                MessagingError::Connect("KEEL_NATS_URL is set but empty".to_string())
+            })?;
+            return Ok(Arc::new(NatsMessageBus::connect(config).await?));
+        }
+        #[cfg(not(feature = "nats"))]
+        {
+            return Err(MessageBusError::BackendNotCompiled("KEEL_NATS_URL"));
+        }
+    }
+
+    if kafka_set {
+        #[cfg(feature = "kafka")]
+        {
+            let config = crate::kafka::KafkaConfig::from_env().ok_or_else(|| {
+                MessagingError::Connect("KEEL_KAFKA_BROKERS is set but empty".to_string())
+            })?;
+            return Ok(Arc::new(
+                crate::kafka::KafkaMessageBus::connect(config).await?,
+            ));
+        }
+        #[cfg(not(feature = "kafka"))]
+        {
+            return Err(MessageBusError::BackendNotCompiled("KEEL_KAFKA_BROKERS"));
+        }
+    }
+
+    if rabbitmq_set {
+        #[cfg(feature = "rabbitmq")]
+        {
+            let config = crate::rabbitmq::RabbitMqConfig::from_env().ok_or_else(|| {
+                MessagingError::Connect("KEEL_RABBITMQ_URL is set but empty".to_string())
+            })?;
+            return Ok(Arc::new(
+                crate::rabbitmq::RabbitMqMessageBus::connect(config).await?,
+            ));
+        }
+        #[cfg(not(feature = "rabbitmq"))]
+        {
+            return Err(MessageBusError::BackendNotCompiled("KEEL_RABBITMQ_URL"));
+        }
+    }
+
+    Ok(Arc::new(InMemoryMessageBus::new()))
+}
+
 /// Delivery policy for a [`NatsMessageBus`]. Defaults mirror the Python adapter:
 /// `max_deliver = 5`, `ack_wait = 30s`, `max_ack_pending = 256`.
+#[cfg(feature = "nats")]
 #[derive(Debug, Clone)]
 pub struct NatsConfig {
     /// NATS server URL (e.g. `nats://localhost:4222`).
@@ -109,6 +331,7 @@ pub struct NatsConfig {
     pub max_ack_pending: i64,
 }
 
+#[cfg(feature = "nats")]
 impl NatsConfig {
     /// Build a config with the default delivery policy for the given server, stream, and
     /// subjects.
@@ -123,6 +346,28 @@ impl NatsConfig {
             max_ack_pending: 256,
         }
     }
+
+    /// Build a config from the environment, returning `None` when the `KEEL_NATS_URL` gate is
+    /// unset or empty (so the default, broker-free deployment never constructs a NATS bus),
+    /// mirroring [`KafkaConfig::from_env`](crate::kafka::KafkaConfig::from_env). `KEEL_NATS_STREAM`
+    /// defaults to `keel` and `KEEL_NATS_SUBJECTS` (comma-separated) to `keel.>` (ADR-0025).
+    #[must_use]
+    pub fn from_env() -> Option<Self> {
+        let url = env_var("KEEL_NATS_URL")?;
+        let stream = env_var("KEEL_NATS_STREAM").unwrap_or_else(|| "keel".to_string());
+        let subjects = env_var("KEEL_NATS_SUBJECTS")
+            .map(|value| {
+                value
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|entry| !entry.is_empty())
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            })
+            .filter(|subjects| !subjects.is_empty())
+            .unwrap_or_else(|| vec!["keel.>".to_string()]);
+        Some(Self::new(url, stream, subjects))
+    }
 }
 
 /// A [`MessageBus`] backed by NATS JetStream for durable at-least-once delivery.
@@ -130,6 +375,7 @@ impl NatsConfig {
 /// Constructed already connected (see [`NatsMessageBus::connect`]): the stream is ensured
 /// at construction, so there is no "connect before use" footgun and every `publish` /
 /// `subscribe` runs against a live JetStream context.
+#[cfg(feature = "nats")]
 pub struct NatsMessageBus {
     client: Client,
     jetstream: JetStreamContext,
@@ -139,6 +385,7 @@ pub struct NatsMessageBus {
     max_ack_pending: i64,
 }
 
+#[cfg(feature = "nats")]
 impl NatsMessageBus {
     /// Connect to the server and ensure the JetStream stream exists for the configured
     /// subjects, returning a ready-to-use bus.
@@ -182,6 +429,7 @@ impl NatsMessageBus {
     }
 }
 
+#[cfg(feature = "nats")]
 #[async_trait::async_trait]
 impl MessagePublisher for NatsMessageBus {
     async fn publish(
@@ -212,6 +460,7 @@ impl MessagePublisher for NatsMessageBus {
     }
 }
 
+#[cfg(feature = "nats")]
 #[async_trait::async_trait]
 impl MessageBus for NatsMessageBus {
     async fn subscribe(
@@ -269,15 +518,27 @@ impl MessageBus for NatsMessageBus {
 /// The context is taken from the active `tracing` span (the bridge the rest of the
 /// vertical uses), so a publish inside an instrumented request carries that request's
 /// trace across the broker. With no active span / no tracer installed this is a no-op.
+#[cfg(feature = "nats")]
 fn inject_trace_context(carrier: &mut HeaderMap) {
     let cx = tracing::Span::current().context();
     let mut injector = HeaderMapInjector(carrier);
     TraceContextPropagator::new().inject_context(&cx, &mut injector);
 }
 
+/// Inject the current trace context (W3C `traceparent`/`tracestate`) into a plain string header
+/// map. The in-memory bus carries headers as a `HashMap` (there is no broker-native header type),
+/// so it injects via this map carrier the same way the NATS adapter injects into its `HeaderMap`.
+/// With no active span / no tracer installed this is a no-op.
+fn inject_trace_context_into_map(carrier: &mut HashMap<String, String>) {
+    let cx = tracing::Span::current().context();
+    let mut injector = MapInjector(carrier);
+    TraceContextPropagator::new().inject_context(&cx, &mut injector);
+}
+
 /// Extract a remote trace context from message `headers` (W3C `traceparent`/`tracestate`),
-/// rooted at an empty context so the result is a clean remote parent.
-fn extract_trace_context(headers: &HashMap<String, String>) -> OtelContext {
+/// rooted at an empty context so the result is a clean remote parent. Shared across the
+/// NATS and RabbitMQ adapters (both lift string headers off a delivery into a map).
+pub(crate) fn extract_trace_context(headers: &HashMap<String, String>) -> OtelContext {
     let extractor = MapExtractor(headers);
     TraceContextPropagator::new().extract_with_context(&OtelContext::new(), &extractor)
 }
@@ -285,6 +546,7 @@ fn extract_trace_context(headers: &HashMap<String, String>) -> OtelContext {
 /// Dispatch one delivered message to `handler` under its propagated trace context, then
 /// ack / nak / term based on the outcome. Never returns an error: control-plane failures
 /// are logged, not propagated, so the subscription loop keeps running.
+#[cfg(feature = "nats")]
 async fn dispatch(message: &Message, handler: &MessageHandler, stream: &str, max_deliver: i64) {
     let mut headers = HashMap::new();
     if let Some(header_map) = message.headers.as_ref() {
@@ -352,6 +614,7 @@ async fn dispatch(message: &Message, handler: &MessageHandler, stream: &str, max
 
 /// Await an ack/nak/term call, logging (not raising) a control-plane failure so a failed
 /// acknowledgement surfaces instead of vanishing into silent redelivery anomalies.
+#[cfg(feature = "nats")]
 async fn control(
     op: impl Future<Output = Result<(), async_nats::Error>>,
     name: &str,
@@ -362,9 +625,13 @@ async fn control(
     }
 }
 
-/// The three ways a delivered message can be disposed of.
+/// The three ways a delivered message can be disposed of. Shared by the broker adapters; each
+/// maps these onto its own ack/nak/dead-letter primitives. Gated to the broker features: it is a
+/// redelivery/dead-letter concept, and the in-memory dev bus (the only always-compiled bus) has no
+/// such disposition, so it would be dead code in the broker-free build.
+#[cfg(any(feature = "nats", feature = "rabbitmq", feature = "kafka"))]
 #[derive(Debug, PartialEq, Eq)]
-enum Disposition {
+pub(crate) enum Disposition {
     /// Handler succeeded: acknowledge.
     Ack,
     /// Handler failed under the delivery cap: nak for redelivery.
@@ -373,9 +640,11 @@ enum Disposition {
     DeadLetter,
 }
 
-/// Decide a message's fate from the handler outcome and delivery count. Pure, so the
-/// poison-handling policy is unit-testable without a broker.
-fn disposition(handler_ok: bool, num_delivered: i64, max_deliver: i64) -> Disposition {
+/// Decide a message's fate from the handler outcome and delivery count. Pure and
+/// broker-agnostic, so the poison-handling policy is unit-testable without a broker and is
+/// reused verbatim by the RabbitMQ adapter for its nak-vs-dead-letter decision.
+#[cfg(any(feature = "nats", feature = "rabbitmq", feature = "kafka"))]
+pub(crate) fn disposition(handler_ok: bool, num_delivered: i64, max_deliver: i64) -> Disposition {
     if handler_ok {
         Disposition::Ack
     } else if num_delivered >= max_deliver {
@@ -387,6 +656,7 @@ fn disposition(handler_ok: bool, num_delivered: i64, max_deliver: i64) -> Dispos
 
 /// Derive a stable, JetStream-safe durable consumer name from a subject (durable names
 /// may not contain `.`/`*`/`>`), mirroring the Python adapter's `keel_<sanitized>`.
+#[cfg(feature = "nats")]
 fn durable_name(subject: &str) -> String {
     let safe: String = subject
         .chars()
@@ -396,11 +666,23 @@ fn durable_name(subject: &str) -> String {
 }
 
 /// Injects W3C trace headers into an `async-nats` [`HeaderMap`].
+#[cfg(feature = "nats")]
 struct HeaderMapInjector<'a>(&'a mut HeaderMap);
 
+#[cfg(feature = "nats")]
 impl Injector for HeaderMapInjector<'_> {
     fn set(&mut self, key: &str, value: String) {
         self.0.insert(key, value);
+    }
+}
+
+/// Injects W3C trace headers into a plain string header map (the carrier the in-memory bus uses,
+/// since it has no broker-native header type).
+struct MapInjector<'a>(&'a mut HashMap<String, String>);
+
+impl Injector for MapInjector<'_> {
+    fn set(&mut self, key: &str, value: String) {
+        self.0.insert(key.to_string(), value);
     }
 }
 
@@ -419,10 +701,15 @@ impl Extractor for MapExtractor<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::{disposition, durable_name, extract_trace_context, Disposition, MapExtractor};
+    #[cfg(feature = "nats")]
+    use super::durable_name;
+    #[cfg(any(feature = "nats", feature = "rabbitmq", feature = "kafka"))]
+    use super::{disposition, Disposition};
+    use super::{extract_trace_context, MapExtractor};
     use opentelemetry::propagation::Extractor;
     use std::collections::HashMap;
 
+    #[cfg(feature = "nats")]
     #[test]
     fn durable_name_is_jetstream_safe_and_stable() {
         // Subject tokens (`.`) and wildcards must not leak into the durable name.
@@ -432,12 +719,14 @@ mod tests {
         assert_eq!(durable_name("events"), durable_name("events"));
     }
 
+    #[cfg(any(feature = "nats", feature = "rabbitmq", feature = "kafka"))]
     #[test]
     fn disposition_acks_on_success_regardless_of_delivery_count() {
         assert_eq!(disposition(true, 1, 5), Disposition::Ack);
         assert_eq!(disposition(true, 99, 5), Disposition::Ack);
     }
 
+    #[cfg(any(feature = "nats", feature = "rabbitmq", feature = "kafka"))]
     #[test]
     fn disposition_redelivers_under_the_cap_then_dead_letters_at_it() {
         // Under the cap: nak for another attempt.
