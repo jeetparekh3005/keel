@@ -352,6 +352,53 @@ describe('KafkaMessageBus.dispatch', () => {
     expect(seen).toBe('keel_test_events');
   });
 
+  it('sets the inbound subject from the keel-subject header (the original published subject)', async () => {
+    const { sink } = fakeSink();
+    let seen: string | undefined;
+    const handler: MessageHandler = (m: InboundMessage) => {
+      seen = m.subject;
+      return Promise.resolve();
+    };
+    // The topic is the lossy-sanitized name; the header carries the original dotted subject.
+    await makeBus().dispatch(
+      sink,
+      newRecord(1, { topic: 'keel_test_events', headers: { 'keel-subject': 'keel.test.events' } }),
+      handler,
+    );
+    expect(seen).toBe('keel.test.events');
+  });
+
+  it('falls back to the topic name for the subject when the keel-subject header is absent', async () => {
+    const { sink } = fakeSink();
+    let seen: string | undefined;
+    const handler: MessageHandler = (m: InboundMessage) => {
+      seen = m.subject;
+      return Promise.resolve();
+    };
+    await makeBus().dispatch(sink, newRecord(1, { topic: 'keel_test_events' }), handler);
+    expect(seen).toBe('keel_test_events');
+  });
+
+  it('carries the keel-subject header through the retry re-produce', async () => {
+    const { sink, lastProducedTo } = fakeSink();
+    await makeBus().dispatch(
+      sink,
+      newRecord(1, { headers: { 'keel-subject': 'keel.test.events' } }),
+      failHandler,
+    );
+    expect(lastProducedTo('.retry')?.headers['keel-subject']).toBe('keel.test.events');
+  });
+
+  it('carries the keel-subject header through the dead-letter re-produce', async () => {
+    const { sink, lastProducedTo } = fakeSink();
+    await makeBus({ maxDeliver: 5 }).dispatch(
+      sink,
+      newRecord(5, { headers: { 'keel-subject': 'keel.test.events' } }),
+      failHandler,
+    );
+    expect(lastProducedTo('.dlq')?.headers['keel-subject']).toBe('keel.test.events');
+  });
+
   it('dead-letters to the KEEL_KAFKA_DLQ_TOPIC override when set', async () => {
     const { sink, lastProducedTo } = fakeSink();
     await makeBus({ maxDeliver: 5, dlqTopic: 'keel.deadletters' }).dispatch(
@@ -461,6 +508,8 @@ describe('KafkaMessageBus.publish', () => {
     const headers = kafka.state.sent[0].messages[0].headers as Record<string, string>;
     expect(headers['x-demo']).toBe('1');
     expect(headers.traceparent).toContain(traceId);
+    // The original (unsanitized) subject rides in the keel-subject header.
+    expect(headers['keel-subject']).toBe('keel.test.events');
   });
 });
 

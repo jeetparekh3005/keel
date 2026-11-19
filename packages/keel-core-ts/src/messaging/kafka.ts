@@ -12,8 +12,11 @@
 // committed so the partition is not head-of-line blocked, and at the cap it is produced to the
 // dead-letter topic (<topic>.dlq) and committed, so a poison record neither loops forever nor is
 // dropped silently. Kafka has no native per-message delivery count, so it travels in a portable
-// keel-delivery-count record header. If the retry or dead-letter produce itself fails the original
-// offset is NOT committed, so the record is redelivered rather than lost (preserve policy). The
+// keel-delivery-count record header. The subject->topic mapping is a lossy sanitization (dots and
+// other characters collapse to underscore), so a delivered record cannot recover the published
+// subject from its topic name; the original subject travels explicitly in a keel-subject header, set
+// on publish and read back on consume (falling back to the topic when absent, e.g. for a record from
+// a non-keel producer). If the retry or dead-letter produce itself fails the original
 // commit/retry/dead-letter decision is the shared pure disposition function, unit-testable without a
 // broker.
 //
@@ -73,6 +76,13 @@ export function disposition(ok: boolean, numDelivered: number, maxDeliver: numbe
  * record is re-produced to the retry topic.
  */
 const DELIVERY_COUNT_HEADER = 'keel-delivery-count';
+
+/**
+ * Carries the ORIGINAL published subject. subject->topic sanitization is lossy, so the subject cannot
+ * be recovered from the topic name; it is stamped here on publish and read back on consume. It rides
+ * through the retry/dead-letter re-produce like keel-delivery-count and the trace headers.
+ */
+const SUBJECT_HEADER = 'keel-subject';
 
 /** Suffixes naming the retry and dead-letter topics derived from a base topic. */
 const RETRY_SUFFIX = '.retry';
@@ -213,6 +223,8 @@ export class KafkaMessageBus {
   ): Promise<void> {
     const sink = this.requireSink('publish');
     const carrier: Record<string, string> = { ...(options?.headers ?? {}) };
+    // Stamp the original subject so the consumer can recover it (the topic name is a lossy transform).
+    carrier[SUBJECT_HEADER] = subject;
     // Serialize the active trace context (W3C `traceparent`/`tracestate`) into the carrier so a
     // consumer can continue the trace.
     propagation.inject(otelContext.active(), carrier);
@@ -272,8 +284,12 @@ export class KafkaMessageBus {
     const base = record.topic.endsWith(RETRY_SUFFIX)
       ? record.topic.slice(0, -RETRY_SUFFIX.length)
       : record.topic;
+    // The delivered subject is the ORIGINAL published subject carried in the keel-subject header (the
+    // topic name is a lossy sanitization of it); fall back to the topic when the header is absent. The
+    // retry/dead-letter topic derivation and the logs stay on `base`, the sanitized topic.
+    const subject = headers[SUBJECT_HEADER] ?? base;
     const inbound: InboundMessage = {
-      subject: base,
+      subject,
       payload: new Uint8Array(record.value),
       headers,
     };

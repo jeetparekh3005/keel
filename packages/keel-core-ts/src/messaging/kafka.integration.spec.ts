@@ -29,6 +29,19 @@ function uniqueSubject(prefix: string): string {
   return `${prefix}.${Date.now()}.${Math.floor(Math.random() * 1e6)}`;
 }
 
+/**
+ * Poll `predicate` until it is true or `timeoutMs` elapses. The deadline is an absolute wall-clock
+ * instant (`Date.now() + timeoutMs`) and the per-tick sleep is a fixed small positive interval, so no
+ * computed delay is ever negative (a relative timeout used as an absolute deadline would make the
+ * remaining-time setTimeout wildly negative).
+ */
+async function waitUntil(predicate: () => boolean, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate() && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 250));
+  }
+}
+
 describe.skipIf(brokers.length === 0)('KafkaMessageBus (real broker)', () => {
   let provider: BasicTracerProvider;
 
@@ -68,13 +81,13 @@ describe.skipIf(brokers.length === 0)('KafkaMessageBus (real broker)', () => {
       );
       span.end();
 
-      for (let i = 0; i < 120 && received.length === 0; i++) {
-        await new Promise((r) => setTimeout(r, 500));
-      }
+      await waitUntil(() => received.length > 0, 60_000);
 
       expect(received, `no message delivered to ${subject}`).toHaveLength(1);
       const message = received[0];
-      expect(message.subject).toBe(topicName(subject));
+      // The delivered subject is the ORIGINAL published subject (carried in the keel-subject header),
+      // not the lossy-sanitized topic name.
+      expect(message.subject).toBe(subject);
       expect(new TextDecoder().decode(message.payload)).toBe('hello');
       expect(message.headers['x-demo']).toBe('1');
       // The producer's trace id reached the consumer through the record headers.
@@ -121,9 +134,7 @@ describe.skipIf(brokers.length === 0)('KafkaMessageBus (real broker)', () => {
 
       await bus.publish(subject, new TextEncoder().encode('poison'));
 
-      for (let i = 0; i < 160 && !deadLettered.includes('poison'); i++) {
-        await new Promise((r) => setTimeout(r, 500));
-      }
+      await waitUntil(() => deadLettered.includes('poison'), 90_000);
       expect(
         deadLettered,
         `poison record never reached the dead-letter topic ${dlqTopic}`,
