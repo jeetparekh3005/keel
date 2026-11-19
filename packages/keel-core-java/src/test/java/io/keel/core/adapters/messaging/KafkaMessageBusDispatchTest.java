@@ -346,6 +346,34 @@ class KafkaMessageBusDispatchTest {
   }
 
   @Test
+  void setsSubjectFromKeelSubjectHeaderElseTopic() {
+    // The topic is a lossy transform of the subject (keel.test.events -> keel_test_events), so the
+    // delivered subject must come from the keel-subject header to equal the published subject.
+    AtomicReference<String> fromHeader = new AtomicReference<>();
+    bus()
+        .dispatch(
+            new FakeSink(),
+            record(BASE_TOPIC, 1, Map.of("keel-subject", "keel.test.events")),
+            inbound -> fromHeader.set(inbound.subject()));
+    assertEquals(
+        "keel.test.events",
+        fromHeader.get(),
+        "the delivered subject comes from the keel-subject header, not the sanitized topic");
+
+    // Absent the header, the subject falls back to the base topic name.
+    AtomicReference<String> fallback = new AtomicReference<>();
+    bus()
+        .dispatch(
+            new FakeSink(),
+            record(BASE_TOPIC, 1, Map.of()),
+            inbound -> fallback.set(inbound.subject()));
+    assertEquals(
+        BASE_TOPIC,
+        fallback.get(),
+        "with no keel-subject header the subject falls back to the topic");
+  }
+
+  @Test
   void dlqTopicOverrideIsUsedAtTheCap() {
     FakeSink sink = new FakeSink();
     KafkaMessageBus bus =

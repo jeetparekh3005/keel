@@ -101,6 +101,13 @@ class KafkaMessageBusIntegrationTest {
             delivered.await(60, TimeUnit.SECONDS),
             "no message delivered to " + subject + " within 60s");
         InboundMessage message = received.get();
+        // The subject maps to the topic through a lossy sanitization, so the delivered subject must
+        // equal the published subject (carried in the keel-subject header), not the sanitized
+        // topic.
+        assertEquals(
+            subject,
+            message.subject(),
+            "the delivered subject must equal the published subject, not the sanitized topic");
         assertEquals("hello", new String(message.payload(), UTF_8));
         assertEquals("1", message.headers().get("x-demo"), "caller header was not delivered");
         assertTrue(

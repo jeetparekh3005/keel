@@ -82,6 +82,16 @@ public final class KafkaMessageBus implements MessageBus {
    */
   private static final String DELIVERY_COUNT_HEADER = "keel-delivery-count";
 
+  /**
+   * Carries the ORIGINAL subject across the broker. A subject maps to a Kafka topic through a lossy
+   * sanitization ({@code keel.test.events} -> {@code keel_test_events}), so the topic name cannot
+   * recover the published subject; the subject travels in this header so the delivered {@code
+   * InboundMessage.subject} equals what was published (unlike NATS/RabbitMQ, where the subject IS
+   * the routing key). It survives the re-produce to {@code <topic>.retry}/{@code <topic>.dlq}
+   * alongside {@code keel-delivery-count} and the trace headers.
+   */
+  private static final String SUBJECT_HEADER = "keel-subject";
+
   private static final String RETRY_SUFFIX = ".retry";
   private static final String DLQ_SUFFIX = ".dlq";
 
@@ -239,9 +249,12 @@ public final class KafkaMessageBus implements MessageBus {
       carrier.putAll(headers);
     }
     propagator.inject(Context.current(), carrier, SETTER);
-    List<Header> recordHeaders = new ArrayList<>(carrier.size());
+    List<Header> recordHeaders = new ArrayList<>(carrier.size() + 1);
     carrier.forEach((key, value) ->
         recordHeaders.add(new RecordHeader(key, value.getBytes(StandardCharsets.UTF_8))));
+    // Carry the original subject explicitly: the topic is a lossy transform of it, so a subscriber
+    // recovers the published subject from this header rather than the sanitized topic name.
+    recordHeaders.add(new RecordHeader(SUBJECT_HEADER, subject.getBytes(StandardCharsets.UTF_8)));
     ProducerRecord<byte[], byte[]> record =
         new ProducerRecord<>(topicName(subject), null, null, null, payload, recordHeaders);
     // sink.produce throws on failure with a message built from the topic (safe), never the brokers.
@@ -324,7 +337,10 @@ public final class KafkaMessageBus implements MessageBus {
       RecordSink recordSink, ConsumerRecord<byte[], byte[]> record, MessageHandler handler) {
     String base = baseTopic(record.topic());
     Map<String, String> headers = toMap(record.headers());
-    InboundMessage inbound = new InboundMessage(base, record.value(), headers);
+    // The delivered subject is the original published subject (from the keel-subject header), not
+    // the lossy sanitized topic; fall back to the base topic when the header is absent.
+    String subject = headers.getOrDefault(SUBJECT_HEADER, base);
+    InboundMessage inbound = new InboundMessage(subject, record.value(), headers);
     Context extracted = propagator.extract(Context.current(), headers, GETTER);
 
     boolean ok;
