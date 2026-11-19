@@ -93,6 +93,13 @@ func TestKafkaRoundtripDeliversPayloadAndPropagatesTraceContext(t *testing.T) {
 		if string(d.msg.Payload) != "hello" {
 			t.Errorf("payload = %q, want %q", d.msg.Payload, "hello")
 		}
+		// The delivered subject must equal the published one. The topic is a lossy sanitization of
+		// the subject (keel.test.roundtrip.* -> keel_test_roundtrip_*), so this only holds because the
+		// original subject rides in the keel-subject header; asserting it here closes the gap that let
+		// the cross-vertical subject-mismatch bug through.
+		if d.msg.Subject != subject {
+			t.Errorf("delivered subject = %q, want published subject %q", d.msg.Subject, subject)
+		}
 		if d.msg.Headers["x-demo"] != "1" {
 			t.Errorf("header x-demo = %q, want %q", d.msg.Headers["x-demo"], "1")
 		}
