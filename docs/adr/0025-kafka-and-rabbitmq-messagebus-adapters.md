@@ -145,7 +145,9 @@ disposition and keeps the vertical above its coverage floor.
   delivery-count-header pattern, which is more moving parts than NATS's built-in `maxDeliver`; it is
   the standard Kafka approach and is unit-tested via the shared disposition function.
 
-> **Implementation status:** proposed here; flip ADR-0012's "still planned: Kafka/RabbitMQ" note and
-> `docs/STATUS.md` only once each adapter is backed by passing unit + gated integration tests, per
-> the repo's no-over-claim rule. `platform.yaml` already lists both as `supported`, so no contract
-> change is needed to add them.
+> **Implementation status:** implemented and released in v0.7.0. Both brokers ship across all five
+> verticals behind the one `MessageBus` port, each backed by broker-free unit tests + a gated
+> real-broker integration round-trip, with the fail-closed `message_bus_from_env` selector and the
+> AsyncAPI artifact (`schemas/asyncapi.yaml`). ADR-0012's status note and `docs/STATUS.md` are
+> flipped accordingly. `platform.yaml` already listed both as `supported`, so no contract change
+> was needed.
