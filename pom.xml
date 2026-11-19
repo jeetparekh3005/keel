@@ -45,6 +45,14 @@
   <properties>
     <java.version>25</java.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <!-- Override Spring Boot's managed RabbitMQ client to the patched release (ADR-0025). The
+         spring-boot-dependencies BOM (inherited via spring-boot-starter-parent) manages
+         com.rabbitmq:amqp-client to 5.30.0, which carries HIGH CVEs (CVE-2026-63337/69219/69220/
+         75516, fixed in 5.33.0-5.34.0). keel-core-java's MessageBus adapter pins 5.38.0 directly,
+         but Spring's managed version wins over that transitive version in the reference-service
+         image (Trivy gate), so the version property is overridden here to carry the patched client
+         to every module in the reactor. 5.38.0 is the current stable. -->
+    <rabbit-amqp-client.version>5.38.0</rabbit-amqp-client.version>
     <!-- Per-module JaCoCo floors (epic #419, v0.6 parity). These are the default (keel-core-java)
          minima; reference-service-java overrides them with its own, higher floors in its pom.
          The values lock the real measured coverage just under the observed number so the gate

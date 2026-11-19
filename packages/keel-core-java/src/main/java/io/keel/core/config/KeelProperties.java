@@ -19,6 +19,13 @@ import org.springframework.validation.annotation.Validated;
  * {@code KEEL_NATS_STREAM} and {@code KEEL_NATS_SUBJECTS} (comma-separated) name the stream and the
  * subjects it captures.
  *
+ * <p>The RabbitMQ fields gate the AMQP {@code MessageBus} adapter (ADR-0025): it is wired only when
+ * {@code KEEL_RABBITMQ_URL} ({@code keel.rabbitmq-url}) is set, parallel to NATS. {@code
+ * KEEL_RABBITMQ_EXCHANGE} ({@code keel}) is the durable topic exchange, {@code KEEL_RABBITMQ_QUEUE}
+ * ({@code keel}) the durable queue bound to the subscribed subjects, and {@code KEEL_RABBITMQ_DLX}
+ * ({@code keel.dlx}) the dead-letter exchange a message is published to once the delivery cap is
+ * hit.
+ *
  * <p>The gRPC fields gate the inbound gRPC server (ADR-0022): it is wired only when {@code
  * KEEL_GRPC_PORT} ({@code keel.grpc-port}) is set, so a service without gRPC is unaffected. The TLS
  * PEM fields ({@code KEEL_GRPC_TLS_CERT_PEM}, {@code KEEL_GRPC_TLS_KEY_PEM}, {@code
@@ -60,6 +67,10 @@ public record KeelProperties(
     @DefaultValue("") String natsUrl,
     @DefaultValue("keel") String natsStream,
     @DefaultValue({"keel.>"}) List<String> natsSubjects,
+    @DefaultValue("") String rabbitmqUrl,
+    @DefaultValue("keel") String rabbitmqExchange,
+    @DefaultValue("keel") String rabbitmqQueue,
+    @DefaultValue("keel.dlx") String rabbitmqDlx,
     @DefaultValue("0") int grpcPort,
     @DefaultValue("") String grpcTlsCertPem,
     @DefaultValue("") String grpcTlsKeyPem,
