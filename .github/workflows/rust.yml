@@ -60,6 +60,21 @@ jobs:
           --health-interval 5s
           --health-timeout 3s
           --health-retries 10
+      # RabbitMQ for the RabbitMqMessageBus round-trip integration test (ADR-0025), gated on
+      # KEEL_RABBITMQ_URL below. Unlike the other four lanes, which start rabbitmq:4 with a plain
+      # `docker run` step, this lane runs it as a GitHub-managed service container: the `docker run`
+      # approach reproducibly hit an Erlang-cookie "eacces" boot failure here (a /var/lib/rabbitmq
+      # overlay-permission quirk specific to this job), whereas the service-container lifecycle boots
+      # rabbitmq:4 cleanly. Health-gated on the AMQP listener so the job waits for the broker.
+      rabbitmq:
+        image: rabbitmq:4
+        ports:
+          - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q check_port_connectivity"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     env:
       KEEL_TEST_DATABASE_URL: postgres://keel:keel@localhost:5432/reference
       # Backs the OpenBaoSecretProvider KV v2 round-trip integration test (ADR-0023), gated
@@ -116,6 +131,9 @@ jobs:
             (echo > /dev/tcp/127.0.0.1/4222) >/dev/null 2>&1 && break
             sleep 1
           done
+      # RabbitMQ runs as a health-gated service container (see the `services:` block above), not a
+      # `docker run` step, because the step approach reproducibly hit an Erlang-cookie eacces boot
+      # failure in this lane. No start step is needed here; the job waits for its health check.
       - name: Start Keycloak (import realm)
         # Keycloak imports the shared realm on boot, so it can't run as a service
         # container (those can't pass `--import-realm`); run it as a step like python.yml.
@@ -158,20 +176,23 @@ jobs:
         # round-trip (Postgres service above + KEEL_TEST_DATABASE_URL), the live Keycloak
         # JWKS verification (the container above + KEEL_KEYCLOAK_* below), the NATS
         # JetStream publish->subscribe round-trip (the NATS container above + KEEL_NATS_URL),
+        # the RabbitMQ publish->subscribe round-trip (the RabbitMQ container above + KEEL_RABBITMQ_URL),
         # the OpenBao KV v2 write/read round-trip (the OpenBao container above + KEEL_VAULT_* at
         # job level), and the AWS Secrets Manager GetSecretValue round-trip (the LocalStack
-        # container above + AWS_*/KEEL_AWS_SECRET_ID at job level). Each fails loudly, not silently,
-        # if its backing service is missing -- and they are the paths that carry the service's
-        # composition/http/repository, the broker adapter's connect/publish/subscribe/dispatch, and
+        # container above + AWS_*/KEEL_AWS_SECRET_ID at job level). The NATS/AWS/secret round-trips
+        # fail loudly if their backing service is missing; the RabbitMQ test self-skips when
+        # KEEL_RABBITMQ_URL is unset (so it is a no-op locally) but runs for real here where the
+        # container and URL are present. They are the paths that carry the service's
+        # composition/http/repository, each broker adapter's connect/publish/subscribe/dispatch, and
         # the secret adapters' authenticate/load lines over the floor, so the coverage number is
-        # only honest with them in. --features nats,grpc,vault,aws,gcp builds the opt-in
-        # NatsMessageBus adapter (and its integration test), the opt-in gRPC server factory/mTLS
-        # module (keel_core::grpc, ADR-0022), the opt-in OpenBaoSecretProvider (keel_core::vault,
-        # ADR-0023), and the opt-in AwsSecretsManagerSecretProvider and GcpSecretManagerSecretProvider
-        # over the shared caching core (keel_core::aws + keel_core::gcp + keel_core::secret, ADR-0024)
-        # so all are exercised and counted here -- without them in the feature set the new code is
-        # not compiled under test/coverage and the floor could not see it. gcp is new in this split:
-        # #546 added the adapter but not the CI feature flag, so its tests had not yet run in CI.
+        # only honest with them in. --features nats,grpc,vault,aws,gcp,rabbitmq builds the opt-in
+        # NatsMessageBus and RabbitMqMessageBus adapters (and their integration tests), the opt-in
+        # gRPC server factory/mTLS module (keel_core::grpc, ADR-0022), the opt-in OpenBaoSecretProvider
+        # (keel_core::vault, ADR-0023), and the opt-in AwsSecretsManagerSecretProvider and
+        # GcpSecretManagerSecretProvider over the shared caching core (keel_core::aws + keel_core::gcp
+        # + keel_core::secret, ADR-0024) so all are exercised and counted here -- without them in the
+        # feature set the new code is not compiled under test/coverage and the floor could not see it.
+        # rabbitmq is new in this split (ADR-0025): the RabbitMqMessageBus adapter over lapin.
         env:
           KEEL_KEYCLOAK_URL: http://localhost:8080
           KEEL_KEYCLOAK_REALM: keel
@@ -179,6 +200,12 @@ jobs:
           KEEL_KEYCLOAK_CLIENT_SECRET: test-secret
           KEEL_OIDC_AUDIENCE: keel-api
           KEEL_NATS_URL: nats://localhost:4222
+          # lapin parses the AMQP URI strictly per spec: a bare trailing slash (`.../`) names the
+          # EMPTY vhost, not the default `/`, so `%2f` is the explicit, canonical way to select the
+          # default vhost. Other verticals' clients default an empty path to `/`; the Rust client
+          # does not, so this URL is re-derived per-runtime rather than copied from a sibling lane.
+          # Backs the RabbitMqMessageBus round-trip integration test gated on this var.
+          KEEL_RABBITMQ_URL: amqp://guest:guest@localhost:5672/%2f
           # AWS belt-and-suspenders for the whole Rust test step (the AWS unit tests are already
           # hermetic via config, but the gated LocalStack integration test and any AWS SDK code
           # path run here too). Static creds + an explicit region keep the default credential chain
@@ -198,10 +225,10 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             # Fast PR gate: full suite, non-instrumented, cached. No coverage measurement here.
-            cargo test --all --locked --features nats,grpc,vault,aws,gcp -- --include-ignored
+            cargo test --all --locked --features nats,grpc,vault,aws,gcp,rabbitmq -- --include-ignored
           else
             # Merge/nightly: same suite under instrumentation, 85% line floor enforced.
-            cargo llvm-cov --all --locked --features nats,grpc,vault,aws,gcp --ignore-filename-regex genproto --fail-under-lines 85 -- --include-ignored
+            cargo llvm-cov --all --locked --features nats,grpc,vault,aws,gcp,rabbitmq --ignore-filename-regex genproto --fail-under-lines 85 -- --include-ignored
           fi
       - name: Install cargo-audit
         uses: taiki-e/install-action@4a76afe23f9e08d2d9550fb56e556444e8611d21 # v2.90.4

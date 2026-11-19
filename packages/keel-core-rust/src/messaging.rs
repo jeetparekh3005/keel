@@ -7,28 +7,50 @@
 //! `max_deliver`, then term'd and logged at error, so a poison message neither loops
 //! forever nor is dropped silently.
 //!
-//! This whole module is gated behind the `nats` feature (it pulls in `async-nats`); the
-//! default core build stays broker-free, exactly like `pip install keel-core` omitting
-//! `nats-py` until you ask for the `nats` extra.
+//! The shared `MessageBus` port lives here - [`InboundMessage`], [`MessagePublisher`],
+//! [`MessageBus`], [`MessagingError`], the pure [`disposition`] policy, and the W3C
+//! trace-context helpers - and compiles under either broker feature (`nats` or
+//! `rabbitmq`), so the RabbitMQ adapter in [`crate::rabbitmq`] reuses it rather than
+//! redefining the contract. The JetStream adapter itself ([`NatsMessageBus`]) is gated
+//! behind `nats` (it pulls in `async-nats`); the default core build stays broker-free,
+//! exactly like `pip install keel-core` omitting `nats-py` until you ask for the `nats`
+//! extra.
 
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::time::Duration;
 
-use async_nats::jetstream::consumer::pull::Config as PullConfig;
-use async_nats::jetstream::consumer::AckPolicy;
-use async_nats::jetstream::message::{AckKind, Message};
-use async_nats::jetstream::stream::Config as StreamConfig;
-use async_nats::jetstream::Context as JetStreamContext;
-use async_nats::{Client, HeaderMap};
-use bytes::Bytes;
-use futures::StreamExt;
-use opentelemetry::propagation::{Extractor, Injector, TextMapPropagator};
+use opentelemetry::propagation::{Extractor, TextMapPropagator};
 use opentelemetry::Context as OtelContext;
 use opentelemetry_sdk::propagation::TraceContextPropagator;
+
+// NATS-specific imports. The shared port above compiles under either broker feature
+// (`nats` or `rabbitmq`); the JetStream adapter below is `nats`-only.
+#[cfg(feature = "nats")]
+use std::time::Duration;
+
+#[cfg(feature = "nats")]
+use async_nats::jetstream::consumer::pull::Config as PullConfig;
+#[cfg(feature = "nats")]
+use async_nats::jetstream::consumer::AckPolicy;
+#[cfg(feature = "nats")]
+use async_nats::jetstream::message::{AckKind, Message};
+#[cfg(feature = "nats")]
+use async_nats::jetstream::stream::Config as StreamConfig;
+#[cfg(feature = "nats")]
+use async_nats::jetstream::Context as JetStreamContext;
+#[cfg(feature = "nats")]
+use async_nats::{Client, HeaderMap};
+#[cfg(feature = "nats")]
+use bytes::Bytes;
+#[cfg(feature = "nats")]
+use futures::StreamExt;
+#[cfg(feature = "nats")]
+use opentelemetry::propagation::Injector;
+#[cfg(feature = "nats")]
 use tracing::{error, warn, Instrument};
+#[cfg(feature = "nats")]
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// A message delivered to a subscriber: subject, raw payload, and propagation headers.
@@ -54,17 +76,18 @@ pub type HandlerFuture = Pin<Box<dyn Future<Output = HandlerResult> + Send>>;
 pub type MessageHandler = Arc<dyn Fn(InboundMessage) -> HandlerFuture + Send + Sync>;
 
 /// Failures surfaced by the bus itself (connecting, publishing, subscribing). Handler
-/// failures are not errors here: they drive ack/nak/term inside the dispatch loop.
+/// failures are not errors here: they drive ack/nak/term inside the dispatch loop. Shared by
+/// both broker adapters, so the wording is broker-neutral.
 #[derive(Debug, thiserror::Error)]
 pub enum MessagingError {
-    /// Connecting to the server or ensuring the JetStream stream failed.
-    #[error("nats connect failed: {0}")]
+    /// Connecting to the broker or ensuring the stream/exchange topology failed.
+    #[error("message bus connect failed: {0}")]
     Connect(String),
-    /// Publishing to JetStream (or awaiting its ack) failed.
-    #[error("jetstream publish failed: {0}")]
+    /// Publishing (or awaiting the broker's publish acknowledgement) failed.
+    #[error("message bus publish failed: {0}")]
     Publish(String),
     /// Creating the durable consumer or its message stream failed.
-    #[error("jetstream subscribe failed: {0}")]
+    #[error("message bus subscribe failed: {0}")]
     Subscribe(String),
 }
 
@@ -92,6 +115,7 @@ pub trait MessageBus: MessagePublisher {
 
 /// Delivery policy for a [`NatsMessageBus`]. Defaults mirror the Python adapter:
 /// `max_deliver = 5`, `ack_wait = 30s`, `max_ack_pending = 256`.
+#[cfg(feature = "nats")]
 #[derive(Debug, Clone)]
 pub struct NatsConfig {
     /// NATS server URL (e.g. `nats://localhost:4222`).
@@ -109,6 +133,7 @@ pub struct NatsConfig {
     pub max_ack_pending: i64,
 }
 
+#[cfg(feature = "nats")]
 impl NatsConfig {
     /// Build a config with the default delivery policy for the given server, stream, and
     /// subjects.
@@ -130,6 +155,7 @@ impl NatsConfig {
 /// Constructed already connected (see [`NatsMessageBus::connect`]): the stream is ensured
 /// at construction, so there is no "connect before use" footgun and every `publish` /
 /// `subscribe` runs against a live JetStream context.
+#[cfg(feature = "nats")]
 pub struct NatsMessageBus {
     client: Client,
     jetstream: JetStreamContext,
@@ -139,6 +165,7 @@ pub struct NatsMessageBus {
     max_ack_pending: i64,
 }
 
+#[cfg(feature = "nats")]
 impl NatsMessageBus {
     /// Connect to the server and ensure the JetStream stream exists for the configured
     /// subjects, returning a ready-to-use bus.
@@ -182,6 +209,7 @@ impl NatsMessageBus {
     }
 }
 
+#[cfg(feature = "nats")]
 #[async_trait::async_trait]
 impl MessagePublisher for NatsMessageBus {
     async fn publish(
@@ -212,6 +240,7 @@ impl MessagePublisher for NatsMessageBus {
     }
 }
 
+#[cfg(feature = "nats")]
 #[async_trait::async_trait]
 impl MessageBus for NatsMessageBus {
     async fn subscribe(
@@ -269,6 +298,7 @@ impl MessageBus for NatsMessageBus {
 /// The context is taken from the active `tracing` span (the bridge the rest of the
 /// vertical uses), so a publish inside an instrumented request carries that request's
 /// trace across the broker. With no active span / no tracer installed this is a no-op.
+#[cfg(feature = "nats")]
 fn inject_trace_context(carrier: &mut HeaderMap) {
     let cx = tracing::Span::current().context();
     let mut injector = HeaderMapInjector(carrier);
@@ -276,8 +306,9 @@ fn inject_trace_context(carrier: &mut HeaderMap) {
 }
 
 /// Extract a remote trace context from message `headers` (W3C `traceparent`/`tracestate`),
-/// rooted at an empty context so the result is a clean remote parent.
-fn extract_trace_context(headers: &HashMap<String, String>) -> OtelContext {
+/// rooted at an empty context so the result is a clean remote parent. Shared across the
+/// NATS and RabbitMQ adapters (both lift string headers off a delivery into a map).
+pub(crate) fn extract_trace_context(headers: &HashMap<String, String>) -> OtelContext {
     let extractor = MapExtractor(headers);
     TraceContextPropagator::new().extract_with_context(&OtelContext::new(), &extractor)
 }
@@ -285,6 +316,7 @@ fn extract_trace_context(headers: &HashMap<String, String>) -> OtelContext {
 /// Dispatch one delivered message to `handler` under its propagated trace context, then
 /// ack / nak / term based on the outcome. Never returns an error: control-plane failures
 /// are logged, not propagated, so the subscription loop keeps running.
+#[cfg(feature = "nats")]
 async fn dispatch(message: &Message, handler: &MessageHandler, stream: &str, max_deliver: i64) {
     let mut headers = HashMap::new();
     if let Some(header_map) = message.headers.as_ref() {
@@ -352,6 +384,7 @@ async fn dispatch(message: &Message, handler: &MessageHandler, stream: &str, max
 
 /// Await an ack/nak/term call, logging (not raising) a control-plane failure so a failed
 /// acknowledgement surfaces instead of vanishing into silent redelivery anomalies.
+#[cfg(feature = "nats")]
 async fn control(
     op: impl Future<Output = Result<(), async_nats::Error>>,
     name: &str,
@@ -362,9 +395,10 @@ async fn control(
     }
 }
 
-/// The three ways a delivered message can be disposed of.
+/// The three ways a delivered message can be disposed of. Shared by both broker adapters;
+/// each maps these onto its own ack/nak/dead-letter primitives.
 #[derive(Debug, PartialEq, Eq)]
-enum Disposition {
+pub(crate) enum Disposition {
     /// Handler succeeded: acknowledge.
     Ack,
     /// Handler failed under the delivery cap: nak for redelivery.
@@ -373,9 +407,10 @@ enum Disposition {
     DeadLetter,
 }
 
-/// Decide a message's fate from the handler outcome and delivery count. Pure, so the
-/// poison-handling policy is unit-testable without a broker.
-fn disposition(handler_ok: bool, num_delivered: i64, max_deliver: i64) -> Disposition {
+/// Decide a message's fate from the handler outcome and delivery count. Pure and
+/// broker-agnostic, so the poison-handling policy is unit-testable without a broker and is
+/// reused verbatim by the RabbitMQ adapter for its nak-vs-dead-letter decision.
+pub(crate) fn disposition(handler_ok: bool, num_delivered: i64, max_deliver: i64) -> Disposition {
     if handler_ok {
         Disposition::Ack
     } else if num_delivered >= max_deliver {
@@ -387,6 +422,7 @@ fn disposition(handler_ok: bool, num_delivered: i64, max_deliver: i64) -> Dispos
 
 /// Derive a stable, JetStream-safe durable consumer name from a subject (durable names
 /// may not contain `.`/`*`/`>`), mirroring the Python adapter's `keel_<sanitized>`.
+#[cfg(feature = "nats")]
 fn durable_name(subject: &str) -> String {
     let safe: String = subject
         .chars()
@@ -396,8 +432,10 @@ fn durable_name(subject: &str) -> String {
 }
 
 /// Injects W3C trace headers into an `async-nats` [`HeaderMap`].
+#[cfg(feature = "nats")]
 struct HeaderMapInjector<'a>(&'a mut HeaderMap);
 
+#[cfg(feature = "nats")]
 impl Injector for HeaderMapInjector<'_> {
     fn set(&mut self, key: &str, value: String) {
         self.0.insert(key, value);
@@ -419,10 +457,13 @@ impl Extractor for MapExtractor<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::{disposition, durable_name, extract_trace_context, Disposition, MapExtractor};
+    #[cfg(feature = "nats")]
+    use super::durable_name;
+    use super::{disposition, extract_trace_context, Disposition, MapExtractor};
     use opentelemetry::propagation::Extractor;
     use std::collections::HashMap;
 
+    #[cfg(feature = "nats")]
     #[test]
     fn durable_name_is_jetstream_safe_and_stable() {
         // Subject tokens (`.`) and wildcards must not leak into the durable name.
