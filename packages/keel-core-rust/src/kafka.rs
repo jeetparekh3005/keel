@@ -564,12 +564,18 @@ fn inbound_subject(headers: &HashMap<String, String>, topic_base: &str) -> Strin
         .unwrap_or_else(|| topic_base.to_string())
 }
 
-/// Read the redelivery count from the `keel-delivery-count` header; absent or unparsable -> 0 (the
-/// first delivery). `dispatch` adds one to get the 1-based attempt count.
+/// Read the redelivery count from the `keel-delivery-count` header as a NON-NEGATIVE integer;
+/// absent, malformed, OR negative -> 0 (the first delivery). `dispatch` adds one to get the 1-based
+/// attempt count. The negative clamp is a hardening boundary: the count rides in a client-writable
+/// record header, so a malicious producer could inject `keel-delivery-count: -100000000` to keep
+/// `num_delivered` far below the cap and force the record to cycle consume -> fail -> re-produce
+/// ~100M times before dead-lettering (a redelivery-amplification DoS). Treating any non-positive or
+/// unparsable value as 0 caps the cycle at `max_deliver` attempts regardless of attacker input.
 fn delivery_count(headers: &HashMap<String, String>) -> i64 {
     headers
         .get(DELIVERY_COUNT_HEADER)
         .and_then(|value| value.parse::<i64>().ok())
+        .filter(|&count| count >= 0)
         .unwrap_or(0)
 }
 
@@ -741,10 +747,14 @@ mod tests {
     }
 
     #[test]
-    fn delivery_count_reads_the_keel_header_absent_or_unparsable_is_zero() {
+    fn delivery_count_reads_a_non_negative_header_else_zero() {
         let mut headers = HashMap::new();
         headers.insert(DELIVERY_COUNT_HEADER.to_string(), "3".to_string());
         assert_eq!(delivery_count(&headers), 3);
+        // Zero is a valid non-negative count.
+        let mut zero = HashMap::new();
+        zero.insert(DELIVERY_COUNT_HEADER.to_string(), "0".to_string());
+        assert_eq!(delivery_count(&zero), 0);
         // Absent -> 0 (first delivery).
         assert_eq!(delivery_count(&HashMap::new()), 0);
         // Unparsable -> 0.
@@ -754,6 +764,15 @@ mod tests {
             "not-a-number".to_string(),
         );
         assert_eq!(delivery_count(&garbage), 0);
+        // Negative -> 0 (clamp): a client-injected negative count must not keep num_delivered below
+        // the cap and amplify redelivery; the attempt count stays bounded by max_deliver.
+        let mut negative = HashMap::new();
+        negative.insert(DELIVERY_COUNT_HEADER.to_string(), "-100000000".to_string());
+        assert_eq!(delivery_count(&negative), 0);
+        // A lone minus sign is also unparsable -> 0.
+        let mut lone_minus = HashMap::new();
+        lone_minus.insert(DELIVERY_COUNT_HEADER.to_string(), "-".to_string());
+        assert_eq!(delivery_count(&lone_minus), 0);
     }
 
     #[test]
