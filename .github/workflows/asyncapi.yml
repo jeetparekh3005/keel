@@ -1,0 +1,35 @@
+name: AsyncAPI
+
+# Lints the async contract artifact (schemas/asyncapi.yaml) behind platform.yaml
+# `interservice.async.idl: asyncapi` (ADR-0012, ADR-0025). The east-west analogue of the
+# buf gRPC-IDL gate (proto.yml): the AsyncAPI document is a versioned contract, so a change
+# that breaks the spec fails here. Validation uses the official AsyncAPI CLI (full 3.0
+# support); @asyncapi/cli is pinned so a lint refresh is deliberate, not automatic.
+
+on:
+  pull_request:
+    paths:
+      - "schemas/asyncapi.yaml"
+      - ".github/workflows/asyncapi.yml"
+  push:
+    branches: [dev, main]
+    paths:
+      - "schemas/asyncapi.yaml"
+      - ".github/workflows/asyncapi.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  asyncapi:
+    name: AsyncAPI contract (validate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - name: Validate AsyncAPI contract
+        run: npx -y @asyncapi/cli@6.3.1 validate schemas/asyncapi.yaml

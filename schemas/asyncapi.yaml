@@ -1,0 +1,141 @@
+asyncapi: 3.0.0
+
+# The async contract artifact behind platform.yaml `interservice.async.idl: asyncapi`
+# (ADR-0012, ADR-0025). It is the east-west analogue of the buf-guarded gRPC IDL
+# (ADR-0022): a versioned description of the MessageBus envelope every adapter carries
+# (payload + W3C trace context + keel delivery metadata) and the reference service's
+# channel. It pins the envelope so the contract has a real, lintable artifact; it grows
+# as services publish more events. The MessageBus port is broker-agnostic, so the same
+# channel is served over NATS JetStream, Kafka, or RabbitMQ (one is selected per service,
+# fail-closed, by KEEL_NATS_URL / KEEL_KAFKA_BROKERS / KEEL_RABBITMQ_URL).
+
+info:
+  title: keel reference service events
+  version: 0.1.0
+  description: >-
+    Events published by the keel reference service over the `MessageBus` port. The subject
+    is the channel address; the payload is the serialized domain event (JSON here); the
+    headers carry the W3C `traceparent` for distributed tracing and the keel delivery
+    metadata the adapters use for at-least-once delivery and dead-lettering.
+  license:
+    name: Apache-2.0
+
+defaultContentType: application/json
+
+servers:
+  nats:
+    host: localhost:4222
+    protocol: nats
+    description: >-
+      NATS JetStream (the default adapter). The channel address is the NATS subject;
+      durable at-least-once delivery with ack/nak/term (ADR-0012).
+  kafka:
+    host: localhost:9092
+    protocol: kafka
+    description: >-
+      Apache Kafka. The channel address maps to a Kafka topic (non-alphanumeric characters
+      sanitized to `_`); consumer group with manual commit, retry topic, and a dead-letter
+      topic (ADR-0025).
+  rabbitmq:
+    host: localhost:5672
+    protocol: amqp
+    description: >-
+      RabbitMQ. The channel address is the routing key on a topic exchange; a durable quorum
+      queue with manual ack and a dead-letter exchange (ADR-0025).
+
+channels:
+  itemChanged:
+    address: keel.reference.item.changed
+    description: >-
+      Lifecycle events for the reference `item` aggregate (the same domain the REST and gRPC
+      APIs serve, keel.reference.v1.Item). Published after an item is created, updated, or
+      deleted.
+    messages:
+      itemChanged:
+        $ref: '#/components/messages/ItemChanged'
+
+operations:
+  publishItemChanged:
+    action: send
+    summary: Publish an item lifecycle event.
+    description: >-
+      The reference service publishes this after a successful item mutation. Delivery is
+      at-least-once; consumers must be idempotent on `item.id` + `changeType`.
+    channel:
+      $ref: '#/channels/itemChanged'
+    messages:
+      - $ref: '#/channels/itemChanged/messages/itemChanged'
+
+components:
+  messages:
+    ItemChanged:
+      name: ItemChanged
+      title: Item changed
+      summary: An item in the reference aggregate was created, updated, or deleted.
+      contentType: application/json
+      headers:
+        $ref: '#/components/schemas/KeelEnvelopeHeaders'
+      payload:
+        $ref: '#/components/schemas/ItemChangedPayload'
+
+  schemas:
+    KeelEnvelopeHeaders:
+      type: object
+      description: >-
+        Headers every keel MessageBus message carries. `traceparent` propagates the W3C
+        trace context (so a consumer handler continues the producer's trace). The `keel-*`
+        headers are delivery metadata owned by the adapters; consumers do not set them.
+      properties:
+        traceparent:
+          type: string
+          description: W3C Trace Context traceparent, injected on publish and restored around the handler.
+          pattern: '^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$'
+        keel-subject:
+          type: string
+          description: >-
+            The original publish subject. Carried explicitly because some transports (Kafka)
+            sanitize the subject into the topic name lossily; the consumer restores the
+            subject from this header.
+          examples:
+            - keel.reference.item.changed
+        keel-delivery-count:
+          type: string
+          description: >-
+            Adapter-owned redelivery counter (a non-negative decimal). Used to cap redelivery
+            and dead-letter a poison message after the maximum attempts.
+          examples:
+            - "1"
+      required:
+        - traceparent
+
+    ItemChangedPayload:
+      type: object
+      description: The reference `item` aggregate and what happened to it.
+      properties:
+        changeType:
+          type: string
+          enum:
+            - created
+            - updated
+            - deleted
+          description: Which lifecycle transition produced this event.
+        item:
+          $ref: '#/components/schemas/Item'
+      required:
+        - changeType
+        - item
+
+    Item:
+      type: object
+      description: An item in the reference aggregate (keel.reference.v1.Item).
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Identifier of the item.
+        name:
+          type: string
+          description: Human-readable name of the item.
+      required:
+        - id
+        - name
