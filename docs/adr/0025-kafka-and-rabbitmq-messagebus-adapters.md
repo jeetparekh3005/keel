@@ -108,7 +108,7 @@ variable, mirroring the `SecretProvider` selector:
 |---|---|---|
 | NATS JetStream | `KEEL_NATS_URL` | `KEEL_NATS_STREAM` (`keel`), `KEEL_NATS_SUBJECTS` (`keel.>`) |
 | Kafka | `KEEL_KAFKA_BROKERS` | `KEEL_KAFKA_TOPICS`, `KEEL_KAFKA_GROUP_ID` (`keel`), `KEEL_KAFKA_DLQ_TOPIC` |
-| RabbitMQ | `KEEL_RABBITMQ_URL` | `KEEL_RABBITMQ_EXCHANGE` (`keel`), `KEEL_RABBITMQ_QUEUE` (`keel`), `KEEL_RABBITMQ_DLX` (`keel.dlx`) |
+| RabbitMQ | `KEEL_RABBITMQ_URL` | `KEEL_RABBITMQ_EXCHANGE` (`keel`), `KEEL_RABBITMQ_QUEUE` (`keel`), `KEEL_RABBITMQ_DLX` (`keel.dlx`), `KEEL_RABBITMQ_SUBJECTS` (`keel.#`) |
 
 More than one gate set **fails closed at startup** (an ambiguous-configuration error, exactly like
 the at-most-one secret-backend check). None set yields the in-memory `InMemoryMessageBus` (the dev

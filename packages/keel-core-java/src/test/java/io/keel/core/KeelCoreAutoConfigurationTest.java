@@ -124,6 +124,7 @@ class KeelCoreAutoConfigurationTest {
         "keel",
         "keel",
         "keel.dlx",
+        List.of("keel.#"),
         0,
         "",
         "",

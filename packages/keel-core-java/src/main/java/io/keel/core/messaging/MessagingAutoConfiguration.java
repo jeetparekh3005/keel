@@ -60,6 +60,7 @@ public class MessagingAutoConfiguration {
         properties.rabbitmqExchange(),
         properties.rabbitmqQueue(),
         properties.rabbitmqDlx(),
+        properties.rabbitmqSubjects(),
         openTelemetry);
   }
 }
