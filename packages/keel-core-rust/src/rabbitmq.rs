@@ -79,6 +79,48 @@ impl RabbitMqConfig {
             prefetch: 256,
         }
     }
+
+    /// Build a config from the environment, returning `None` when the `KEEL_RABBITMQ_URL` gate is
+    /// unset or empty (so the default, broker-free deployment never constructs a RabbitMQ bus),
+    /// mirroring [`KafkaConfig::from_env`](crate::kafka::KafkaConfig::from_env). The topology keys
+    /// default per ADR-0025: `KEEL_RABBITMQ_EXCHANGE`/`KEEL_RABBITMQ_QUEUE` to `keel`,
+    /// `KEEL_RABBITMQ_DLX` to `keel.dlx`, and `KEEL_RABBITMQ_SUBJECTS` (comma-separated) to
+    /// `keel.#`.
+    #[must_use]
+    pub fn from_env() -> Option<Self> {
+        let mut config = Self::new(env_var("KEEL_RABBITMQ_URL")?);
+        if let Some(exchange) = env_var("KEEL_RABBITMQ_EXCHANGE") {
+            config.exchange = exchange;
+        }
+        if let Some(queue) = env_var("KEEL_RABBITMQ_QUEUE") {
+            config.queue = queue;
+        }
+        if let Some(dlx) = env_var("KEEL_RABBITMQ_DLX") {
+            config.dlx = dlx;
+        }
+        if let Some(subjects) = env_var("KEEL_RABBITMQ_SUBJECTS").map(|value| {
+            value
+                .split(',')
+                .map(str::trim)
+                .filter(|entry| !entry.is_empty())
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        }) {
+            if !subjects.is_empty() {
+                config.subjects = subjects;
+            }
+        }
+        Some(config)
+    }
+}
+
+/// Read an environment variable, treating empty or whitespace-only as unset and trimming
+/// surrounding whitespace - the gating-var convention shared with the bus selector.
+fn env_var(key: &str) -> Option<String> {
+    std::env::var(key)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 /// A [`MessageBus`] backed by RabbitMQ (AMQP 0-9-1) for durable at-least-once delivery.

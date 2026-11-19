@@ -21,7 +21,12 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
 tracing-opentelemetry = "0.34"
 opentelemetry = "0.33"
-opentelemetry_sdk = { version = "0.33", features = ["rt-tokio", "metrics"] }
+# `trace` is on in the base build (not just under a broker feature) because the always-compiled
+# message-bus port and the in-memory dev bus in `messaging` use the W3C `TraceContextPropagator`
+# (opentelemetry_sdk::propagation) to inject/extract trace context across the bus. It is already
+# pulled transitively by opentelemetry-otlp's `trace` feature below; stating it here makes the
+# dependency explicit rather than relying on cross-crate feature unification.
+opentelemetry_sdk = { version = "0.33", features = ["rt-tokio", "metrics", "trace"] }
 opentelemetry-otlp = { version = "0.33", features = ["grpc-tonic", "trace", "metrics"] }
 uuid = { version = "1", features = ["v4"] }
 axum = "0.8"
@@ -44,7 +49,12 @@ sqlx = { version = "0.9", default-features = false, features = [
 # enabled, so the default core build needs no broker and no NATS crates.
 async-nats = { version = "0.52", optional = true }
 futures = { version = "0.3", optional = true }
-async-trait = { version = "0.1", optional = true }
+# Non-optional (unlike the broker clients): the always-compiled `MessageBus`/`MessagePublisher`
+# port traits and the in-memory dev bus in `messaging` are object-safe (`Arc<dyn MessageBus>`),
+# which async fns in traits are not on their own, so the port needs `async-trait` in every build,
+# not just under a broker feature. It is a proc-macro over syn/quote already in the tree, so it
+# adds no broker and no new transitive weight; the default build stays broker-free.
+async-trait = { version = "0.1" }
 bytes = { version = "1", optional = true }
 # Opt-in gRPC stubs (the `grpc` feature). prost backs the generated messages and
 # tonic the generated client/server; off by default so `cargo build` stays
@@ -130,40 +140,31 @@ rdkafka = { version = "0.39", optional = true, default-features = false, feature
 [features]
 # Opt-in NATS JetStream adapter. Off by default so `cargo build` stays broker-free,
 # the same way `pip install keel-core` omits nats-py until you ask for the `nats` extra.
-# `opentelemetry_sdk/trace` makes `propagation::TraceContextPropagator` available for the
-# W3C trace-context inject/extract over message headers.
+# `async-trait` and `opentelemetry_sdk/trace` are no longer listed here: the shared port and the
+# in-memory dev bus in `messaging` need both in every build, so they are base dependencies now
+# (the port is always compiled, not just under a broker feature).
 nats = [
     "dep:async-nats",
     "dep:futures",
-    "dep:async-trait",
     "dep:bytes",
-    "opentelemetry_sdk/trace",
 ]
 # Opt-in RabbitMQ MessageBus adapter (ADR-0025). Off by default so `cargo build` stays
-# broker-free, exactly like the `nats` feature. Pulls the pure-Rust `lapin` AMQP client plus the
-# same shared bits the NATS adapter needs: `futures` (the lapin consumer is a Stream driven from a
-# tokio task), `async-trait` (the `MessageBus`/`MessagePublisher` port impls), and
-# `opentelemetry_sdk/trace` (the W3C `TraceContextPropagator` for header inject/extract). The
-# shared port types in `keel_core::messaging` compile under either broker feature; the adapter
-# lives in `keel_core::rabbitmq`.
+# broker-free, exactly like the `nats` feature. Pulls the pure-Rust `lapin` AMQP client plus
+# `futures` (the lapin consumer is a Stream driven from a tokio task). `async-trait` and the
+# trace propagator are base dependencies (the shared `MessageBus` port is always compiled); the
+# adapter lives in `keel_core::rabbitmq`.
 rabbitmq = [
     "dep:lapin",
     "dep:futures",
-    "dep:async-trait",
-    "opentelemetry_sdk/trace",
 ]
 # Opt-in Kafka MessageBus adapter (ADR-0025). Off by default so `cargo build` stays broker-free,
 # exactly like the `nats`/`rabbitmq` features. Pulls `rdkafka` (librdkafka via cmake-build, built
-# without ssl/sasl) plus the shared bits the port needs: `async-trait` (the
-# `MessageBus`/`MessagePublisher` port impls) and `opentelemetry_sdk/trace` (the W3C
-# `TraceContextPropagator` for header inject/extract). The shared port types in
-# `keel_core::messaging` compile under this feature too; the adapter lives in `keel_core::kafka`.
-# Unlike `nats`/`rabbitmq` it needs no `futures`: the adapter drives `consumer.recv()` in a tokio
-# task rather than consuming a `Stream`.
+# without ssl/sasl). The shared `MessageBus` port in `keel_core::messaging` is always compiled
+# (its `async-trait` + trace-propagator deps are base deps now); the adapter lives in
+# `keel_core::kafka`. Unlike `nats`/`rabbitmq` it needs no `futures`: the adapter drives
+# `consumer.recv()` in a tokio task rather than consuming a `Stream`.
 kafka = [
     "dep:rdkafka",
-    "dep:async-trait",
-    "opentelemetry_sdk/trace",
 ]
 # Opt-in gRPC stubs for the keel.reference.v1 contract (ADR-0022). Off by default so
 # the default `cargo build` pulls in neither prost nor tonic (parity with Python's
