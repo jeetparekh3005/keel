@@ -50,6 +50,7 @@ jobs:
     env:
       KEEL_TEST_DATABASE_URL: postgres://keel:keel@localhost:5432/reference
       KEEL_NATS_URL: nats://localhost:4222
+      KEEL_RABBITMQ_URL: amqp://guest:guest@localhost:5672/
       KEEL_KEYCLOAK_URL: http://localhost:8080
       KEEL_KEYCLOAK_REALM: keel
       KEEL_KEYCLOAK_CLIENT_ID: keel-api
@@ -83,6 +84,16 @@ jobs:
           docker run -d --name nats -p 4222:4222 nats:2.15 -js
           for _ in $(seq 1 30); do
             (echo > /dev/tcp/127.0.0.1/4222) >/dev/null 2>&1 && break
+            sleep 1
+          done
+      - name: Start RabbitMQ
+        # The messaging package integration test publishes and subscribes against this instance,
+        # asserting payload/header delivery and trace-context propagation; it skips when
+        # KEEL_RABBITMQ_URL is unset. Pinned to the latest-stable 4.x line (ADR-0025).
+        run: |
+          docker run -d --name rabbitmq -p 5672:5672 rabbitmq:4
+          for _ in $(seq 1 60); do
+            (echo > /dev/tcp/127.0.0.1/5672) >/dev/null 2>&1 && break
             sleep 1
           done
       - name: Start Keycloak (import realm)
