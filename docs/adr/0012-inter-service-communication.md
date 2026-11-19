@@ -61,10 +61,13 @@ Services need to talk to each other across languages without creating a distribu
 - Bad: gRPC adds a codegen pipeline and proto/event versioning discipline; mitigated by buf and AsyncAPI tooling.
 - Neutral: NATS runs first; Kafka/RabbitMQ are stood up only when a workload needs their semantics.
 
-> **Implementation status:** OTel-instrumented gRPC client/server factories (with deny-by-default
-> auth, scope authZ, and mTLS credential builders), an in-memory `MessageBus`, and a durable
-> **NATS JetStream** adapter (ack/nak/DLQ, trace propagation) are implemented. Still planned:
-> **protobuf IDL/buf** and **Kafka/RabbitMQ** broker adapters. See [docs/STATUS.md](../STATUS.md).
+> **Implementation status:** fully implemented across all five verticals. OTel-instrumented gRPC
+> client/server factories (deny-by-default auth, scope authZ, mTLS credential builders) over the
+> **protobuf IDL/buf** contract (`keel.reference.v1`, ADR-0022); an in-memory `MessageBus`; and all
+> three broker adapters behind the one port - **NATS JetStream**, **Kafka**, and **RabbitMQ** - each
+> durable/at-least-once with ack/nak/dead-letter and trace propagation, opt-in per client, chosen by
+> a fail-closed at-most-one selector (ADR-0025). The async contract has an AsyncAPI 3.0 artifact
+> (`schemas/asyncapi.yaml`) linted in CI. See [docs/STATUS.md](../STATUS.md).
 
 ## Enforcement
 
