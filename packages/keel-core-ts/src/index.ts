@@ -61,6 +61,7 @@ export { Database, DATABASE, type PoolStats, UnitOfWork } from './persistence/in
 
 export {
   type InboundMessage,
+  InMemoryMessageBus,
   MESSAGE_BUS,
   type MessageBus,
   type MessageHandler,

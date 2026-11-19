@@ -30,6 +30,10 @@
     "./messaging/kafka": {
       "types": "./dist/messaging/kafka.d.ts",
       "default": "./dist/messaging/kafka.js"
+    },
+    "./messaging/message-bus.factory": {
+      "types": "./dist/messaging/message-bus.factory.d.ts",
+      "default": "./dist/messaging/message-bus.factory.js"
     }
   },
   "files": [
