@@ -8,14 +8,13 @@
 # The contract is versioned independently of keel itself. A generated project
 # records the contractVersion it targets; `keel update` migrates it forward.
 
-# NOTE: this contract describes the TARGET platform. As of contractVersion 0.2.0
-# the Python vertical implements it broadly: logging, errors, HTTP edge security,
-# auth (OIDC/JWT + api_key + mTLS credentials + fine-grained authorization),
-# telemetry, persistence, health, the NATS broker adapter, and the supply-chain
-# and k8s-hardening gates. The Rust vertical (v0.3) implements the core contract
-# too (see docs/STATUS.md for its parity notes). Still planned: the Kafka/RabbitMQ
-# brokers and buf/protobuf gRPC IDL, and the Go and Java verticals. See
-# docs/STATUS.md for the precise implemented-vs-planned matrix.
+# NOTE: this contract describes the TARGET platform. As of contractVersion 0.2.0 all five
+# verticals (Python v0.1, Rust v0.3, Go/Java/TypeScript-NestJS v0.4) implement it across the
+# board: logging, errors, HTTP edge security, auth (OIDC/JWT + api_key + mTLS credentials +
+# fine-grained authorization), telemetry, persistence, health, the buf/protobuf gRPC IDL, all
+# three MessageBus broker adapters (NATS JetStream, Kafka, RabbitMQ) with an AsyncAPI contract,
+# the three production SecretProvider backends (OpenBao/Vault, AWS, GCP), and the supply-chain
+# and k8s-hardening gates. See docs/STATUS.md for the precise implemented-vs-planned matrix.
 apiVersion: keel.dev/v1alpha1
 kind: PlatformContract
 metadata:
