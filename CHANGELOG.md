@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.8.0](https://github.com/jeetparekh3005/keel/compare/v0.7.0...v0.8.0) (2026-11-20)
+
+
+### Features
+
+* **security:** admission-time image verification via Kyverno ImageValidatingPolicy (ADR-0026) ([#588](https://github.com/jeetparekh3005/keel/issues/588)) ([436d633](https://github.com/jeetparekh3005/keel/commit/436d63310f67228beee68c759294c631fd0adfd3))
+* **security:** OpenBao PKI issues + rotates mTLS certs via cert-manager (ADR-0027) ([#590](https://github.com/jeetparekh3005/keel/issues/590)) ([30164db](https://github.com/jeetparekh3005/keel/commit/30164db3c95f4de51a4d9a2abf9d75eff82aa386))
+
+
+### Bug Fixes
+
+* **ts:** serialize Error/Date under a non-err log key (closes [#424](https://github.com/jeetparekh3005/keel/issues/424)) ([#592](https://github.com/jeetparekh3005/keel/issues/592)) ([8101e88](https://github.com/jeetparekh3005/keel/commit/8101e88524375c6b99da2fd39fdf329e36a9c96e))
+
+
+### Miscellaneous Chores
+
+* release v0.8.0 (dev to main) ([b259af0](https://github.com/jeetparekh3005/keel/commit/b259af0450ba99a271fe4735b6ebd8a3caace09d))
+
 ## [0.7.0](https://github.com/jeetparekh3005/keel/compare/v0.6.2...v0.7.0) (2026-11-19)
 
 
