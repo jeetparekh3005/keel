@@ -1,6 +1,6 @@
 # 0011. Repository topology
 
-- **Status:** accepted
+- **Status:** accepted; the deferred "independent ownership/release cadence later" (polyrepo) path is now realised in [ADR-0028](0028-standalone-extractable-services.md) , `keel new` can render a self-contained, extractable service while the monorepo stays the development home.
 - **Date:** 2026-11-03
 - **Deciders:** Jeet Parekh
 
