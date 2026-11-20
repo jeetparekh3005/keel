@@ -37,6 +37,24 @@ _envops:
   comment_start_string: "@#"
   comment_end_string: "#@"
 
+# Standalone (polyrepo) mode toggle (ADR-0028). Default false = monorepo-form: the generated
+# pom keeps a <parent> relativePath (../../pom.xml) and resolves keel-core via the reactor, so the
+# in-repo reference service (ADR-0021 dogfood) renders byte-identically to today. When true the pom
+# is self-contained: the keel-java-parent parent and the keel-core dependency are both pinned to
+# keel_core_version with NO relativePath, so Maven resolves them from the local repo (.m2)/Central
+# instead of a sibling directory - the service builds and tests extracted, outside the reactor.
+standalone:
+  type: bool
+  help: "Standalone (polyrepo) form: self-contained pom, keel-core/parent by version (ADR-0028)"
+  default: false
+
+# Published version of keel-core-java and the keel-java-parent pom the standalone-form pom targets
+# (parent <version> and the keel-core dependency <version>). Ignored when standalone is false.
+keel_core_version:
+  type: str
+  help: "Published keel-core-java / keel-java-parent version for standalone-form (ADR-0028)"
+  default: "0.8.0"
+
 service_slug:
   type: str
   help: "Service slug (kebab-case): directory, KEEL_SERVICE_NAME default, image"

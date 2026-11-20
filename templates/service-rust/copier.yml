@@ -73,3 +73,25 @@ scope_prefix:
   type: str
   help: "OAuth scope prefix (e.g. orders -> orders:read / orders:write)"
   default: "@< aggregate_plural >@"
+
+# ADR-0028 (standalone, extractable services). Off (default) renders the monorepo-form: the
+# reference service and the ADR-0021 byte-identical dogfood - keel-core-rust by workspace path
+# and the package fields inherited from the root [workspace.package]. On renders the standalone-
+# form: a self-contained crate that builds OUTSIDE the cargo workspace - keel-core-rust by
+# crates.io version and concrete package fields (no `.workspace = true`), so `cp -r` of the
+# generated directory is a buildable, testable repo on its own (extraction is a copy, not a
+# transform). WAVE 1 covers only the keel-core dependency + the package-field inheritance; charts
+# are WAVE 2. Default MUST stay false so the in-repo reference stays byte-identical.
+standalone:
+  type: bool
+  help: "Standalone-form (ADR-0028): self-contained crate that builds outside the monorepo"
+  default: false
+
+# The crates.io version of keel-core-rust the standalone-form depends on (only consulted when
+# standalone is true). Until keel-core-rust is published, the extracted-repo CI smoke resolves
+# this to a locally-built crate via `[patch.crates-io]` (ADR-0028 "locally-built CI stand-in").
+keel_core_version:
+  type: str
+  help: "keel-core-rust crates.io version for the standalone-form dependency"
+  default: "0.8.0"
+  when: "@< standalone >@"
