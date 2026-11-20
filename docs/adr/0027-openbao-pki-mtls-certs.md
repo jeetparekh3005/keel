@@ -93,6 +93,10 @@ The job fails loudly if the cert is not issued from the PKI or does not chain to
   later standardises on OpenBao Agent or SPIFFE/SPIRE for workload identity, the `Certificate`
   resources are the swap point and the mTLS builders stay as-is.
 
-> **Implementation status:** proposed in this ADR; flip ADR-0007's status and the `docs/STATUS.md`
-> `api_key`/`mTLS` row to note PKI-issued mTLS certs only once the kind-cluster CI job proves issuance
-> + the mTLS path (and rotation), per the repo's no-over-claim rule.
+> **Implementation status:** implemented in v0.8. The PKI bootstrap (`deploy/pki/bootstrap.sh`),
+> the Vault `ClusterIssuer` + its k8s-auth RBAC (`deploy/pki/cluster-issuer.yaml`), the opt-in,
+> default-off `mtls.*` Certificate wiring in the `keel-service-base` chart, and the kind-cluster CI
+> job (`.github/workflows/pki.yml`) are in place. The CI job proves issuance (cert chains to the
+> OpenBao CA, expected SANs + server/client EKUs + short TTL), the mTLS path (a real mutual-TLS
+> handshake), and rotation (cert-manager auto-renews; the Secret's cert serial changes). ADR-0007's
+> status and the `docs/STATUS.md` `api_key`/`mTLS` row are flipped accordingly.

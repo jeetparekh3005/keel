@@ -1,6 +1,6 @@
 # 0007. Secrets management and PKI
 
-- **Status:** accepted (implementation targeted for v0.2)
+- **Status:** accepted; **PKI (mTLS certs) implemented in v0.8 via [ADR-0027](0027-openbao-pki-mtls-certs.md)** - the OpenBao PKI engine, a short-TTL `keel-service` issuing role, and cert-manager-driven issuance + auto-rotation of mTLS certs are stood up and CI-proven (`pki.yml`). The dynamic-Postgres-credentials and Transit capabilities below remain targeted for later.
 - **Date:** 2026-11-03
 - **Deciders:** Jeet Parekh
 

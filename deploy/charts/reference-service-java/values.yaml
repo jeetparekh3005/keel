@@ -57,3 +57,22 @@ networkPolicy:
 podDisruptionBudget:
   enabled: true
   minAvailable: 1
+# mTLS cert issuance via the OpenBao PKI + cert-manager (ADR-0027). OPT-IN and
+# default OFF: with mtls.enabled=false the chart renders byte-identically (no
+# Certificate, no secret mount). When enabled, cert-manager issues a short-lived
+# cert from the OpenBao-backed ClusterIssuer into secretName and the pod mounts
+# it at mountPath; the existing mtls_*_credentials builders load tls.crt/tls.key/ca.crt.
+mtls:
+  enabled: false
+  # TLS Secret cert-manager writes and the pod mounts. Empty -> <release>-<chart>-mtls.
+  secretName: ""
+  mountPath: /var/run/secrets/keel/tls
+  # Short-lived leaf; cert-manager renews renewBefore ahead of expiry.
+  duration: 24h
+  renewBefore: 8h
+  # In-cluster SANs. Empty -> the service's <fullname>.<namespace>.svc[.cluster.local].
+  dnsNames: []
+  issuerRef:
+    name: openbao-pki
+    kind: ClusterIssuer
+    group: cert-manager.io
