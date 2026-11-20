@@ -243,7 +243,9 @@ jobs:
             templates/service-ts services/orders-service
           # Add the new package to the explicit pnpm workspace list.
           perl -0pi -e 's{(  - "services/reference-service-nest"\n)}{$1  - "services/orders-service"\n}' pnpm-workspace.yaml
-      - run: pnpm install
+      # --no-frozen-lockfile: the scaffolded orders-service is an ephemeral workspace member not in
+      # the committed pnpm-lock.yaml, so the CI-default frozen install would (correctly) reject it.
+      - run: pnpm install --no-frozen-lockfile
       - name: Build keel-core, then build/typecheck/lint/test the generated service
         run: |
           pnpm -F @keel/core build
