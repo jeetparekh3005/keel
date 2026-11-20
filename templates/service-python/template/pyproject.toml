@@ -33,7 +33,7 @@ packages = ["src/<< python_package >>"]
 line-length = 100
 target-version = "py312"
 # Alembic migrations are not held to the strict lint pack (same as the repo root).
-extend-exclude = ["**/migrations/**"]
+extend-exclude = ["**/migrations/**", "chart/**"]
 
 [tool.ruff.lint]
 select = [
