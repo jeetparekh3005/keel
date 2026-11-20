@@ -80,8 +80,8 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   JWT/bearer/AWS-key/PAN, recursive over event and span fields, with reserved-key
   namespacing). Per-line **log-to-trace correlation** (`trace_id`/`span_id` on every log
   line inside a span), the **DB pool saturation metric**, and **redaction of the OTLP
-  span-export path** are now at Python parity. Not yet at parity: the messaging/gRPC/`api_key`/
-  `mTLS` surfaces (tracked on v0.6, epic #419). A live **Keycloak** JWKS integration test is now in place. **HTTP server request metrics** are now emitted:
+  span-export path** are now at Python parity. The messaging/gRPC/`api_key`/`mTLS` surfaces
+  reached full cross-vertical parity through v0.6-v0.8 (epic #419 closed). A live **Keycloak** JWKS integration test is now in place. **HTTP server request metrics** are now emitted:
   `http.server.request.duration` (histogram, seconds) and `http.server.active_requests`
   (up-down counter), labelled by the route TEMPLATE (`http.route` from axum `MatchedPath`),
   `http.request.method`, and `http.response.status_code`, through a real OpenTelemetry
@@ -130,8 +130,7 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   (`http.server.request.duration` histogram + `http.server.active_requests` up-down counter,
   labelled by the matched route template) are emitted via a core MetricsInterceptor against a
   globally registered OpenTelemetry MeterProvider (OTLP exporter); a live Keycloak JWKS integration
-  test is now in place. Not yet: JSON-formatting NestJS's own bootstrap log lines (the app/error path already logs
-  through the redacting pino logger).
+  test is now in place. NestJS's own bootstrap log lines are JSON-formatted through the redacting pino logger too.
 - **Java/Spring Boot vertical (v0.4)**: a fifth language vertical, same hexagonal boundaries,
   the dominant enterprise JVM framework (ADR-0020), where several contract requirements are
   framework-native. Shared library `packages/keel-core-java` (`keel-core`) + thin
