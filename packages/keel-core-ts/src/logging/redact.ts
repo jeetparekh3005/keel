@@ -33,6 +33,12 @@ export function isSecretKey(key: string): boolean {
   return SECRET_KEY_FRAGMENTS.some((fragment) => normalized.includes(fragment));
 }
 
+// pino's default `errorKey`: the ONE merge key whose value pino runs through its error serializer
+// (which reads message/stack explicitly), so under this key we must hand pino a real Error. Under
+// ANY OTHER key pino JSON-serializes the value directly, where a real Error's non-enumerable
+// message/stack collapse to `{}` (issue #424) - so there we project to a plain enumerable object.
+const PINO_ERROR_KEY = 'err';
+
 // High-precision secret patterns scrubbed from any string value. Each is linear-time.
 const SECRET_PATTERNS: RegExp[] = [
   /eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, // JWT
@@ -113,7 +119,12 @@ export function scrubTextForName(text: string): string {
  * field that only key-based redaction catches. The branches below preserve diagnostics (Error
  * message/stack, Date value) while still key-redacting every secret-family entry.
  */
-export function redactValue(value: unknown, seen = new WeakSet<object>(), depth = 0): unknown {
+export function redactValue(
+  value: unknown,
+  seen = new WeakSet<object>(),
+  depth = 0,
+  key?: string,
+): unknown {
   if (typeof value === 'string') {
     return scrubText(value);
   }
@@ -173,6 +184,29 @@ export function redactValue(value: unknown, seen = new WeakSet<object>(), depth 
     return new Set(Array.from(value, (item) => redactValue(item, seen, next)));
   }
   if (value instanceof Error) {
+    // Under any key OTHER than pino's error key, pino JSON-serializes the value directly - and an
+    // Error's message/stack are NON-ENUMERABLE, so a rebuilt Error would serialize to `{}` and the
+    // diagnostics vanish (issue #424: `logger.info({ field: err }, 'msg')`). Project to a plain
+    // object whose name/message/stack are ENUMERABLE and already scrubbed, which renders under ANY
+    // key. The `err` key falls through to the rebuilt real Error below so pino's error serializer
+    // sees a genuine Error and its output is unchanged (no err-key regression). A bare Error with
+    // NO key (interpolation `%o`, bare positional) also falls through: util.format renders a native
+    // stack and pino lifts `.message`, both of which need a real Error.
+    if (key !== undefined && key !== PINO_ERROR_KEY) {
+      const projected: Record<string, unknown> = {
+        name: value.name,
+        message: scrubText(value.message),
+      };
+      if (typeof value.stack === 'string') {
+        projected.stack = scrubText(value.stack);
+      }
+      // Key-redact the Error's enumerable own-props (secret-family -> [REDACTED], Symbol keys
+      // dropped, throwing getters -> [unreadable], nested values recursed, cycle/depth guards
+      // intact). Assigned LAST so an enumerable own `name`/`message`/`stack` wins, matching the
+      // rebuilt-Error precedence below.
+      Object.assign(projected, _redactOwnProps(value, seen, next));
+      return projected;
+    }
     // Return a rebuilt Error with SCRUBBED message/stack and key-redacted own-props. The merge
     // object log path (`logger.x({ err }, msg)`) runs only redactValue - NO final scrubText - so
     // a pattern secret (JWT/AWS/bearer/PEM) in the message or stack must be scrubbed HERE or it
@@ -234,7 +268,9 @@ function _redactOwnProps(
       out[key] = '[unreadable]';
       continue;
     }
-    out[key] = redactValue(raw, seen, depth);
+    // Pass the key so the value branch can be key-aware: an Error under pino's error key is kept as
+    // a real Error, while an Error under any other key is projected to a plain enumerable object.
+    out[key] = redactValue(raw, seen, depth, key);
   }
   return out;
 }
