@@ -8,6 +8,21 @@ _subdirectory: template
 _answers_file: .copier-answers.yml
 _templates_suffix: ""
 
+# Re-run rustfmt on the rendered sources. The template sources are formatted for the reference
+# aggregate (item), so a longer aggregate name (e.g. order_line) pushes some lines past rustfmt's
+# width heuristics (max_width / fn_call_width / chain_width) and the generated service would fail
+# its own `cargo fmt --check` CI gate. rustfmt (not `cargo fmt`) is used so the format needs no
+# workspace or dependency resolution at scaffold time - it is a pure per-file reformat; --edition
+# 2021 matches the crate edition so the result equals `cargo fmt`. When rustfmt is absent we do NOT
+# fail generation (the byte-identical dogfood runs without the Rust toolchain, and the committed
+# reference is already fmt-clean), but we WARN loudly so a user who generated with a non-item
+# aggregate knows the output is unformatted. An explicit if/else keeps the "rustfmt missing" warning
+# distinct from a rustfmt that is present but FAILS (e.g. rendered Rust that will not parse): a flat
+# `A && B || C` would misreport a real rustfmt failure as "not found". A present-but-failing rustfmt
+# is surfaced, not masked; absent rustfmt only warns (soft, exit 0).
+_tasks:
+  - "if command -v rustfmt >/dev/null 2>&1; then rustfmt --edition 2021 src/*.rs || echo 'keel: rustfmt failed on the generated Rust sources (see the error above); fix them or the cargo fmt CI gate will fail.' >&2; else echo 'keel: rustfmt not found on PATH - generated Rust sources were NOT reformatted; run `cargo fmt` before committing or the cargo fmt CI gate will fail.' >&2; fi"
+
 # Delimiters @< >@ / @% %@ / @# #@. Rust angle generics (Vec<Item>) put a `<` immediately before
 # the aggregate, so << >> mis-lexes as <<<; Cargo.toml uses [[bin]], so [[ ]] collides too. The `@`
 # prefix never abuts Rust type syntax or TOML table headers, so these are collision-free.

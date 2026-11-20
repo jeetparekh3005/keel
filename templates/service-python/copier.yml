@@ -10,6 +10,21 @@ _answers_file: .copier-answers.yml
 # any collision with Python braces), rather than only *.jinja files.
 _templates_suffix: ""
 
+# Lint + format the rendered sources with ruff. The template sources are formatted for the
+# reference aggregate (item); a longer, multi-word aggregate (e.g. order_line -> OrderLine /
+# order_lines / SqlOrderLineRepository) shifts isort's grouping and pushes lines past the
+# line-length limit, so the generated service would fail its own `ruff check` / `ruff format
+# --check` CI gate. We run `ruff check --fix` first (sorts imports, drops unused) then `ruff
+# format` (wraps the now-longer lines); they are chained with `;` not `&&` because `ruff check
+# --fix` exits non-zero when it leaves residual E501 lines that only `ruff format` can wrap, and
+# format must still run. uvx fetches ruff on demand, so we gate on uvx (no ruff-on-PATH
+# assumption). When uvx is absent we do NOT fail generation (the byte-identical dogfood runs
+# without it, and the committed reference is already ruff-clean) but WARN loudly so a user who
+# generated a non-item service knows the output is unformatted. An explicit if/else keeps the
+# "uvx missing" warning distinct from a ruff that is present but FAILS on unparseable output.
+_tasks:
+  - "if command -v uvx >/dev/null 2>&1; then uvx ruff check --fix --quiet . ; uvx ruff format --quiet . || echo 'keel: ruff format failed on the generated Python sources (see the error above); fix them or the ruff CI gate will fail.' >&2; else echo 'keel: uvx not found on PATH - generated Python sources were NOT lint-fixed/formatted; run `ruff check --fix . && ruff format .` before committing or the ruff CI gate will fail.' >&2; fi"
+
 # Custom Jinja delimiters so Python's own braces (f-strings like f"{item_id}") never collide
 # with templating. Variables are << >>, blocks <% %>, comments <# #>.
 _envops:
