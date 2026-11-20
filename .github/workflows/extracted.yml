@@ -1,0 +1,241 @@
+name: Extracted (standalone-repo smoke)
+
+# ADR-0028 (standalone, extractable generated services). Proves the standalone-form render of
+# each vertical's service template is a real, extractable repo: generated OUTSIDE services/ (into
+# $RUNNER_TEMP), with keel-core copied out of the monorepo and wired in as a LOCALLY-BUILT
+# stand-in (wheel / go mod replace / cargo [patch.crates-io] / mvn install to .m2 / npm pack),
+# then built + tested with NO monorepo workspace (no uv/pnpm/cargo/go/reactor workspace in scope).
+# One job per language. Until keel-core is published (tasks #1-5) the published pins the templates
+# emit are resolved to the local stand-in: every job reads the ACTUAL local keel-core version and
+# passes `--data keel_core_version=<that>` so the standalone render pins exactly the stand-in it
+# installs. WAVE 1 is build+test only; chart generation + `helm` deploy smoke is WAVE 2.
+
+on:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - "templates/**"
+      - "packages/keel-core-py/**"
+      - "packages/keel-core-go/**"
+      - "packages/keel-core-rust/**"
+      - "packages/keel-core-java/**"
+      - "packages/keel-core-ts/**"
+      - ".github/workflows/extracted.yml"
+  push:
+    branches: [dev, main]
+    paths:
+      - "templates/**"
+      - "packages/keel-core-py/**"
+      - "packages/keel-core-go/**"
+      - "packages/keel-core-rust/**"
+      - "packages/keel-core-java/**"
+      - "packages/keel-core-ts/**"
+      - ".github/workflows/extracted.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: extracted-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  extracted-python:
+    name: Python (standalone extract, build + test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Generate standalone, extract, build + test
+        run: |
+          set -euo pipefail
+          # keel-core-py has no published PyPI release yet, so pin the standalone render to the
+          # version of the wheel this job builds (keeps the `keel-core==X` pin == the stand-in).
+          PYVER=$(grep -m1 '^version' packages/keel-core-py/pyproject.toml | sed 's/.*"\(.*\)"/\1/')
+          echo "keel-core-py version: $PYVER"
+          uvx copier copy --defaults --trust \
+            --data standalone=true --data keel_core_version="$PYVER" \
+            --data service_name="Orders" --data service_slug=orders-service --data aggregate=order_line \
+            templates/service-python "$RUNNER_TEMP/ex-py"
+          # Locally-built keel-core wheel (the published-PyPI stand-in).
+          uv build packages/keel-core-py -o "$RUNNER_TEMP/wheels"
+          uv venv "$RUNNER_TEMP/venv"
+          VIRTUAL_ENV="$RUNNER_TEMP/venv" uv pip install --find-links "$RUNNER_TEMP/wheels" "$RUNNER_TEMP/wheels"/keel_core-*.whl
+          VIRTUAL_ENV="$RUNNER_TEMP/venv" uv pip install --find-links "$RUNNER_TEMP/wheels" "$RUNNER_TEMP/ex-py"
+          VIRTUAL_ENV="$RUNNER_TEMP/venv" uv pip install pytest pytest-asyncio httpx aiosqlite alembic
+          cd "$RUNNER_TEMP/ex-py"
+          uvx ruff check .
+          uvx ruff format --check .
+          # --asyncio-mode=auto is required: the standalone pyproject carries no pytest config.
+          # The Postgres CRUD test self-skips without KEEL_TEST_DATABASE_URL (not set here).
+          VIRTUAL_ENV="$RUNNER_TEMP/venv" "$RUNNER_TEMP/venv/bin/python" -m pytest --asyncio-mode=auto -q
+
+  extracted-go:
+    name: Go (standalone extract, build + test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+      - name: Generate standalone, extract, build + test
+        run: |
+          set -euo pipefail
+          uvx copier copy --defaults --trust \
+            --data standalone=true \
+            --data service_slug=orders-service --data service_name=orders --data aggregate=order_line \
+            templates/service-go "$RUNNER_TEMP/ex-go"
+          # Copy keel-core-go out of the monorepo and point the extracted module at the local copy
+          # with `go mod replace` (the published-go-proxy stand-in); GOWORK=off so the root go.work
+          # is not in scope - this must build as a lone module.
+          cp -r packages/keel-core-go "$RUNNER_TEMP/keel-core-go"
+          cd "$RUNNER_TEMP/ex-go"
+          export GOWORK=off
+          go mod edit -replace github.com/jeetparekh3005/keel/packages/keel-core-go="$RUNNER_TEMP/keel-core-go"
+          go mod tidy
+          go build ./...
+          go test ./...
+          test -z "$(gofmt -l .)"
+
+  extracted-rust:
+    name: Rust (standalone extract, build + test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Generate standalone, extract, build + test
+        run: |
+          set -euo pipefail
+          # keel-core-rust inherits its package fields from the root [workspace.package]; read the
+          # concrete values so (a) the standalone render pins keel-core-rust to the workspace
+          # version and (b) the extracted keel-core-rust copy can be made self-contained below.
+          wsfield() { sed -n '/\[workspace.package\]/,/^\[/p' Cargo.toml | grep -m1 "^$1" | sed -E 's/.*"(.*)".*/\1/'; }
+          RUSTVER=$(wsfield version)
+          WSED=$(wsfield edition)
+          WSLIC=$(wsfield license)
+          WSRV=$(wsfield rust-version)
+          echo "workspace.package: version=$RUSTVER edition=$WSED license=$WSLIC rust-version=$WSRV"
+          uvx copier copy --defaults --overwrite --trust \
+            --data standalone=true --data keel_core_version="$RUSTVER" \
+            --data service_slug=orders-service --data service_name=reference-service --data aggregate=order_line \
+            templates/service-rust "$RUNNER_TEMP/ex-rust"
+          rm -f "$RUNNER_TEMP/ex-rust/.copier-answers.yml"
+          # Copy keel-core-rust out of the monorepo to serve as the crates.io stand-in via
+          # [patch.crates-io]. The in-repo crate inherits version/edition/license/rust-version from
+          # [workspace.package]; outside the workspace those `*.workspace = true` lines do not
+          # resolve, so rewrite them to the concrete root values and the patch crate builds alone.
+          cp -r packages/keel-core-rust "$RUNNER_TEMP/keel-core-rust"
+          sed -i \
+            -e "s/^version.workspace = true/version = \"$RUSTVER\"/" \
+            -e "s/^edition.workspace = true/edition = \"$WSED\"/" \
+            -e "s/^license.workspace = true/license = \"$WSLIC\"/" \
+            -e "s/^rust-version.workspace = true/rust-version = \"$WSRV\"/" \
+            "$RUNNER_TEMP/keel-core-rust/Cargo.toml"
+          # Redirect the crates.io pin the standalone render emits onto the local copy.
+          printf '\n[patch.crates-io]\nkeel-core-rust = { path = "%s" }\n' "$RUNNER_TEMP/keel-core-rust" >> "$RUNNER_TEMP/ex-rust/Cargo.toml"
+          cd "$RUNNER_TEMP/ex-rust"
+          cargo fmt --check
+          cargo clippy --all-targets --all-features -- -D warnings
+          cargo build
+          # The Postgres CRUD test self-ignores without KEEL_TEST_DATABASE_URL (not set here).
+          cargo test
+
+  extracted-java:
+    name: Java (standalone extract, build + test)
+    runs-on: ubuntu-latest
+    # Postgres for the generated service's CRUD/db-pool integration test (mirrors java.yml).
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: keel
+          POSTGRES_PASSWORD: keel
+          POSTGRES_DB: reference
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U keel"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      KEEL_TEST_DATABASE_URL: postgres://keel:keel@localhost:5432/reference
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Generate standalone, extract, build + test
+        run: |
+          set -euo pipefail
+          # keel-core-java / keel-java-parent carry a literal 0.1.0 and are unpublished, so install
+          # BOTH to the local .m2 (the Maven-Central stand-in) at that version BEFORE generating:
+          # the template's spotless:apply _task needs the parent resolvable at generation time, and
+          # `mvn verify` later resolves the parent + keel-core jar from .m2.
+          JV=$(grep -m1 '<version>' packages/keel-core-java/pom.xml | sed -E 's/.*<version>(.*)<\/version>.*/\1/')
+          echo "keel-core-java version: $JV"
+          mvn -B -N install -DskipTests -Djacoco.skip=true -Dspotless.check.skip=true
+          mvn -B -pl packages/keel-core-java install -DskipTests -Djacoco.skip=true -Dspotless.check.skip=true
+          uvx copier copy --defaults --trust \
+            --data standalone=true --data keel_core_version="$JV" \
+            --data service_slug=orders-service --data service_name=Orders \
+            --data service_pkg=orders --data service_pascal=Orders --data aggregate=order_line \
+            templates/service-java "$RUNNER_TEMP/ex-java"
+          cd "$RUNNER_TEMP/ex-java"
+          mvn -B verify
+
+  extracted-ts:
+    name: TypeScript (standalone extract, build + test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      # uvx (copier) renders the template, same as the other four jobs.
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Generate standalone, extract, build + test
+        run: |
+          set -euo pipefail
+          TSVER=$(node -p "require('./packages/keel-core-ts/package.json').version")
+          echo "@keel/core version: $TSVER"
+          # Build the shared library in the workspace, then npm-pack it into a tarball (the
+          # published-npm stand-in). pnpm install first so @keel/core's deps are present to build.
+          pnpm install --frozen-lockfile
+          pnpm -F @keel/core build
+          mkdir -p "$RUNNER_TEMP/tgz"
+          (cd packages/keel-core-ts && npm pack --pack-destination "$RUNNER_TEMP/tgz")
+          uvx copier copy --defaults --trust \
+            --data standalone=true --data keel_core_version="$TSVER" \
+            --data service_slug=orders-service --data aggregate=order_line \
+            templates/service-ts "$RUNNER_TEMP/ex-ts"
+          cd "$RUNNER_TEMP/ex-ts"
+          # Install @keel/core from the tarball (overrides the ^version range), then the rest with
+          # plain npm - NOT a pnpm workspace. The Postgres e2e self-skips without the DB URL.
+          npm install "$RUNNER_TEMP/tgz"/keel-core-*.tgz
+          npm install
+          npm run build
+          npm run typecheck
+          npm run lint
+          npm test
