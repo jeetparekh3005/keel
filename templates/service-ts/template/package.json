@@ -13,7 +13,7 @@
     "start": "node dist/main.js"
   },
   "dependencies": {
-    "@keel/core": "workspace:*",
+    "@keel/core": "@< 'workspace:*' if not standalone else '^' + keel_core_version >@",
     "@nestjs/common": "12.4.2",
     "@nestjs/core": "12.4.2",
     "@nestjs/platform-express": "12.4.2",
