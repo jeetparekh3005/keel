@@ -8,7 +8,12 @@ name: Extracted (standalone-repo smoke)
 # One job per language. Until keel-core is published (tasks #1-5) the published pins the templates
 # emit are resolved to the local stand-in: every job reads the ACTUAL local keel-core version and
 # passes `--data keel_core_version=<that>` so the standalone render pins exactly the stand-in it
-# installs. WAVE 1 is build+test only; chart generation + `helm` deploy smoke is WAVE 2.
+# installs. WAVE 1 proved build+test; WAVE 2 adds the chart deploy smoke: the standalone render now
+# also emits a per-service Helm application chart (depending on keel-service-base by version from
+# `oci://ghcr.io/jeetparekh3005/keel/charts`), so each job vendors keel-service-base locally with
+# `helm package` (the OCI-pull stand-in until the library chart is published) and asserts the
+# generated chart `helm lint`s and `helm template`s. `ci/test-values.yaml` supplies the OIDC config
+# the ConfigMap `required`s so rendering succeeds (same as the hand-maintained charts in helm.yml).
 
 on:
   pull_request:
@@ -71,6 +76,17 @@ jobs:
           # --asyncio-mode=auto is required: the standalone pyproject carries no pytest config.
           # The Postgres CRUD test self-skips without KEEL_TEST_DATABASE_URL (not set here).
           VIRTUAL_ENV="$RUNNER_TEMP/venv" "$RUNNER_TEMP/venv/bin/python" -m pytest --asyncio-mode=auto -q
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
+      - name: Deploy smoke (helm lint + template the generated chart)
+        run: |
+          set -euo pipefail
+          CHART="$RUNNER_TEMP/ex-py/chart"
+          # Vendor the keel-service-base library chart into charts/ (the oci:// pull stand-in until
+          # keel-service-base is published to ghcr; ADR-0028).
+          helm package deploy/charts/keel-service-base -d "$CHART/charts/"
+          # ci/test-values.yaml supplies the OIDC config the ConfigMap `required`s so it renders.
+          helm lint "$CHART" -f "$CHART/ci/test-values.yaml"
+          helm template orders-service "$CHART" -f "$CHART/ci/test-values.yaml" > /dev/null
 
   extracted-go:
     name: Go (standalone extract, build + test)
@@ -101,6 +117,17 @@ jobs:
           go build ./...
           go test ./...
           test -z "$(gofmt -l .)"
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
+      - name: Deploy smoke (helm lint + template the generated chart)
+        run: |
+          set -euo pipefail
+          CHART="$RUNNER_TEMP/ex-go/chart"
+          # Vendor the keel-service-base library chart into charts/ (the oci:// pull stand-in until
+          # keel-service-base is published to ghcr; ADR-0028).
+          helm package deploy/charts/keel-service-base -d "$CHART/charts/"
+          # ci/test-values.yaml supplies the OIDC config the ConfigMap `required`s so it renders.
+          helm lint "$CHART" -f "$CHART/ci/test-values.yaml"
+          helm template orders-service "$CHART" -f "$CHART/ci/test-values.yaml" > /dev/null
 
   extracted-rust:
     name: Rust (standalone extract, build + test)
@@ -151,6 +178,17 @@ jobs:
           cargo build
           # The Postgres CRUD test self-ignores without KEEL_TEST_DATABASE_URL (not set here).
           cargo test
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
+      - name: Deploy smoke (helm lint + template the generated chart)
+        run: |
+          set -euo pipefail
+          CHART="$RUNNER_TEMP/ex-rust/chart"
+          # Vendor the keel-service-base library chart into charts/ (the oci:// pull stand-in until
+          # keel-service-base is published to ghcr; ADR-0028).
+          helm package deploy/charts/keel-service-base -d "$CHART/charts/"
+          # ci/test-values.yaml supplies the OIDC config the ConfigMap `required`s so it renders.
+          helm lint "$CHART" -f "$CHART/ci/test-values.yaml"
+          helm template orders-service "$CHART" -f "$CHART/ci/test-values.yaml" > /dev/null
 
   extracted-java:
     name: Java (standalone extract, build + test)
@@ -200,6 +238,17 @@ jobs:
             templates/service-java "$RUNNER_TEMP/ex-java"
           cd "$RUNNER_TEMP/ex-java"
           mvn -B verify
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
+      - name: Deploy smoke (helm lint + template the generated chart)
+        run: |
+          set -euo pipefail
+          CHART="$RUNNER_TEMP/ex-java/chart"
+          # Vendor the keel-service-base library chart into charts/ (the oci:// pull stand-in until
+          # keel-service-base is published to ghcr; ADR-0028).
+          helm package deploy/charts/keel-service-base -d "$CHART/charts/"
+          # ci/test-values.yaml supplies the OIDC config the ConfigMap `required`s so it renders.
+          helm lint "$CHART" -f "$CHART/ci/test-values.yaml"
+          helm template orders-service "$CHART" -f "$CHART/ci/test-values.yaml" > /dev/null
 
   extracted-ts:
     name: TypeScript (standalone extract, build + test)
@@ -239,3 +288,14 @@ jobs:
           npm run typecheck
           npm run lint
           npm test
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
+      - name: Deploy smoke (helm lint + template the generated chart)
+        run: |
+          set -euo pipefail
+          CHART="$RUNNER_TEMP/ex-ts/chart"
+          # Vendor the keel-service-base library chart into charts/ (the oci:// pull stand-in until
+          # keel-service-base is published to ghcr; ADR-0028).
+          helm package deploy/charts/keel-service-base -d "$CHART/charts/"
+          # ci/test-values.yaml supplies the OIDC config the ConfigMap `required`s so it renders.
+          helm lint "$CHART" -f "$CHART/ci/test-values.yaml"
+          helm template orders-service "$CHART" -f "$CHART/ci/test-values.yaml" > /dev/null

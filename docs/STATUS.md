@@ -184,7 +184,16 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   (`.github/workflows/service-<lang>.yml`) encapsulate each language's gate and generated services
   ship a `ci.yml` that references them by tag; in-tree the verticals are still covered by the central
   per-language workflows, so the reusable lanes are the mechanism for the polyrepo future (ADR-0011,
-  which also needs the keel-core packages published per language).
+  which also needs the keel-core packages published per language). A **`standalone` toggle**
+  (ADR-0028, default off) renders the **extractable, polyrepo form** of each template: keel-core by
+  published version (not the workspace/path/pseudo-version), a self-contained tool config, and a
+  **generated per-service Helm application chart** that depends on `keel-service-base` by version
+  from `oci://ghcr.io/jeetparekh3005/keel/charts` (the monorepo-form still emits no chart and uses
+  the hand-maintained `deploy/charts/*`, so the reference dogfood stays byte-identical). The
+  extracted-repo smoke (`extracted.yml`) proves the standalone form per vertical: generated outside
+  the workspace, keel-core wired to a locally-built stand-in, then built + tested, and the generated
+  chart `helm lint`ed + `helm template`d after vendoring `keel-service-base` with `helm package`
+  (the OCI-pull stand-in until the library chart is published).
 
 ## Cross-vertical parity matrix (v0.6 target)
 
