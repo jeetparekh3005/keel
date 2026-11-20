@@ -1,0 +1,81 @@
+# cert-manager Vault ClusterIssuer pointed at the OpenBao PKI (ADR-0027).
+#
+# cert-manager's Vault issuer speaks the Vault HTTP API, which OpenBao implements,
+# so it drives the OpenBao `pki_int` issuing role directly. It authenticates with
+# the Kubernetes auth method: cert-manager mints a short-lived token for the
+# `keel-cert-manager` ServiceAccount and exchanges it at OpenBao's k8s auth role
+# for an OpenBao token scoped (by the `keel-pki-sign` policy) to ONLY the one
+# sign path. No static OpenBao token lives in the cluster.
+#
+# Namespacing: a ClusterIssuer resolves serviceAccountRef in cert-manager's
+# "cluster resource namespace" (the install namespace, `cert-manager`), so the SA
+# and its token-minting RBAC below live there.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: keel-cert-manager
+  namespace: cert-manager
+  labels:
+    app.kubernetes.io/part-of: keel
+    app.kubernetes.io/component: pki
+---
+# cert-manager's controller SA must be allowed to mint a token for the identity
+# the ClusterIssuer presents to OpenBao. Scoped to just that one SA's token.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: keel-cert-manager-token
+  namespace: cert-manager
+  labels:
+    app.kubernetes.io/part-of: keel
+    app.kubernetes.io/component: pki
+rules:
+  - apiGroups: [""]
+    resources: ["serviceaccounts/token"]
+    resourceNames: ["keel-cert-manager"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: keel-cert-manager-token
+  namespace: cert-manager
+  labels:
+    app.kubernetes.io/part-of: keel
+    app.kubernetes.io/component: pki
+subjects:
+  - kind: ServiceAccount
+    name: cert-manager
+    namespace: cert-manager
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: keel-cert-manager-token
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: openbao-pki
+  labels:
+    app.kubernetes.io/part-of: keel
+    app.kubernetes.io/component: pki
+spec:
+  vault:
+    # In-cluster OpenBao. Dev OpenBao serves plain HTTP, so no caBundle is
+    # needed. In production OpenBao serves HTTPS: set `caBundle` (or
+    # `caBundleSecretRef`) to the OpenBao serving CA and use an https:// server.
+    server: http://openbao.openbao.svc:8200
+    # The issuing intermediate's sign endpoint. cert-manager POSTs the CSR here.
+    path: pki_int/sign/keel-service
+    auth:
+      kubernetes:
+        # The OpenBao k8s auth role bound to the keel-cert-manager SA + the
+        # sign-only policy (see deploy/pki/bootstrap.sh).
+        role: keel-cert-manager
+        mountPath: /v1/auth/kubernetes
+        # With `audiences` omitted, cert-manager mints the SA token with audience
+        # "vault://openbao-pki" (the ClusterIssuer name), which the OpenBao role's
+        # bound audience matches exactly.
+        serviceAccountRef:
+          name: keel-cert-manager

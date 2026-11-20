@@ -44,8 +44,37 @@ services:
     command: ["server", "-dev", "-dev-root-token-id=root", "-dev-listen-address=0.0.0.0:8200"]
     environment:
       BAO_DEV_ROOT_TOKEN_ID: root
+      BAO_ADDR: http://127.0.0.1:8200
     cap_add: ["IPC_LOCK"]
     ports: ["8200:8200"]
+    healthcheck:
+      test: ["CMD", "bao", "status"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  # One-shot PKI bootstrap for local dev (ADR-0027): enables the OpenBao PKI (root
+  # + issuing intermediate), the keel-service issuing role, and leaves Kubernetes
+  # auth OFF (there is no k8s API locally - that wiring is exercised in the kind CI
+  # job). Opt-in via the `pki` profile so a plain `docker compose up` is unchanged:
+  #   docker compose --profile pki up openbao-init
+  # Equivalent ad-hoc command against an already-running dev OpenBao:
+  #   docker compose exec -e ENABLE_K8S_AUTH=false openbao sh /pki/bootstrap.sh
+  # Dev only.
+  openbao-init:
+    image: openbao/openbao:2.7.2
+    profiles: ["pki"]
+    depends_on:
+      openbao:
+        condition: service_healthy
+    environment:
+      BAO_ADDR: http://openbao:8200
+      BAO_TOKEN: root
+      ENABLE_K8S_AUTH: "false"
+    entrypoint: ["sh", "/pki/bootstrap.sh"]
+    volumes:
+      - ./pki:/pki:ro
+    restart: "no"
 
   # LocalStack for the AWS Secrets Manager adapter integration tests (ADR-0024). The AWS SDKs
   # route here via the standard AWS_ENDPOINT_URL_SECRETS_MANAGER env var; dummy creds only. Dev
