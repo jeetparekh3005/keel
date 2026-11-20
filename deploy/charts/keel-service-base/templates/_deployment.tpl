@@ -1,4 +1,5 @@
 {{- define "keel-service-base.deployment" -}}
+{{- $mtls := .Values.mtls | default dict -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -82,8 +83,20 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            {{- if $mtls.enabled }}
+            # mTLS cert issued from the OpenBao PKI by cert-manager (ADR-0027),
+            # read-only; the mtls_*_credentials builders load tls.crt/tls.key/ca.crt.
+            - name: keel-mtls
+              mountPath: {{ $mtls.mountPath | default "/var/run/secrets/keel/tls" }}
+              readOnly: true
+            {{- end }}
       volumes:
         # Writable scratch so the container filesystem stays read-only.
         - name: tmp
           emptyDir: {}
+        {{- if $mtls.enabled }}
+        - name: keel-mtls
+          secret:
+            secretName: {{ include "keel-service-base.mtls.secretName" . }}
+        {{- end }}
 {{- end -}}

@@ -1,0 +1,228 @@
+name: PKI mTLS
+
+# ADR-0027 proof: stand up a kind cluster with in-cluster OpenBao (dev mode) and
+# cert-manager, bootstrap the OpenBao PKI (root + issuing intermediate + the
+# keel-service role + k8s auth bound to cert-manager's SA), apply the Vault
+# ClusterIssuer and a test Certificate, and assert END TO END that:
+#   - ISSUANCE: the Certificate goes Ready and its cert CHAINS TO THE OpenBao CA,
+#     is issued by the OpenBao issuing CA, carries the expected DNS SANs + both
+#     server_auth and client_auth EKUs, and has a short lifetime;
+#   - mTLS PATH: a client and server both presenting the issued cert complete a
+#     real mutual-TLS handshake (openssl s_server -Verify / s_client);
+#   - ROTATION: with duration 1h + renewBefore 59m, cert-manager auto-renews the
+#     cert within the job and the Secret's cert serial changes - rotation is
+#     driven by renewBefore, not a restart.
+# The job fails loudly if the cert is not issued from the PKI or does not chain to
+# the OpenBao CA. This is the "CI-demonstrable" guarantee in ADR-0027.
+
+on:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - "deploy/pki/**"
+      - "deploy/charts/**"
+      - ".github/workflows/pki.yml"
+  push:
+    branches: [dev, main]
+    paths:
+      - "deploy/pki/**"
+      - "deploy/charts/**"
+      - ".github/workflows/pki.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pki-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+env:
+  CLUSTER_NAME: keel-pki
+  CERT_MANAGER_VERSION: v1.21.3
+  CERT_NS: default
+  CERT_NAME: reference-service-mtls
+
+jobs:
+  verify:
+    name: OpenBao PKI issues + rotates mTLS certs (kind + cert-manager)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
+
+      - name: Create kind cluster
+        uses: helm/kind-action@ea822c7bf1874f08e5a491df991c228edffc3376 # v1.15.2
+        with:
+          cluster_name: ${{ env.CLUSTER_NAME }}
+
+      - name: Deploy in-cluster OpenBao (dev mode)
+        run: |
+          kubectl apply -f deploy/pki/ci/openbao-dev.yaml
+          kubectl -n openbao rollout status deploy/openbao --timeout=180s
+
+      - name: Bootstrap the OpenBao PKI (CA + role + k8s auth)
+        # Run the SAME bootstrap script shipped for local dev, inside the OpenBao
+        # pod with ENABLE_K8S_AUTH=true so cert-manager's SA can log in. The pod's
+        # own SA (system:auth-delegator) is the TokenReview reviewer.
+        run: |
+          POD="$(kubectl -n openbao get pod -l app.kubernetes.io/name=openbao -o jsonpath='{.items[0].metadata.name}')"
+          kubectl -n openbao cp deploy/pki/bootstrap.sh "openbao/${POD}:/tmp/bootstrap.sh"
+          kubectl -n openbao exec "${POD}" -- env \
+            BAO_ADDR=http://127.0.0.1:8200 BAO_TOKEN=root ENABLE_K8S_AUTH=true \
+            sh /tmp/bootstrap.sh
+
+      - name: Install cert-manager (pinned)
+        run: |
+          helm repo add jetstack https://charts.jetstack.io
+          helm repo update jetstack
+          helm install cert-manager jetstack/cert-manager \
+            --namespace cert-manager --create-namespace \
+            --version "${CERT_MANAGER_VERSION}" \
+            --set crds.enabled=true \
+            --wait --timeout 6m
+          kubectl -n cert-manager rollout status deploy/cert-manager --timeout=180s
+          kubectl -n cert-manager rollout status deploy/cert-manager-webhook --timeout=180s
+
+      - name: Apply the Vault ClusterIssuer and wait for auth
+        # ClusterIssuer Ready == cert-manager successfully logged into OpenBao via
+        # the Kubernetes auth method (SA-token -> OpenBao token, no static token).
+        run: |
+          kubectl apply -f deploy/pki/cluster-issuer.yaml
+          if ! kubectl wait --for=condition=Ready clusterissuer/openbao-pki --timeout=180s; then
+            echo "::error::ClusterIssuer did not become Ready - cert-manager could not authenticate to OpenBao"
+            kubectl describe clusterissuer openbao-pki || true
+            exit 1
+          fi
+          echo "ClusterIssuer Ready: cert-manager authenticated to OpenBao via k8s auth"
+
+      - name: Apply the test Certificate and wait for issuance
+        run: |
+          kubectl apply -f deploy/pki/certificate-test.yaml
+          if ! kubectl wait --for=condition=Ready "certificate/${CERT_NAME}" -n "${CERT_NS}" --timeout=180s; then
+            echo "::error::Certificate did not become Ready - issuance from the OpenBao PKI failed"
+            kubectl describe "certificate/${CERT_NAME}" -n "${CERT_NS}" || true
+            kubectl get certificaterequest -n "${CERT_NS}" -o wide || true
+            exit 1
+          fi
+          echo "Certificate Ready: a cert was issued from the OpenBao PKI"
+
+      - name: "ASSERT ISSUANCE: chains to the OpenBao CA, expected SANs/EKU, short TTL"
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d)"; cd "$work"
+          POD="$(kubectl -n openbao get pod -l app.kubernetes.io/name=openbao -o jsonpath='{.items[0].metadata.name}')"
+
+          # The issued leaf + its private key (what the pod would mount).
+          kubectl -n "${CERT_NS}" get secret "${CERT_NAME}" -o jsonpath='{.data.tls\.crt}' | base64 -d > leaf.pem
+          kubectl -n "${CERT_NS}" get secret "${CERT_NAME}" -o jsonpath='{.data.tls\.key}' | base64 -d > leaf.key
+
+          # Authoritative trust anchors straight from the OpenBao PKI (not the
+          # secret) so "chains to the OpenBao CA" cannot be faked by the secret.
+          kubectl -n openbao exec "${POD}" -- sh -c 'BAO_ADDR=http://127.0.0.1:8200 bao read -field=certificate pki/cert/ca' > root-ca.pem
+          kubectl -n openbao exec "${POD}" -- sh -c 'BAO_ADDR=http://127.0.0.1:8200 bao read -field=certificate pki_int/cert/ca' > int-ca.pem
+
+          echo "--- leaf must chain to the OpenBao ROOT CA ---"
+          if ! openssl verify -CAfile root-ca.pem -untrusted int-ca.pem leaf.pem; then
+            echo "::error::issued cert does NOT chain to the OpenBao PKI CA"; exit 1
+          fi
+
+          echo "--- issuer must be the OpenBao issuing CA ---"
+          openssl x509 -in leaf.pem -noout -issuer -subject
+          if ! openssl x509 -in leaf.pem -noout -issuer | grep -q "keel Issuing CA"; then
+            echo "::error::issuer is not the OpenBao issuing CA"; exit 1
+          fi
+
+          echo "--- expected DNS SANs ---"
+          sans="$(openssl x509 -in leaf.pem -noout -ext subjectAltName)"
+          echo "$sans"
+          echo "$sans" | grep -q "reference-service.${CERT_NS}.svc.cluster.local" || { echo "::error::missing FQDN SAN"; exit 1; }
+          echo "$sans" | grep -q "reference-service.${CERT_NS}.svc" || { echo "::error::missing short SAN"; exit 1; }
+
+          echo "--- both EKUs (mTLS is bidirectional) ---"
+          eku="$(openssl x509 -in leaf.pem -noout -ext extendedKeyUsage)"
+          echo "$eku"
+          echo "$eku" | grep -q "TLS Web Server Authentication" || { echo "::error::missing server_auth EKU"; exit 1; }
+          echo "$eku" | grep -q "TLS Web Client Authentication" || { echo "::error::missing client_auth EKU"; exit 1; }
+
+          echo "--- short lifetime (< 2h) ---"
+          not_after="$(openssl x509 -in leaf.pem -noout -enddate | cut -d= -f2)"
+          end="$(date -d "$not_after" +%s)"; now="$(date +%s)"; delta="$(( end - now ))"
+          echo "notAfter=$not_after  seconds-from-now=$delta"
+          if [ "$delta" -le 0 ] || [ "$delta" -ge 7800 ]; then
+            echo "::error::cert lifetime is not short (expected ~1h)"; exit 1
+          fi
+
+          # Hand the leaf + trust bundle to the next step. awk 1 guarantees a
+          # newline between the concatenated PEMs.
+          awk 1 int-ca.pem root-ca.pem > trust.pem
+          cp leaf.pem leaf.key trust.pem root-ca.pem int-ca.pem "${RUNNER_TEMP}/"
+          echo "ISSUANCE PASS: issued from the OpenBao PKI, chains to the OpenBao CA"
+
+      - name: "ASSERT mTLS PATH: real mutual-TLS handshake with the issued cert"
+        run: |
+          set -euo pipefail
+          cd "${RUNNER_TEMP}"
+          # Server and client both present the issued cert; -Verify REQUIRES a
+          # client cert, so a completed handshake proves mutual authentication
+          # against the OpenBao trust chain.
+          openssl s_server -accept 14433 -cert leaf.pem -key leaf.key \
+            -CAfile trust.pem -Verify 2 -naccept 1 >/tmp/s_server.log 2>&1 &
+          srv=$!
+          sleep 1
+          hs="$(echo "keel-mtls-probe" | openssl s_client -connect 127.0.0.1:14433 \
+                 -cert leaf.pem -key leaf.key -CAfile trust.pem 2>&1 || true)"
+          kill "$srv" 2>/dev/null || true
+          echo "$hs" | grep -E "Verify return code: 0|Verification: OK" || {
+            echo "::error::mutual-TLS handshake failed"; echo "$hs" | tail -40; cat /tmp/s_server.log || true; exit 1; }
+          echo "mTLS PASS: mutual-TLS handshake completed (Verify return code 0)"
+
+      - name: "ASSERT ROTATION: cert-manager auto-renews, serial changes"
+        run: |
+          set -euo pipefail
+          get_serial() {
+            kubectl -n "${CERT_NS}" get secret "${CERT_NAME}" -o jsonpath='{.data.tls\.crt}' \
+              | base64 -d | openssl x509 -noout -serial | cut -d= -f2
+          }
+          old="$(get_serial)"
+          echo "initial serial: $old"
+          echo "renewalTime: $(kubectl -n "${CERT_NS}" get certificate "${CERT_NAME}" -o jsonpath='{.status.renewalTime}')"
+          echo "awaiting automatic rotation (renewBefore 59m on a 1h cert -> renews ~1m after issue)..."
+          new="$old"
+          for i in $(seq 1 50); do
+            sleep 6
+            new="$(get_serial)"
+            if [ "$new" != "$old" ]; then
+              echo "ROTATED after ~$(( i * 6 ))s: $old -> $new"
+              break
+            fi
+          done
+          if [ "$new" = "$old" ]; then
+            echo "::error::cert did not rotate within the window"
+            kubectl -n "${CERT_NS}" describe certificate "${CERT_NAME}" | tail -30 || true
+            exit 1
+          fi
+          # The rotated cert must STILL be a genuine OpenBao-issued cert.
+          kubectl -n "${CERT_NS}" get secret "${CERT_NAME}" -o jsonpath='{.data.tls\.crt}' | base64 -d > "${RUNNER_TEMP}/leaf2.pem"
+          if ! openssl verify -CAfile "${RUNNER_TEMP}/root-ca.pem" -untrusted "${RUNNER_TEMP}/int-ca.pem" "${RUNNER_TEMP}/leaf2.pem"; then
+            echo "::error::rotated cert does not chain to the OpenBao CA"; exit 1
+          fi
+          echo "ROTATION PASS: cert-manager auto-renewed; new serial still chains to the OpenBao CA"
+
+      - name: Dump cert-manager + OpenBao state on failure
+        if: failure()
+        run: |
+          echo "===== Certificate ====="
+          kubectl -n "${CERT_NS}" describe certificate "${CERT_NAME}" || true
+          echo "===== CertificateRequests ====="
+          kubectl -n "${CERT_NS}" get certificaterequest -o wide || true
+          kubectl -n "${CERT_NS}" describe certificaterequest || true
+          echo "===== ClusterIssuer ====="
+          kubectl describe clusterissuer openbao-pki || true
+          echo "===== cert-manager logs ====="
+          kubectl -n cert-manager logs -l app.kubernetes.io/name=cert-manager --tail=200 || true
+          echo "===== OpenBao pod + logs ====="
+          kubectl -n openbao get pods -o wide || true
+          kubectl -n openbao logs -l app.kubernetes.io/name=openbao --tail=200 || true

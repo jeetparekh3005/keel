@@ -80,8 +80,8 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   JWT/bearer/AWS-key/PAN, recursive over event and span fields, with reserved-key
   namespacing). Per-line **log-to-trace correlation** (`trace_id`/`span_id` on every log
   line inside a span), the **DB pool saturation metric**, and **redaction of the OTLP
-  span-export path** are now at Python parity. Not yet at parity: the messaging/gRPC/`api_key`/
-  `mTLS` surfaces (tracked on v0.6, epic #419). A live **Keycloak** JWKS integration test is now in place. **HTTP server request metrics** are now emitted:
+  span-export path** are now at Python parity. The messaging/gRPC/`api_key`/`mTLS` surfaces
+  reached full cross-vertical parity through v0.6-v0.8 (epic #419 closed). A live **Keycloak** JWKS integration test is now in place. **HTTP server request metrics** are now emitted:
   `http.server.request.duration` (histogram, seconds) and `http.server.active_requests`
   (up-down counter), labelled by the route TEMPLATE (`http.route` from axum `MatchedPath`),
   `http.request.method`, and `http.response.status_code`, through a real OpenTelemetry
@@ -130,8 +130,7 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   (`http.server.request.duration` histogram + `http.server.active_requests` up-down counter,
   labelled by the matched route template) are emitted via a core MetricsInterceptor against a
   globally registered OpenTelemetry MeterProvider (OTLP exporter); a live Keycloak JWKS integration
-  test is now in place. Not yet: JSON-formatting NestJS's own bootstrap log lines (the app/error path already logs
-  through the redacting pino logger).
+  test is now in place. NestJS's own bootstrap log lines are JSON-formatted through the redacting pino logger too.
 - **Java/Spring Boot vertical (v0.4)**: a fifth language vertical, same hexagonal boundaries,
   the dominant enterprise JVM framework (ADR-0020), where several contract requirements are
   framework-native. Shared library `packages/keel-core-java` (`keel-core`) + thin
@@ -252,8 +251,8 @@ breadth (Kafka and RabbitMQ `MessageBus` adapters + the AsyncAPI artifact), each
 
 | Area | Claimed in | Status |
 |------|-----------|--------|
-| `api_key` / `mTLS` credential types | platform.yaml auth; ADR-0006 | **Implemented** - `ApiKeyAuthenticator` (hashed keys, X-API-Key over HTTP) and gRPC mTLS credential builders (`mtls_channel_credentials`/`mtls_server_credentials`). Certs are provisioned per-deployment (OpenBao PKI, ADR-0007) |
-| Kubernetes **admission** policy (verify signatures at deploy) | ADR-0010 §5 | **Not implemented** - cosign verification at admission (Kyverno/policy-controller) is a future milestone; images are signed + attested today |
+| `api_key` / `mTLS` credential types | platform.yaml auth; ADR-0006 | **Implemented** - `ApiKeyAuthenticator` (hashed keys, X-API-Key over HTTP) and gRPC mTLS credential builders (`mtls_channel_credentials`/`mtls_server_credentials`). mTLS certs are now **PKI-issued and auto-rotated** (v0.8, ADR-0027): an OpenBao PKI (root + issuing intermediate + a short-TTL `keel-service` role) is bootstrapped by `deploy/pki/bootstrap.sh`, and cert-manager's Vault `ClusterIssuer` (authenticating to OpenBao via the Kubernetes auth method, no static token) issues a short-lived cert into a TLS Secret the pod mounts, renewed in-cluster ahead of expiry. Wired as an opt-in, default-off `mtls.*` block in the `keel-service-base` chart (default render is byte-identical). Proven end to end in CI (`pki.yml`): a kind cluster shows a cert issued from the PKI chaining to the OpenBao CA with the expected SANs + server/client EKUs + short TTL, a real mutual-TLS handshake, and automatic rotation (the Secret's cert serial changes). The `api_key` type is unaffected (hashed keys via the `SecretProvider`). |
+| Kubernetes **admission** policy (verify signatures at deploy) | ADR-0010 §5, ADR-0026 | **Implemented (v0.8).** A Kyverno `ImageValidatingPolicy` (`deploy/admission/`) denies any Pod whose `ghcr.io/jeetparekh3005/keel/**` image is not cosign-keyless-signed by the keel GitHub Actions workflow AND carrying a `https://slsa.dev/provenance/v1` attestation; cluster-wide by image reference (no namespace opt-in footgun), `Deny` + `failurePolicy: Fail` (fail-closed). policy-controller and Kyverno's legacy `verifyImages` could not read keel's modern sigstore-bundle / OCI 1.1 referrer format; Kyverno's CEL verifier (>= v1.20) can (ADR-0026). Proven in CI (`admission.yml`): a kind cluster admits the real signed v0.7.0 image and rejects an unsigned one. |
 | **Keycloak / NATS integration tests** | ADR-0010 | **Implemented** - CI integration job runs Postgres, a NATS JetStream container (MessageBus roundtrip), and Keycloak with an imported realm (OIDC authenticate against a real JWKS via client_credentials) |
 | **Kubernetes/Helm** + runtime `securityContext`, NetworkPolicy | ADR-0004/0008 | **Implemented** - Helm chart at `deploy/charts/reference-service` (non-root, read-only rootfs, drop-all caps, seccomp RuntimeDefault, no SA token, default-deny NetworkPolicy, liveness/readiness probes); lint + kubeconform in CI |
 | Base-image **digest pinning** | platform.yaml image; ADR-0008 | **Deliberately not pinned.** Chainguard bases are rolling/continuously-rebuilt, so every build is Trivy-scanned instead; a static digest pin would freeze stale CVEs. The published image is cosign-signed and attested by its built digest. (No Renovate in this repo; Dependabot covers the github-actions, uv, and npm ecosystems.) |

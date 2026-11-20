@@ -1,0 +1,163 @@
+name: Admission
+
+# ADR-0026 proof: stand up a kind cluster, install pinned Kyverno, apply keel's
+# ImageValidatingPolicy, and assert BOTH directions cluster-wide (no namespace opt-in):
+#   - the keel-signed + SLSA-attested v0.7.0 release image is ADMITTED;
+#   - an unsigned image under keel's namespace glob is REJECTED by Kyverno's webhook.
+# The job fails if either assertion does not hold. This is the "CI-demonstrable" guarantee
+# from the ADR - the policy is proven against keel's real signing format, not asserted.
+
+on:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - "deploy/admission/**"
+      - "deploy/charts/**"
+      - ".github/workflows/admission.yml"
+  push:
+    branches: [dev, main]
+    paths:
+      - "deploy/admission/**"
+      - "deploy/charts/**"
+      - ".github/workflows/admission.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: admission-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+env:
+  # Kyverno pinned. keel's release images store the cosign signature AND the SLSA provenance
+  # as OCI 1.1 referrers in the modern sigstore bundle format; Kyverno's ImageValidatingPolicy
+  # (CEL + sigstore-go, Kyverno >= v1.20) verifies that format. sigstore policy-controller and
+  # Kyverno's legacy ClusterPolicy verifyImages cannot (see deploy/admission/README.md).
+  KYVERNO_CHART_VERSION: "3.10.0" # app v1.20.0
+  CLUSTER_NAME: keel-admission
+  TEST_NS: keel-admission-demo
+  # A keel-signed release image (ADR-0026 admit case). Digest-pinned so the proof is immune
+  # to tag re-pointing.
+  SIGNED_IMAGE: "ghcr.io/jeetparekh3005/keel/reference-service:0.7.0@sha256:cd6034ab97bbbb49176722506025d90a47e69efc49b416c8aa838f15d68e1b33"
+  # A locally-built unsigned image tagged under keel's glob (ADR-0026 reject case): it carries
+  # no keel signature, so the policy denies it.
+  UNSIGNED_IMAGE: "ghcr.io/jeetparekh3005/keel/unsigned-sample:ci"
+
+jobs:
+  verify:
+    name: Admission policy (kind + Kyverno) - signed admits, unsigned rejects
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
+
+      - name: Create kind cluster
+        uses: helm/kind-action@ea822c7bf1874f08e5a491df991c228edffc3376 # v1.15.2
+        with:
+          cluster_name: ${{ env.CLUSTER_NAME }}
+
+      - name: Build + load an unsigned image tagged under keel's glob
+        # Admission runs before any image pull, so this only needs to exist as a reference;
+        # building + loading it makes it a genuine locally-built, unsigned image.
+        run: |
+          printf 'FROM busybox:stable\n' | docker build -t "${UNSIGNED_IMAGE}" -
+          kind load docker-image "${UNSIGNED_IMAGE}" --name "${CLUSTER_NAME}"
+
+      - name: Install Kyverno (pinned)
+        run: |
+          helm repo add kyverno https://kyverno.github.io/kyverno/
+          helm repo update kyverno
+          helm install kyverno kyverno/kyverno \
+            --version "${KYVERNO_CHART_VERSION}" \
+            --namespace kyverno --create-namespace \
+            --wait --timeout 6m
+          kubectl -n kyverno rollout status deploy \
+            -l app.kubernetes.io/component=admission-controller --timeout=180s
+
+      - name: Apply keel's ImageValidatingPolicy
+        run: |
+          # helm --wait marks Kyverno's pods ready before its own policy-validating
+          # webhook (kyverno-svc) actually accepts TLS connections, so a bare apply
+          # races and fails with "connection refused". Wait for the service to have
+          # ready endpoints, then retry the apply until the webhook answers.
+          for i in $(seq 1 36); do
+            ips=$(kubectl -n kyverno get endpoints kyverno-svc \
+              -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null || true)
+            [ -n "$ips" ] && { echo "kyverno-svc has ready endpoints: $ips"; break; }
+            echo "waiting for kyverno-svc endpoints ($i)..."; sleep 5
+          done
+          for i in $(seq 1 24); do
+            if kubectl apply -f deploy/admission/image-validating-policy.yaml; then
+              echo "policy applied"; break
+            fi
+            echo "policy apply failed (kyverno webhook not serving yet, $i); retrying..."; sleep 5
+          done
+          # Fail loudly if the policy never applied (do not silently continue to the asserts).
+          if ! kubectl get imagevalidatingpolicy keel-verify-images >/dev/null 2>&1; then
+            echo "::error::ImageValidatingPolicy was never applied (kyverno policy webhook never became ready)"
+            exit 1
+          fi
+          # Let the generated (image-verification) webhook register.
+          for i in $(seq 1 24); do
+            if kubectl get validatingwebhookconfiguration 2>/dev/null | grep -qi ivpol; then
+              echo "ivpol webhook registered"; break
+            fi
+            echo "waiting for ivpol webhook ($i)..."; sleep 5
+          done
+          kubectl create namespace "${TEST_NS}"
+
+      - name: "ASSERT ADMIT: keel-signed image is admitted"
+        # Keyless verification fetches the sigstore trust root + Fulcio/Rekor on first use; the
+        # cold-start call can exceed the 30s webhook timeout and fail closed. Kyverno caches the
+        # roots in-process, so a retry succeeds once warmed. The signature itself is valid - this
+        # loop only absorbs cold-start latency, it does not paper over a verification failure.
+        run: |
+          rc=1
+          for attempt in $(seq 1 8); do
+            kubectl -n "${TEST_NS}" delete pod signed --ignore-not-found >/dev/null 2>&1
+            if kubectl -n "${TEST_NS}" run signed --image="${SIGNED_IMAGE}" \
+                 --restart=Never --command -- sleep 1 2>/tmp/admit.err; then
+              rc=0; echo "ADMIT PASS: keel-signed image admitted (attempt ${attempt})"; break
+            fi
+            echo "--- admit attempt ${attempt} not yet (warming sigstore roots) ---"
+            cat /tmp/admit.err || true
+            sleep 12
+          done
+          if [ $rc -ne 0 ]; then
+            echo "::error::ADMIT FAILED - keel-signed image was rejected after retries"
+            exit 1
+          fi
+
+      - name: "ASSERT REJECT: unsigned keel-glob image is denied"
+        run: |
+          set +e
+          out="$(kubectl -n "${TEST_NS}" run unsigned --image="${UNSIGNED_IMAGE}" \
+            --image-pull-policy=IfNotPresent --restart=Never --command -- sleep 1 2>&1)"
+          rc=$?
+          echo "$out"
+          set -e
+          if [ $rc -eq 0 ]; then
+            echo "::error::REJECT FAILED - unsigned image was admitted (policy did not block)"
+            exit 1
+          fi
+          # Confirm Kyverno's image-verification webhook denied it (not some unrelated error).
+          if ! echo "$out" | grep -qiE "ivpol|keel-verify-images|image verification|failed to verify|denied the request"; then
+            echo "::error::unsigned image was blocked, but not by the Kyverno verification webhook"
+            exit 1
+          fi
+          echo "REJECT PASS: unsigned keel-glob image denied by the admission webhook"
+
+      - name: Dump Kyverno logs (diagnosis)
+        if: always()
+        run: |
+          echo "===== ImageValidatingPolicy ====="
+          kubectl get imagevalidatingpolicy keel-verify-images -o yaml || true
+          echo "===== Kyverno deploys/pods ====="
+          kubectl -n kyverno get deploy,pods -o wide || true
+          echo "===== Kyverno admission-controller logs ====="
+          kubectl -n kyverno logs -l app.kubernetes.io/component=admission-controller \
+            --tail=300 --all-containers 2>/dev/null \
+            | grep -ivE "is deprecated and will be removed" | tail -200 || true

@@ -1,0 +1,36 @@
+# CI proof Certificate (ADR-0027): a cert issued FROM the OpenBao PKI via the
+# ClusterIssuer, with the in-cluster SANs of the reference service and a short
+# lifetime. duration 1h with renewBefore 59m sets the renewal time to ~1 minute
+# after issuance, so cert-manager auto-rotates it within the CI job (the proof
+# of rotation is the Secret's cert serial changing with no human in the loop).
+# 1h/5m are cert-manager's minimum duration / renewBefore; this is as short as
+# the webhook allows while still forcing a rotation inside the job window.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: reference-service-mtls
+  namespace: default
+  labels:
+    app.kubernetes.io/part-of: keel
+    app.kubernetes.io/component: pki
+spec:
+  secretName: reference-service-mtls
+  duration: 1h
+  renewBefore: 59m
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  # mTLS is bidirectional: the leaf carries both server_auth and client_auth EKUs
+  # (the OpenBao role sets both). cert-manager requests usages accordingly.
+  usages:
+    - server auth
+    - client auth
+  commonName: reference-service.default.svc.cluster.local
+  dnsNames:
+    - reference-service.default.svc
+    - reference-service.default.svc.cluster.local
+  issuerRef:
+    name: openbao-pki
+    kind: ClusterIssuer
+    group: cert-manager.io

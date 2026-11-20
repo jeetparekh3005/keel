@@ -49,8 +49,10 @@ Runtime validation (Pydantic at boundaries, config fail-fast) backstops inputs t
 > bandit `S`, import-linter), pytest + 85% coverage floor, **pip-audit** (dependency CVEs),
 > **gitleaks** (secret scan), **SBOM** (CycloneDX), the **port-coverage conformance check**,
 > and the route-auth conformance check, plus **semgrep** SAST, **trivy** image scan, and
-> **cosign** signing + SLSA/SBOM attestation in the image pipeline. Still planned: cluster-side
-> signature **admission** verification. See [docs/STATUS.md](../STATUS.md).
+> **cosign** signing + SLSA/SBOM attestation in the image pipeline, and cluster-side signature
+> **admission** verification (Kyverno `ImageValidatingPolicy`, ADR-0026: deny any Pod whose image is
+> not keel-signed + SLSA-attested by the keel workflow, proven in a kind-cluster CI job). See
+> [docs/STATUS.md](../STATUS.md).
 
 ## Deterministic enforcement catalogue
 
