@@ -1,0 +1,65 @@
+# keel admission policy (ADR-0026): verify keel's cosign keyless signature AND its
+# SLSA build provenance before a Pod is admitted, and DENY anything that fails.
+#
+# Verifier: Kyverno (ImageValidatingPolicy). keel signs with cosign v3 +
+# actions/attest-build-provenance, which publish the signature and the SLSA provenance
+# as OCI 1.1 referrers in the modern sigstore bundle format
+# (application/vnd.dev.sigstore.bundle.v0.3+json). sigstore policy-controller cannot read
+# that format; Kyverno's ImageValidatingPolicy (the CEL/sigstore-go verifier, Kyverno
+# >= v1.20) can - proven against the real v0.7.0 release image in CI.
+#
+# NOTE: this is the NEW CEL-based ImageValidatingPolicy (policies.kyverno.io), NOT the
+# legacy kyverno.io/v1 ClusterPolicy verifyImages rule. Kyverno v1.20 removed execution of
+# legacy kyverno.io policy types, and the legacy cosign verifier could not read keel's
+# bundle/referrer format anyway (it reported "no signatures found", same as policy-controller).
+#
+# Scope: cluster-wide by image reference (the glob below) - NO namespace opt-in label is
+# needed, so there is no "unlabelled namespace is silently unprotected" footgun.
+apiVersion: policies.kyverno.io/v1
+kind: ImageValidatingPolicy
+metadata:
+  name: keel-verify-images
+spec:
+  # Deny = block non-compliant Pods (enforce). Fail closed on verification errors/timeouts.
+  validationActions: [Deny]
+  failurePolicy: Fail
+  webhookConfiguration:
+    # Keyless verification fetches the sigstore trust root + Fulcio/Rekor material; the
+    # first verification after a cold start is slow. 30s (Kyverno's max) gives it headroom;
+    # subsequent verifications are served from Kyverno's in-process + image-verify caches.
+    timeoutSeconds: 30
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods"]
+  # keel's published images only. Images outside this glob are not governed by this policy.
+  matchImageReferences:
+    - glob: "ghcr.io/jeetparekh3005/keel/**"
+  attestors:
+    - name: keel
+      cosign:
+        keyless:
+          identities:
+            # The keel GitHub Actions workflow identity (Fulcio/OIDC) the v0.7.0 release
+            # images were cosign-verified against. No url/root config: use the public-good
+            # sigstore trust root (keel's repo is public, so its cosign signature +
+            # attest-build-provenance use public-good Fulcio/Rekor).
+            - issuer: "https://token.actions.githubusercontent.com"
+              subjectRegExp: "^https://github.com/jeetparekh3005/keel/\\.github/workflows/.+@.+$"
+  attestations:
+    # Require keel's SLSA v1 build provenance (actions/attest-build-provenance ->
+    # predicateType https://slsa.dev/provenance/v1).
+    - name: slsa
+      intoto:
+        type: "https://slsa.dev/provenance/v1"
+  validations:
+    # BOTH must hold. A plain signature alone is not sufficient: the SLSA provenance must
+    # also be present and signed by the same keel keyless identity.
+    - expression: >-
+        images.containers.map(image, verifyImageSignatures(image, [attestors.keel])).all(e, e > 0)
+      message: "keel cosign keyless signature verification failed (not signed by the keel workflow identity)"
+    - expression: >-
+        images.containers.map(image, verifyAttestationSignatures(image, attestations.slsa, [attestors.keel])).all(e, e > 0)
+      message: "keel SLSA provenance attestation verification failed (missing or untrusted slsa.dev/provenance/v1)"
