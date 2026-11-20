@@ -79,8 +79,28 @@ jobs:
 
       - name: Apply keel's ImageValidatingPolicy
         run: |
-          kubectl apply -f deploy/admission/image-validating-policy.yaml
-          # Let the generated webhook register.
+          # helm --wait marks Kyverno's pods ready before its own policy-validating
+          # webhook (kyverno-svc) actually accepts TLS connections, so a bare apply
+          # races and fails with "connection refused". Wait for the service to have
+          # ready endpoints, then retry the apply until the webhook answers.
+          for i in $(seq 1 36); do
+            ips=$(kubectl -n kyverno get endpoints kyverno-svc \
+              -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null || true)
+            [ -n "$ips" ] && { echo "kyverno-svc has ready endpoints: $ips"; break; }
+            echo "waiting for kyverno-svc endpoints ($i)..."; sleep 5
+          done
+          for i in $(seq 1 24); do
+            if kubectl apply -f deploy/admission/image-validating-policy.yaml; then
+              echo "policy applied"; break
+            fi
+            echo "policy apply failed (kyverno webhook not serving yet, $i); retrying..."; sleep 5
+          done
+          # Fail loudly if the policy never applied (do not silently continue to the asserts).
+          if ! kubectl get imagevalidatingpolicy keel-verify-images >/dev/null 2>&1; then
+            echo "::error::ImageValidatingPolicy was never applied (kyverno policy webhook never became ready)"
+            exit 1
+          fi
+          # Let the generated (image-verification) webhook register.
           for i in $(seq 1 24); do
             if kubectl get validatingwebhookconfiguration 2>/dev/null | grep -qi ivpol; then
               echo "ivpol webhook registered"; break
