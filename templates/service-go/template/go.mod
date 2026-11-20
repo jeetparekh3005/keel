@@ -6,7 +6,7 @@ require (
 	github.com/go-chi/chi/v5 v5.5.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.12.0
-	github.com/jeetparekh3005/keel/packages/keel-core-go v0.0.0-20261110214938-facd39adb4c7
+	github.com/jeetparekh3005/keel/packages/keel-core-go << ('v' + keel_core_version) if standalone else 'v0.0.0-20261110214938-facd39adb4c7' >>
 	go.opentelemetry.io/otel v1.47.0
 )
 
