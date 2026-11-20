@@ -288,6 +288,68 @@ describe('createLogger redaction', () => {
     expect(line).not.toContain('plaintextdeepsecret');
   });
 
+  it('serializes an Error under a NON-err merge key with its message and stack (issue #424)', () => {
+    // Regression: `logger.info({ field: err }, 'msg')` rebuilt a real Error whose message/stack are
+    // non-enumerable, so pino (which only runs its error serializer on the `err` key) JSON-serialized
+    // it to `{}` under any other key and the diagnostics vanished. redactValue now projects an Error
+    // under a non-err key to a plain object with ENUMERABLE, already-scrubbed name/message/stack.
+    const cap = capture();
+    const logger = createLogger('info', cap.stream);
+    const token = 'abcdef0123456789secrettoken';
+    const err = new Error(`load failed with Bearer ${token}`);
+    logger.info({ cause: err }, 'startup');
+    const [record] = cap.records();
+    const field = record.cause as Record<string, unknown>;
+    expect(field).toBeTypeOf('object');
+    // Not the pre-fix empty object.
+    expect(Object.keys(field).length).toBeGreaterThan(0);
+    expect(field.name).toBe('Error');
+    expect(String(field.message)).toContain('load failed with');
+    expect(typeof field.stack).toBe('string');
+    // The pattern secret in message AND stack is scrubbed on this path (no final scrubText).
+    const line = JSON.stringify(record);
+    expect(line).not.toContain(token);
+    expect(String(field.message)).toContain('[REDACTED]');
+  });
+
+  it('redacts a secret-family own-prop on an Error under a non-err key, keeping diagnostics', () => {
+    // The projection path must keep the Error's own-property key-redaction (and Symbol-key drop /
+    // throwing-getter handling) that the rebuilt-Error path had.
+    const cap = capture();
+    const logger = createLogger('info', cap.stream);
+    const err = Object.assign(new Error('token exchange failed'), { apiKey: 'plaintextnonerrkey' });
+    logger.info({ detail: err }, 'oauth');
+    const [record] = cap.records();
+    const field = record.detail as Record<string, unknown>;
+    expect(String(field.message)).toContain('token exchange failed');
+    expect(field.apiKey).toBe('[REDACTED]');
+    expect(JSON.stringify(record)).not.toContain('plaintextnonerrkey');
+  });
+
+  it('keeps the err-key Error serialization unchanged (pino error serializer, no #424 regression)', () => {
+    // The fix must NOT touch the `err` key: pino's own error serializer still runs there and emits
+    // its `type`/message/stack shape (a real Error reaches it), distinct from the plain projection
+    // used under other keys. Guards that the key-aware branch leaves the `err` path alone.
+    const cap = capture();
+    const logger = createLogger('info', cap.stream);
+    logger.error({ err: new Error('db connection refused') }, 'request failed');
+    const [record] = cap.records();
+    const err = record.err as Record<string, unknown>;
+    expect(err.type).toBe('Error'); // pino error-serializer shape, not our { name, ... } projection
+    expect(String(err.message)).toContain('db connection refused');
+    expect(typeof err.stack).toBe('string');
+  });
+
+  it('renders a Date under a non-err merge key as its ISO timestamp', () => {
+    // Date.toJSON -> ISO means pino serializes a Date under any key correctly; locks the #424 Date
+    // case so a future projection change cannot flatten it.
+    const cap = capture();
+    const logger = createLogger('info', cap.stream);
+    logger.info({ when: new Date('2020-01-02T03:04:05.000Z') }, 'event');
+    const [record] = cap.records();
+    expect(record.when).toBe('2020-01-02T03:04:05.000Z');
+  });
+
   it('key-redacts secret-family fields inside an object interpolation arg (%o / %j)', () => {
     // util.format serialises the object verbatim, so pattern-only scrubbing would miss a secret
     // under a secret-family KEY. The interpolation path must apply the same key-based redaction
