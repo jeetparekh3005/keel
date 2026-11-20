@@ -70,3 +70,26 @@ scope_prefix:
   type: str
   help: "OAuth scope prefix (e.g. orders -> orders:read / orders:write)"
   default: "<< aggregate_plural >>"
+
+# ADR-0028 (standalone, extractable services). Off (default) renders the monorepo-form: the
+# reference service and the ADR-0021 byte-identical dogfood - keel-core by the uv workspace source
+# and the ruff config inherited from the repo-root pyproject.toml. On renders the standalone-form:
+# a self-contained project that builds + tests OUTSIDE the uv workspace - keel-core by published
+# PyPI version and a self-contained [tool.ruff] (no workspace source to resolve, no root config to
+# inherit), so `cp -r` of the generated directory is a buildable, testable repo on its own
+# (extraction is a copy, not a transform). WAVE 1 covers only the keel-core dependency + the ruff
+# config inheritance; charts are WAVE 2. Default MUST stay false so the in-repo reference stays
+# byte-identical.
+standalone:
+  type: bool
+  help: "Standalone-form (ADR-0028): self-contained project that builds outside the monorepo"
+  default: false
+
+# The PyPI version of keel-core the standalone-form depends on (only consulted when standalone is
+# true). Until keel-core is published, the extracted-repo CI smoke resolves this to a locally-built
+# wheel installed into the venv (ADR-0028 "locally-built CI stand-in").
+keel_core_version:
+  type: str
+  help: "keel-core PyPI version for the standalone-form dependency"
+  default: "0.8.0"
+  when: "<< standalone >>"
