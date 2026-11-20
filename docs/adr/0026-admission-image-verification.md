@@ -1,4 +1,4 @@
-# 0026. Admission-time image-signature verification (sigstore policy-controller)
+# 0026. Admission-time image-signature verification (Kyverno ImageValidatingPolicy)
 
 - **Status:** accepted <!-- proposed | accepted | rejected | deprecated | superseded by ADR-XXXX -->
 - **Date:** 2026-11-20
@@ -31,65 +31,87 @@ anything that fails, before a Pod is admitted.
 
 ## Considered options
 
-| Criterion | **sigstore policy-controller** (chosen) | Kyverno | Ratify + Gatekeeper |
+The decisive criterion turned out to be one that is easy to miss on paper: **can the verifier read
+the format keel actually emits.** keel signs with cosign v3 + `actions/attest-build-provenance`,
+which publish the signature and the SLSA provenance as **OCI 1.1 referrers in the modern sigstore
+bundle format** (`application/vnd.dev.sigstore.bundle.v0.3+json`) - not the legacy tag-based
+`<digest>.sig` / `.att` artifacts. This was validated empirically in a kind cluster against the real
+`ghcr.io/jeetparekh3005/keel/reference-service:0.7.0` release image.
+
+| Criterion | **Kyverno `ImageValidatingPolicy`** (chosen) | sigstore policy-controller | Kyverno legacy `verifyImages` |
 |---|---|---|---|
-| Purpose fit | Purpose-built for sigstore: `ClusterImagePolicy` maps 1:1 to "keyless identity + attestation" | General policy engine; `verifyImages` rule does cosign + attestation as one feature among many | Verifier plugin (Ratify) feeding an OPA/Gatekeeper constraint; most moving parts |
-| cosign keyless + SLSA attestation | first-class (`authorities.keyless` + `attestations.predicateType`) | supported (`attestors.keyless` + `attestations.type`) | supported via Ratify verifiers |
-| Operational surface | one webhook, sigstore-scoped | one engine, broad scope (could grow to carry PSS/NetworkPolicy later) | two components (verifier + policy engine) |
-| Maintained by | the sigstore project (tracks cosign/Fulcio/Rekor directly) | Nirmata/CNCF | Microsoft/CNCF |
-| Fit to keel today | tightest - keel only needs "verify our sigstore images" | heavier than needed for a single image-verification policy | over-engineered for this |
+| Reads keel's modern bundle / OCI 1.1 referrers | **yes** (CEL policy, sigstore-go verifier, Kyverno >= v1.20) - proven against the real v0.7.0 image | **no** - every released version incl. v0.15.1 `enable-oci11` fails with "no matching attestations / no signatures found" | **no** - its cosign verifier reports "no signatures found" (same as policy-controller); also **removed from execution** in Kyverno v1.20 |
+| cosign keyless + SLSA attestation | `cosign.keyless.identities` + `attestations.intoto.type`, both asserted in CEL | first-class on paper (`authorities.keyless` + `attestations`) but unreadable for keel's format | on paper only |
+| Scope model | cluster-wide by image reference (`matchImageReferences` glob) - no per-namespace opt-in | namespace opt-in via `policy.sigstore.dev/include` label (a footgun if forgotten) | by resource match rules |
+| Operational surface | one engine; could later carry broader policy (PSS/NetworkPolicy) | one webhook, sigstore-scoped | n/a (deprecated) |
+
+Ratify + Gatekeeper (a verifier plugin feeding an OPA constraint) was also on the table but is the
+most moving parts for a single image-verification policy and was not evaluated once Kyverno's
+`ImageValidatingPolicy` proved sufficient.
 
 ## Decision
 
-Use **sigstore policy-controller**. It is purpose-built for verifying sigstore artifacts, and its
-`ClusterImagePolicy` expresses keel's exact requirement directly: a keyless identity (the keel GHA
-workflow via the GitHub OIDC issuer) **and** a SLSA provenance attestation, scoped to keel's images.
-It tracks cosign/Fulcio/Rekor as the same project, so it stays aligned with how keel signs. Kyverno
-is the reasonable alternative if keel later wants one engine for broader policy (PSS/NetworkPolicy
-consolidation); that is not a v0.8 need and would trade a tighter fit for a larger surface now.
+Use **Kyverno's `ImageValidatingPolicy`** (the CEL/sigstore-go verifier, Kyverno >= v1.20).
+
+This ADR originally chose sigstore policy-controller for its tight sigstore fit. Implementation
+disproved that: policy-controller (and Kyverno's older `kyverno.io/v1` `verifyImages` rule) cannot
+discover or verify keel's modern sigstore-bundle / OCI 1.1 referrer artifacts - the admit path fails
+even though `cosign verify`, `cosign verify-attestation`, and `gh attestation verify` all succeed on
+the same images. Keeping keel's signing modern and correct (it is the direction of the ecosystem and
+what `gh attestation verify` consumes), the verifier is the piece that must read that format. Kyverno
+v1.20's new CEL `ImageValidatingPolicy` does, verified end-to-end against the real release image. The
+signing side (ADR-0008/0010) is unchanged.
 
 ### The policy
 
-A cluster-scoped `ClusterImagePolicy` (committed under `deploy/admission/`):
+A cluster-scoped `ImageValidatingPolicy` (`policies.kyverno.io/v1`, committed under
+`deploy/admission/image-validating-policy.yaml`):
 
-- **Scope:** `images: [{ glob: "ghcr.io/jeetparekh3005/keel/**" }]` - keel's published images only.
-  Images outside the glob are not governed by this policy (other registries are out of scope here).
-- **Authority (keyless):** `issuer: https://token.actions.githubusercontent.com`, and
+- **Scope:** `matchImageReferences: [{ glob: "ghcr.io/jeetparekh3005/keel/**" }]` - keel's published
+  images only. The policy matches **cluster-wide by image reference**, so there is **no namespace
+  opt-in label** and therefore no "unlabelled namespace is silently unprotected" footgun (the chief
+  drawback of the policy-controller model).
+- **Authority (keyless):** `cosign.keyless.identities` with
+  `issuer: https://token.actions.githubusercontent.com` and
   `subjectRegExp: ^https://github.com/jeetparekh3005/keel/\.github/workflows/.+@.+$` - the same
-  keel-workflow identity the v0.7.0 images were verified against in the release checks.
-- **Attestation:** require a `https://slsa.dev/provenance/v1` predicate (the SLSA build provenance),
-  so a cosign signature alone is not enough - the image must also carry keel's provenance.
-- **Mode:** `enforce` (deny on failure), not `warn`.
-- **Namespace opt-in:** policy-controller only acts on namespaces labelled
-  `policy.sigstore.dev/include: "true"`. keel's service namespaces carry that label (wired into the
-  Helm chart / deploy docs); a namespace without it is NOT protected - this is the one operational
-  footgun and is called out in the deploy docs and the STATUS note.
+  keel-workflow identity the v0.7.0 images were cosign-verified against at release.
+- **Attestation:** require the `https://slsa.dev/provenance/v1` in-toto predicate (SLSA build
+  provenance), and a CEL `validations` block that asserts **both** the signature and the provenance
+  hold - a signature alone is insufficient.
+- **Mode:** `validationActions: [Deny]` with `failurePolicy: Fail` - block non-compliant Pods and
+  fail closed on verification errors or timeouts.
+- **Cold-start caveat:** the first keyless verification after a cold start fetches the sigstore trust
+  root + Fulcio/Rekor material, which can approach the 30s webhook timeout and (fail-closed) deny;
+  Kyverno caches the roots in-process, so subsequent verifications are fast. `timeoutSeconds: 30`
+  (Kyverno's max) gives headroom; the CI demo tolerates a single cold-start retry. In production this
+  is a non-issue after the first verification.
 
 ### Proof (kind-cluster CI)
 
 A CI job (`.github/workflows/admission.yml`) stands up a **kind** cluster, installs the pinned
-policy-controller, applies the `ClusterImagePolicy`, labels a test namespace, and asserts both
-directions:
+Kyverno (chart 3.10.0 / app v1.20.0), applies the `ImageValidatingPolicy`, and asserts both
+directions against real artifacts:
 
-- a **keel-signed** release image (a `ghcr.io/jeetparekh3005/keel/*` tag) is **admitted**;
-- an **unsigned / untrusted** image (a stock public image, and/or a locally-built unsigned one) is
-  **rejected** by the admission webhook.
+- a **keel-signed** release image (`ghcr.io/jeetparekh3005/keel/reference-service:0.7.0`) is
+  **admitted** - Kyverno verifies both the cosign keyless signature and the SLSA provenance;
+- an **unsigned** image under the keel glob is **rejected** by the Kyverno webhook.
 
-The cluster is given registry pull access (the CI `GITHUB_TOKEN`) so policy-controller can fetch the
-signatures/attestations from ghcr; the job fails if the "signed admits" or the "unsigned rejects"
-assertion does not hold.
+keel's ghcr packages are public, so the public-good sigstore trust root applies and no registry
+credentials are required to fetch the signatures; the job dumps Kyverno logs and fails loudly if
+either assertion does not hold.
 
 ## Consequences
 
 - **Good:** the supply-chain loop is closed and fail-closed - a cluster running this policy cannot
   admit an image that is not keel-signed and SLSA-attested by the keel workflow; the guarantee is
-  CI-proven, not asserted.
-- **Bad:** a new cluster component to install and keep current (pinned, updated deliberately); and
-  the namespace opt-in label means an unlabelled namespace is silently unprotected - mitigated by
-  wiring the label into the service chart and documenting it.
-- **Neutral:** policy-controller is sigstore-scoped; broader admission policy (e.g. consolidating
-  PodSecurity/NetworkPolicy) would need Kyverno or Gatekeeper later - deferred until there is a need.
+  CI-proven against the real release image, and the cluster-wide image match avoids the namespace
+  opt-in footgun. keel's modern signing is untouched.
+- **Bad:** a new cluster component (Kyverno) to install and keep current; and the cold-start trust-
+  root fetch can deny the very first verification after a restart until the roots are cached.
+- **Neutral:** Kyverno is a general policy engine - more than a single image-verification policy
+  needs, but it is the verifier that actually reads keel's format today, and it leaves room to
+  consolidate broader policy (PodSecurity/NetworkPolicy) later if wanted.
 
-> **Implementation status:** proposed in this ADR; flip ADR-0010 section 5 and the `docs/STATUS.md`
-> admission row to Implemented only once the kind-cluster CI job proves both the admit and the reject
-> paths, per the repo's no-over-claim rule.
+> **Implementation status:** implemented. The kind-cluster CI job proves both the admit (real
+> v0.7.0 image) and reject paths; ADR-0010 section 5 and the `docs/STATUS.md` admission row are
+> flipped to Implemented in the same change.
