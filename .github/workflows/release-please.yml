@@ -101,3 +101,13 @@ jobs:
           git tag "${tag}"
           git push origin "${tag}"
           echo "published Go module tag ${tag} (serves github.com/${{ github.repository }}/packages/keel-core-go@v${ver})"
+
+  # Publish keel-core-rust to crates.io at its own independent version (ADR-0028, #422).
+  # Needs CARGO_REGISTRY_TOKEN, passed explicitly (not `secrets: inherit`) so the publish job
+  # only sees the one secret it needs. Idempotent on re-run.
+  publish-crates:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    uses: ./.github/workflows/publish-crates.yml
+    secrets:
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
