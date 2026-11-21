@@ -26,7 +26,7 @@
     packages (io.keel.core.* vs io.keel.reference.*), so there is no overlap.
   -->
   <parent>
-    <groupId>io.keel</groupId>
+    <groupId>io.github.jeetparekh3005</groupId>
     <artifactId>keel-java-parent</artifactId>
     <version>0.1.0</version>
     <relativePath>../pom.xml</relativePath>
@@ -57,12 +57,12 @@
        exec data. -->
   <dependencies>
     <dependency>
-      <groupId>io.keel</groupId>
+      <groupId>io.github.jeetparekh3005</groupId>
       <artifactId>keel-core</artifactId>
       <version>0.1.0</version>
     </dependency>
     <dependency>
-      <groupId>io.keel</groupId>
+      <groupId>io.github.jeetparekh3005</groupId>
       <artifactId>reference-service</artifactId>
       <version>0.1.0</version>
     </dependency>

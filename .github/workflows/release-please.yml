@@ -130,3 +130,19 @@ jobs:
     uses: ./.github/workflows/publish-npm.yml
     secrets:
       NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # Publish keel-core-java (+ the keel-java-parent pom) to Maven Central via the Sonatype Central
+  # Portal at its own independent version (ADR-0028, #422). Needs a Central Portal token
+  # (MAVEN_CENTRAL_USERNAME/PASSWORD) and a GPG signing key (MAVEN_GPG_PRIVATE_KEY/PASSPHRASE),
+  # passed explicitly (not `secrets: inherit`) so the publish job only sees the four secrets it
+  # needs - never RELEASE_APP_PRIVATE_KEY. The job skips cleanly if the secrets are absent, and is
+  # idempotent (a version already on Central is skipped). groupId is io.github.jeetparekh3005.
+  publish-maven:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    uses: ./.github/workflows/publish-maven.yml
+    secrets:
+      MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+      MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+      MAVEN_GPG_PRIVATE_KEY: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
+      MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}

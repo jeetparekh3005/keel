@@ -17,11 +17,43 @@
     <relativePath/>
   </parent>
 
-  <groupId>io.keel</groupId>
+  <groupId>io.github.jeetparekh3005</groupId>
   <artifactId>keel-java-parent</artifactId>
   <version>0.1.0</version>
   <packaging>pom</packaging>
   <name>keel Java vertical</name>
+  <!-- Maven Central (Sonatype Central Portal) requires every published POM to carry description,
+       url, licenses, developers, and scm (ADR-0028, #422). keel-core-java is the artifact that
+       ships; this parent pom is deployed alongside it (keel-core names it as <parent>), so the
+       required metadata lives here and is inherited by keel-core (which adds only its own name +
+       description). The groupId is io.github.jeetparekh3005 because the project does not own a
+       keel.io domain: Sonatype Central auto-verifies a GitHub-based namespace (io.github.<user>)
+       against the GitHub account, so no DNS TXT record is needed. -->
+  <description>Aggregator and parent pom for the keel Java/Spring Boot vertical: pins the Spring Boot BOM, the shared dependency/plugin management, and the format/coverage/CVE gates inherited by keel-core-java and the reference service.</description>
+  <url>https://github.com/jeetparekh3005/keel</url>
+
+  <licenses>
+    <license>
+      <name>Apache-2.0</name>
+      <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
+  <developers>
+    <developer>
+      <id>jeetparekh3005</id>
+      <name>jeetparekh3005</name>
+      <email>jeetparekh3005@gmail.com</email>
+      <url>https://github.com/jeetparekh3005</url>
+    </developer>
+  </developers>
+
+  <scm>
+    <connection>scm:git:https://github.com/jeetparekh3005/keel.git</connection>
+    <developerConnection>scm:git:git@github.com:jeetparekh3005/keel.git</developerConnection>
+    <url>https://github.com/jeetparekh3005/keel</url>
+  </scm>
 
   <modules>
     <module>packages/keel-core-java</module>
@@ -39,6 +71,94 @@
       <modules>
         <module>coverage-aggregate</module>
       </modules>
+    </profile>
+
+    <!-- Maven Central publishing (ADR-0028, #422). Behind a profile so the default reactor build
+         (mvn verify in CI, the byte-identical dogfood) is untouched: the source/javadoc/gpg/central
+         plugins only activate on `mvn -Prelease ... deploy`. keel-core-java inherits this profile;
+         the deploy is scoped to keel-core + this parent pom via `-pl packages/keel-core-java -am`,
+         so the reference service and coverage-aggregate are never published. Central requires a
+         sources jar, a javadoc jar, and a .asc GPG signature beside the main artifact, plus the
+         POM metadata (name/description/url/licenses/developers/scm) declared above; these plugins
+         produce the first three. The publish uses the modern Sonatype Central Portal via the
+         central-publishing-maven-plugin (the legacy OSSRH/nexus-staging path is retired). -->
+    <profile>
+      <id>release</id>
+      <build>
+        <plugins>
+          <!-- Sources jar (Central-required). Managed version from spring-boot-starter-parent. -->
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-source-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>attach-sources</id>
+                <goals>
+                  <goal>jar-no-fork</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+          <!-- Javadoc jar (Central-required). doclint off + failOnError false so the committed
+               generated gRPC stubs (io.keel.reference.v1) and terse docs cannot fail the release
+               on a javadoc lint warning; Central only needs the jar to exist. Managed version from
+               spring-boot-starter-parent. -->
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-javadoc-plugin</artifactId>
+            <configuration>
+              <doclint>none</doclint>
+              <failOnError>false</failOnError>
+              <quiet>true</quiet>
+            </configuration>
+            <executions>
+              <execution>
+                <id>attach-javadocs</id>
+                <goals>
+                  <goal>jar</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+          <!-- Detached GPG signatures (.asc) for every artifact (Central-required). The plugin reads
+               the passphrase from the MAVEN_GPG_PASSPHRASE env var (maven-gpg-plugin best-practice
+               mode); the private key is imported into the agent's keyring before `mvn deploy` runs
+               (the workflow does this from MAVEN_GPG_PRIVATE_KEY). Managed version from
+               spring-boot-starter-parent. -->
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-gpg-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>sign-artifacts</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>sign</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+          <!-- Upload the signed bundle to the Sonatype Central Portal. extensions=true replaces the
+               default deploy. publishingServerId=central resolves the Central Portal token from the
+               <server id="central"> in settings.xml (username = token user, password = token). The
+               plugin rejects re-publishing an existing version (Central is immutable), so the
+               release-please wiring runs it once per cut version; a manual re-run of an already
+               published version fails fast rather than double-publishing. autoPublish=true promotes
+               the deployment from VALIDATED to PUBLISHED without a manual portal click; set it false
+               to inspect the staged bundle in the portal before releasing. -->
+          <plugin>
+            <groupId>org.sonatype.central</groupId>
+            <artifactId>central-publishing-maven-plugin</artifactId>
+            <version>0.12.0</version>
+            <extensions>true</extensions>
+            <configuration>
+              <publishingServerId>central</publishingServerId>
+              <autoPublish>true</autoPublish>
+              <waitUntil>published</waitUntil>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
     </profile>
   </profiles>
 
