@@ -121,3 +121,12 @@ jobs:
       contents: read
       id-token: write
     uses: ./.github/workflows/publish-pypi.yml
+
+  # Publish @keel/core to npm. Needs NPM_TOKEN (an npm automation token for the @keel org),
+  # passed explicitly; the job skips cleanly if the secret is absent. Idempotent on re-run.
+  publish-npm:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    uses: ./.github/workflows/publish-npm.yml
+    secrets:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

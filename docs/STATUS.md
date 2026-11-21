@@ -210,7 +210,7 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   proxy serves `github.com/jeetparekh3005/keel/packages/keel-core-go@v0.1.0` (release-gated; task 5).
   The per-language `keel_core_version` template defaults are set to each package's real independent
   version (`0.1.0`), so a `standalone`-form `keel new` depends on the version that will be published;
-  the language-registry publishers: **crates.io is wired + token-backed** (`publish-crates.yml`, `keel-core-rust` published at release, idempotent, dry-run-proven); **PyPI is wired via OIDC trusted publishing** (`publish-pypi.yml`, `keel-core` built + twine-clean, needs only a trusted-publisher config on PyPI, no secret); npm/Maven still need their accounts.
+  the language-registry publishers: **crates.io is wired + token-backed** (`publish-crates.yml`, `keel-core-rust` published at release, idempotent, dry-run-proven); **PyPI is wired via OIDC trusted publishing** (`publish-pypi.yml`, `keel-core` built + twine-clean, needs only a trusted-publisher config on PyPI, no secret); **npm is wired** (`publish-npm.yml`, @keel/core built + npm-publish-dry-run-proven, gated on NPM_TOKEN); Maven still needs its account + the groupId decision.
 
 ## Cross-vertical parity matrix (v0.6 target)
 
