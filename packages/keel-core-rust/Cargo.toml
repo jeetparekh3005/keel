@@ -1,5 +1,5 @@
 [package]
-name = "keel-core-rust"
+name = "keel-core"
 description = "keel shared platform library for the Rust vertical (ADR-0009, ADR-0017)."
 version.workspace = true
 edition.workspace = true
