@@ -81,4 +81,4 @@ standalone:
 keel_core_version:
   type: str
   help: "Published keel-core-go version for the standalone-form require directive (ignored in monorepo-form)"
-  default: "0.8.0"
+  default: "0.1.0"

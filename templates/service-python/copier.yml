@@ -91,5 +91,5 @@ standalone:
 keel_core_version:
   type: str
   help: "keel-core PyPI version for the standalone-form dependency"
-  default: "0.8.0"
+  default: "0.1.0"
   when: "<< standalone >>"

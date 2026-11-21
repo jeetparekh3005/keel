@@ -205,6 +205,12 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   `keel-service-base` **from the registry** (recorded in `Chart.lock` as the OCI repo, vendored as a
   pulled tgz) and `helm lint` + `helm template` render. The real ghcr push is **release-gated and
   unproven against ghcr until the first v0.9 release fires `publish-chart`.**
+  **keel-core-go** is tagged as an independently-versioned Go submodule at release
+  (`publish-go-module` in `release-please.yml`, tag `packages/keel-core-go/v<VERSION>`), so the module
+  proxy serves `github.com/jeetparekh3005/keel/packages/keel-core-go@v0.1.0` (release-gated; task 5).
+  The per-language `keel_core_version` template defaults are set to each package's real independent
+  version (`0.1.0`), so a `standalone`-form `keel new` depends on the version that will be published;
+  the language-registry publishers (PyPI/crates.io/npm/Maven) are not yet wired (need their accounts).
 
 ## Cross-vertical parity matrix (v0.6 target)
 
