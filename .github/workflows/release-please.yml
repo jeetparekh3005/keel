@@ -56,3 +56,21 @@ jobs:
     # No `secrets: inherit`: that would hand RELEASE_APP_PRIVATE_KEY to a job that
     # runs third-party build code. The image job needs only GITHUB_TOKEN (auto-
     # available to reusable workflows) and OIDC (granted via permissions above).
+
+  # Publish + sign the keel-service-base Helm LIBRARY chart to the GHCR OCI
+  # registry alongside the images, so the ADR-0028 standalone-form service charts
+  # (which depend on keel-service-base at oci://ghcr.io/<repo>/charts) resolve
+  # against a real registry. The chart is INDEPENDENTLY versioned: it publishes
+  # at its own Chart.yaml version, not the repo release tag, so republishing at
+  # each release is idempotent until that Chart.yaml bumps. No `tag` input: the
+  # chart job reads its version from deploy/charts/keel-service-base/Chart.yaml.
+  publish-chart:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    uses: ./.github/workflows/chart.yml
+    # No `secrets: inherit`, same reasoning as publish-image: the chart job needs
+    # only GITHUB_TOKEN (auto-available to reusable workflows) and OIDC.

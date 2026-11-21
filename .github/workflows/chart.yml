@@ -1,0 +1,90 @@
+name: Chart
+
+# Publish + sign the keel-service-base Helm LIBRARY chart to the GHCR OCI
+# registry. The ADR-0028 standalone-form service charts declare their shared
+# hardening dependency as keel-service-base at oci://ghcr.io/<repo>/charts, so
+# the library chart must actually resolve there for a generated service to
+# `helm dependency build` outside the monorepo.
+#
+# keel-service-base is INDEPENDENTLY versioned: it publishes at its own
+# deploy/charts/keel-service-base/Chart.yaml version, NOT the repo release
+# version. Re-pushing the same chart version is idempotent, so a release that
+# does not touch the library chart simply re-pushes the identical artifact; the
+# published version only advances when that Chart.yaml bumps.
+#
+# Runs via workflow_call (from release-please, inside the run the human merge to
+# main triggered - NOT a GITHUB_TOKEN event, which would be suppressed) or via
+# workflow_dispatch for a manual backfill. See ADR-0028, #422.
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chart-${{ github.ref }}-${{ github.event_name }}
+  # Never cancel a publish run: cancelling between `helm push` and `cosign sign`
+  # would leave a pushed-but-unsigned chart artifact in the registry.
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Chart publish + sign (keel-service-base)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # push to GHCR OCI
+      id-token: write # keyless cosign (OIDC)
+    env:
+      CHART_DIR: deploy/charts/keel-service-base
+      OCI_REPO: oci://ghcr.io/${{ github.repository }}/charts
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
+      - id: chart
+        name: Read the independently-versioned chart version
+        # Deliberately NOT the repo release tag: keel-service-base ships at its
+        # own Chart.yaml version (ADR-0009 Tier 3, independently bumped).
+        run: |
+          version="$(grep -E '^version:' "${CHART_DIR}/Chart.yaml" | head -1 | awk '{print $2}')"
+          if [ -z "${version}" ]; then
+            echo "::error::could not read version from ${CHART_DIR}/Chart.yaml" >&2
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "keel-service-base version: ${version}"
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Package the library chart
+        run: helm package "${CHART_DIR}" -d dist
+      - id: push
+        name: Push the chart to the GHCR OCI registry
+        # helm reuses the docker/login-action credential (shared registry auth).
+        # Capture the `Digest:` line helm push prints so cosign signs the exact
+        # artifact that was pushed, by digest (not a mutable tag).
+        run: |
+          out="$(helm push "dist/keel-service-base-${VERSION}.tgz" "${OCI_REPO}" 2>&1)"
+          echo "${out}"
+          digest="$(echo "${out}" | awk '/^Digest:/ {print $2}')"
+          if [ -z "${digest}" ]; then
+            echo "::error::helm push did not report a Digest" >&2
+            exit 1
+          fi
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+        env:
+          VERSION: ${{ steps.chart.outputs.version }}
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+      - name: Sign the pushed chart artifact (keyless)
+        # The OCI reference is the registry path WITHOUT the oci:// scheme, pinned
+        # to the digest helm push reported, so the signature covers that exact
+        # artifact regardless of any later tag moves.
+        run: cosign sign --yes "ghcr.io/${{ github.repository }}/charts/keel-service-base@${DIGEST}"
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
