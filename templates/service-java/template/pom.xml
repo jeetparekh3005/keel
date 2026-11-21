@@ -5,7 +5,7 @@
   <modelVersion>4.0.0</modelVersion>
 
   <parent>
-    <groupId>io.keel</groupId>
+    <groupId>io.github.jeetparekh3005</groupId>
     <artifactId>keel-java-parent</artifactId>
 @%- if standalone %@
     <version>@< keel_core_version >@</version>
@@ -30,7 +30,7 @@
 
   <dependencies>
     <dependency>
-      <groupId>io.keel</groupId>
+      <groupId>io.github.jeetparekh3005</groupId>
       <artifactId>keel-core</artifactId>
 @%- if standalone %@
       <version>@< keel_core_version >@</version>

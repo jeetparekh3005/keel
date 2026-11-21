@@ -108,3 +108,11 @@ dependencies with locally-built CI stand-ins**.
 - Implements v0.9 epic #422 tasks: extracted standalone-repo smoke (generate -> extract ->
   build + test + `helm template`), chart generation, and the `keel new` published-dependency
   switch. Publishing (keel-core per registry + keel-service-base to OCI) is the paired track.
+- **Maven coordinate (#422 task 4).** keel-core-java publishes to Maven Central under groupId
+  **`io.github.jeetparekh3005`**, not `io.keel`: the project owns no `keel.io` domain, and the
+  Sonatype Central Portal auto-verifies a GitHub-based namespace (`io.github.<github-user>`)
+  against the GitHub account with no DNS record. Only the Maven **groupId coordinate** changes; the
+  Java **package** namespace stays `io.keel.*` (the two are independent). The deploy uses the modern
+  Central Portal via `central-publishing-maven-plugin` behind the pom `release` profile
+  (`publish-maven.yml`, release-gated, four gated secrets, idempotent). The parent pom carries the
+  Central-required metadata (url, licenses, developers, scm) that keel-core inherits.
