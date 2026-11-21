@@ -193,7 +193,18 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   extracted-repo smoke (`extracted.yml`) proves the standalone form per vertical: generated outside
   the workspace, keel-core wired to a locally-built stand-in, then built + tested, and the generated
   chart `helm lint`ed + `helm template`d after vendoring `keel-service-base` with `helm package`
-  (the OCI-pull stand-in until the library chart is published).
+  (the OCI-pull stand-in until the library chart is published). **The `keel-service-base` library
+  chart now publishes to `oci://ghcr.io/jeetparekh3005/keel/charts` at release** (`chart.yml`, wired
+  into `release-please.yml` as `publish-chart`, mirroring `publish-image`): it is packaged, pushed by
+  its own Chart.yaml version, and cosign-keyless-signed by digest. The chart is **independently
+  versioned** (not the repo release tag), so republishing at each release is idempotent and the
+  published version only advances when `deploy/charts/keel-service-base/Chart.yaml` bumps; this is
+  the registry the standalone service charts depend on. The push->pull->dependency-resolve logic is
+  proven locally against a throwaway OCI registry (`registry:2`): package, `helm push`, `helm pull`
+  (matching digest), then a generated standalone service's chart `helm dependency build`s
+  `keel-service-base` **from the registry** (recorded in `Chart.lock` as the OCI repo, vendored as a
+  pulled tgz) and `helm lint` + `helm template` render. The real ghcr push is **release-gated and
+  unproven against ghcr until the first v0.9 release fires `publish-chart`.**
 
 ## Cross-vertical parity matrix (v0.6 target)
 
