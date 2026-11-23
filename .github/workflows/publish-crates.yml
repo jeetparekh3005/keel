@@ -1,6 +1,6 @@
 name: publish-crates
 
-# Publishes keel-core to crates.io at its own independent version (ADR-0028, #422).
+# Publishes keel-core-rs to crates.io at its own independent version (ADR-0028, #422).
 # Called from release-please.yml when a release is cut; also runnable on demand. Idempotent:
 # a version already on crates.io is skipped rather than failing a re-run.
 
@@ -27,7 +27,7 @@ jobs:
           # (an @stable branch ref would); name it explicitly or the action fails with
           # "'toolchain' is a required input". Matches rust.yml / generator.yml.
           toolchain: stable
-      - name: Publish keel-core to crates.io
+      - name: Publish keel-core-rs to crates.io
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
@@ -37,12 +37,12 @@ jobs:
             exit 0
           fi
           ver="$(cargo metadata --format-version 1 --no-deps \
-            | python3 -c 'import json,sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"]=="keel-core"))')"
+            | python3 -c 'import json,sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"]=="keel-core-rs"))')"
           # Idempotency: skip if this exact version is already on crates.io (re-run safe).
-          code="$(curl -s -o /dev/null -w '%{http_code}' "https://crates.io/api/v1/crates/keel-core/${ver}")"
+          code="$(curl -s -o /dev/null -w '%{http_code}' "https://crates.io/api/v1/crates/keel-core-rs/${ver}")"
           if [ "$code" = "200" ]; then
-            echo "keel-core ${ver} already published; skipping (idempotent)."
+            echo "keel-core-rs ${ver} already published; skipping (idempotent)."
             exit 0
           fi
-          cargo publish -p keel-core
-          echo "published keel-core ${ver} to crates.io"
+          cargo publish -p keel-core-rs
+          echo "published keel-core-rs ${ver} to crates.io"

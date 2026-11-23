@@ -107,7 +107,7 @@ LANGUAGES: tuple[LanguageSpec, ...] = (
     LanguageSpec(
         name="rust",
         manifest="Cargo.toml",
-        dep_module="keel-core",
+        dep_module="keel-core-rs",
         source_suffix=".rs",
         comment_style="c",
         app_factory=("create_app_with_readiness",),

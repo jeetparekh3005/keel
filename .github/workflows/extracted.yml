@@ -171,7 +171,7 @@ jobs:
             -e "s/^rust-version.workspace = true/rust-version = \"$WSRV\"/" \
             "$RUNNER_TEMP/keel-core-rust/Cargo.toml"
           # Redirect the crates.io pin the standalone render emits onto the local copy.
-          printf '\n[patch.crates-io]\nkeel-core = { path = "%s" }\n' "$RUNNER_TEMP/keel-core-rust" >> "$RUNNER_TEMP/ex-rust/Cargo.toml"
+          printf '\n[patch.crates-io]\nkeel-core-rs = { path = "%s" }\n' "$RUNNER_TEMP/keel-core-rust" >> "$RUNNER_TEMP/ex-rust/Cargo.toml"
           cd "$RUNNER_TEMP/ex-rust"
           cargo fmt --check
           cargo clippy --all-targets --all-features -- -D warnings
