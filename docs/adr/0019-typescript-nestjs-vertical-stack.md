@@ -25,7 +25,7 @@ hand-wired stdlib service and an opinionated DI framework, the contract is frame
 
 ## Decision
 
-Build `packages/keel-core-ts` (npm package `@keel/core`) + a thin
+Build `packages/keel-core-ts` (npm package `keelyard`) + a thin
 `services/reference-service-nest`, in the existing repo-root pnpm workspace (the JS analog of
 `go.work` tying the Go modules). The service is a NestJS application; the shared library holds
 all cross-cutting behavior as NestJS-native providers, guards, interceptors, filters, and

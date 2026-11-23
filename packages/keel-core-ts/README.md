@@ -1,4 +1,4 @@
-# @keel/core
+# keelyard
 
 The shared keel platform library for the TypeScript/NestJS vertical (ADR-0019). It holds the
 cross-cutting behavior every service needs, as NestJS-native providers, guards, interceptors,
@@ -28,7 +28,7 @@ the stdlib-first Go/Rust verticals: batteries-included, dependency-injected.
   propagation), selected fail-closed at most one via `messageBusFromEnv` (`KEEL_NATS_URL` /
   `KEEL_KAFKA_BROKERS` / `KEEL_RABBITMQ_URL`; ADR-0025). Broker clients are subpath-only imports,
   so the default build stays broker-free.
-- **Conformance** (`@keel/core/conformance`) - the behavioral contract suite a service runs
+- **Conformance** (`keelyard/conformance`) - the behavioral contract suite a service runs
   against its composed app, so an over-claim fails a test.
 
 ## Wiring a service
@@ -57,8 +57,8 @@ See `services/reference-service-nest` for the full reference service.
 ## Develop
 
 ```sh
-pnpm --filter @keel/core run build      # emit dist (consumed by the service)
-pnpm --filter @keel/core run lint        # typescript-eslint, type-checked
-pnpm --filter @keel/core run typecheck   # tsc --noEmit
-pnpm --filter @keel/core run test        # vitest (+ SWC for decorator metadata)
+pnpm --filter keelyard run build      # emit dist (consumed by the service)
+pnpm --filter keelyard run lint        # typescript-eslint, type-checked
+pnpm --filter keelyard run typecheck   # tsc --noEmit
+pnpm --filter keelyard run test        # vitest (+ SWC for decorator metadata)
 ```

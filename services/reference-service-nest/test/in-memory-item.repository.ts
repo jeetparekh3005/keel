@@ -1,4 +1,4 @@
-import { DomainError, ErrorCategory } from '@keel/core';
+import { DomainError, ErrorCategory } from 'keelyard';
 
 import type { Item, ItemRepository } from '../src/items/item.js';
 

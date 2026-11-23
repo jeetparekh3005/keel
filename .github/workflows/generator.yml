@@ -248,7 +248,7 @@ jobs:
       - run: pnpm install --no-frozen-lockfile
       - name: Build keel-core, then build/typecheck/lint/test the generated service
         run: |
-          pnpm -F @keel/core build
+          pnpm -F keelyard build
           pnpm -F orders-service build
           pnpm -F orders-service typecheck
           pnpm -F orders-service lint

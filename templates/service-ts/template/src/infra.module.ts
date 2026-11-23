@@ -1,5 +1,5 @@
 import { Global, Inject, Module, type OnApplicationShutdown } from '@nestjs/common';
-import { Database, DATABASE, observeDbPool } from '@keel/core';
+import { Database, DATABASE, observeDbPool } from 'keelyard';
 
 import { loadServiceConfig, SERVICE_CONFIG, type ServiceConfig } from './config.js';
 

@@ -63,18 +63,18 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Audit dependencies (CVE gate)
         run: pnpm audit --audit-level high
-      # The service resolves @keel/core from its built dist, so build the library first.
+      # The service resolves keelyard from its built dist, so build the library first.
       - name: Build the shared library
-        run: pnpm --filter @keel/core run build
+        run: pnpm --filter keelyard run build
       - name: Lint
-        run: pnpm --filter @keel/core --filter reference-service-nest run lint
+        run: pnpm --filter keelyard --filter reference-service-nest run lint
       - name: Type-check
-        run: pnpm --filter @keel/core --filter reference-service-nest run typecheck
+        run: pnpm --filter keelyard --filter reference-service-nest run typecheck
       - name: Format check
-        run: pnpm --filter @keel/core --filter reference-service-nest run format:check
+        run: pnpm --filter keelyard --filter reference-service-nest run format:check
       - name: Start NATS (JetStream)
         # A service container can't pass the `-js` arg, so run it as a step. The NATS JetStream
-        # MessageBus integration test (@keel/core) is gated on KEEL_NATS_URL below.
+        # MessageBus integration test (keelyard) is gated on KEEL_NATS_URL below.
         run: |
           docker run -d --name nats -p 4222:4222 nats:2.15 -js
           for _ in $(seq 1 30); do
@@ -82,7 +82,7 @@ jobs:
             sleep 1
           done
       - name: Start RabbitMQ
-        # The RabbitMQ MessageBus integration test (@keel/core) is gated on KEEL_RABBITMQ_URL below.
+        # The RabbitMQ MessageBus integration test (keelyard) is gated on KEEL_RABBITMQ_URL below.
         # rabbitmq:4 pins the latest-stable 4.x line; run as a step to mirror the NATS pattern.
         run: |
           docker run -d --name rabbitmq -p 5672:5672 rabbitmq:4
@@ -132,21 +132,21 @@ jobs:
           done
           docker exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list
       - name: Start OpenBao (dev)
-        # A dev-mode OpenBao server for the KV v2 SecretProvider integration test (@keel/core),
+        # A dev-mode OpenBao server for the KV v2 SecretProvider integration test (keelyard),
         # gated on KEEL_VAULT_ADDR below. Mirrors the NATS/Keycloak docker-run pattern.
         run: |
           docker run -d --name openbao -p 8200:8200 --cap-add IPC_LOCK -e BAO_DEV_ROOT_TOKEN_ID=root openbao/openbao:2.7.2 server -dev -dev-root-token-id=root -dev-listen-address=0.0.0.0:8200
           for i in $(seq 1 30); do curl -sf http://localhost:8200/v1/sys/health >/dev/null && break; sleep 1; done
       - name: Start LocalStack (Secrets Manager)
         # A LocalStack container emulating AWS Secrets Manager for the AWS SecretProvider
-        # integration test (@keel/core), gated on KEEL_AWS_SECRET_ID below. The SDK reaches it via
+        # integration test (keelyard), gated on KEEL_AWS_SECRET_ID below. The SDK reaches it via
         # AWS_ENDPOINT_URL_SECRETS_MANAGER (set on the Test step), so no custom-endpoint knob.
         run: |
           docker run -d --name localstack -p 4566:4566 -e SERVICES=secretsmanager localstack/localstack:4.9.1
           for i in $(seq 1 60); do curl -sf http://localhost:4566/_localstack/health >/dev/null && break; sleep 1; done
       - name: Start Keycloak (import realm)
         # A service container cannot pass `start-dev --import-realm`, so run it as a step. The
-        # live-JWKS auth integration test (@keel/core) is gated on KEEL_KEYCLOAK_URL below.
+        # live-JWKS auth integration test (keelyard) is gated on KEEL_KEYCLOAK_URL below.
         run: |
           docker run -d --name keycloak -p 8080:8080 \
             -e KEYCLOAK_ADMIN=admin -e KEYCLOAK_ADMIN_PASSWORD=admin \
@@ -176,6 +176,6 @@ jobs:
           AWS_ACCESS_KEY_ID: test
           AWS_SECRET_ACCESS_KEY: test
           KEEL_AWS_SECRET_ID: keel-test
-        run: pnpm --filter @keel/core --filter reference-service-nest run test
+        run: pnpm --filter keelyard --filter reference-service-nest run test
       - name: Build the service
         run: pnpm --filter reference-service-nest run build

@@ -1,5 +1,5 @@
 import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
-import { Database, DATABASE, DomainError, ErrorCategory } from '@keel/core';
+import { Database, DATABASE, DomainError, ErrorCategory } from 'keelyard';
 
 import { type Item, type ItemRepository } from './item.js';
 

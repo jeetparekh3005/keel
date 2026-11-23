@@ -268,11 +268,11 @@ jobs:
         run: |
           set -euo pipefail
           TSVER=$(node -p "require('./packages/keel-core-ts/package.json').version")
-          echo "@keel/core version: $TSVER"
+          echo "keelyard version: $TSVER"
           # Build the shared library in the workspace, then npm-pack it into a tarball (the
-          # published-npm stand-in). pnpm install first so @keel/core's deps are present to build.
+          # published-npm stand-in). pnpm install first so keelyard's deps are present to build.
           pnpm install --frozen-lockfile
-          pnpm -F @keel/core build
+          pnpm -F keelyard build
           mkdir -p "$RUNNER_TEMP/tgz"
           (cd packages/keel-core-ts && npm pack --pack-destination "$RUNNER_TEMP/tgz")
           uvx copier copy --defaults --trust \
@@ -280,9 +280,9 @@ jobs:
             --data service_slug=orders-service --data aggregate=order_line \
             templates/service-ts "$RUNNER_TEMP/ex-ts"
           cd "$RUNNER_TEMP/ex-ts"
-          # Install @keel/core from the tarball (overrides the ^version range), then the rest with
+          # Install keelyard from the tarball (overrides the ^version range), then the rest with
           # plain npm - NOT a pnpm workspace. The Postgres e2e self-skips without the DB URL.
-          npm install "$RUNNER_TEMP/tgz"/keel-core-*.tgz
+          npm install "$RUNNER_TEMP/tgz"/keelyard-*.tgz
           npm install
           npm run build
           npm run typecheck

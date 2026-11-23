@@ -1,5 +1,5 @@
 import { Body, Controller, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
-import { Scopes, ZodValidationPipe } from '@keel/core';
+import { Scopes, ZodValidationPipe } from 'keelyard';
 import { z } from 'zod';
 
 import { type Item } from './item.js';

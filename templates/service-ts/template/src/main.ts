@@ -4,7 +4,7 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
-import { createNestLogger, initTelemetry } from '@keel/core';
+import { createNestLogger, initTelemetry } from 'keelyard';
 
 import { AppModule } from './app.module.js';
 import { loadServiceConfig } from './config.js';
