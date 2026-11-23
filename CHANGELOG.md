@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/jeetparekh3005/keel/compare/v0.8.0...v0.9.0) (2026-11-23)
+
+
+### Miscellaneous Chores
+
+* release v0.9.0 (dev to main) ([a9be15d](https://github.com/jeetparekh3005/keel/commit/a9be15d2f61350c41d39459e45b92226a4a3b3ab))
+
 ## [0.8.0](https://github.com/jeetparekh3005/keel/compare/v0.7.0...v0.8.0) (2026-11-20)
 
 
