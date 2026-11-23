@@ -22,6 +22,11 @@ jobs:
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # stable
+        with:
+          # Pinned by SHA, so the action can't infer the toolchain from the ref name
+          # (an @stable branch ref would); name it explicitly or the action fails with
+          # "'toolchain' is a required input". Matches rust.yml / generator.yml.
+          toolchain: stable
       - name: Publish keel-core to crates.io
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
