@@ -1,0 +1,39 @@
+name: publish-pypi
+
+# Publishes keel-core-py to PyPI at its own independent version (ADR-0028, #422) via
+# TRUSTED PUBLISHING (OIDC) , no API token/secret. PyPI must have a trusted publisher
+# configured for project `keel-core` pointing at this repo + workflow. Called from
+# release-please.yml at release; idempotent (a version already on PyPI is skipped).
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # OIDC , trusted publishing, no token
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Build keel-core-py (wheel + sdist)
+        run: uv build packages/keel-core-py -o dist
+      - name: Skip if this version is already on PyPI (idempotent)
+        id: check
+        run: |
+          set -euo pipefail
+          ver="$(grep -m1 '^version' packages/keel-core-py/pyproject.toml | sed 's/.*"\(.*\)"/\1/')"
+          code="$(curl -s -o /dev/null -w '%{http_code}' "https://pypi.org/pypi/keel-core/${ver}/json")"
+          echo "keel-core ${ver}: pypi returns ${code}"
+          if [ "$code" = "200" ]; then echo "exists=true" >> "$GITHUB_OUTPUT"; else echo "exists=false" >> "$GITHUB_OUTPUT"; fi
+      - name: Publish to PyPI (OIDC trusted publishing)
+        if: ${{ steps.check.outputs.exists != 'true' }}
+        uses: pypa/gh-action-pypi-publish@aef6c9b6e301dc803e1bc9133e9ce67ae9b0906b # v1.14.3
+        with:
+          packages-dir: dist

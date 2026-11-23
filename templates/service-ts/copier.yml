@@ -1,6 +1,6 @@
 # Copier template for a keel TypeScript/NestJS service (ADR-0021, ADR-0009 Tier 2).
 # `keel new service --language ts` (copier copy) renders this into a thin NestJS service that
-# depends on @keel/core; `keel update` (copier update) propagates template changes. The template is
+# depends on keelyard; `keel update` (copier update) propagates template changes. The template is
 # the reference service with its service-specific identifiers parameterized; CI regenerates the
 # reference service from it and asserts byte-identical output (the dogfood test).
 
@@ -53,3 +53,19 @@ scope_prefix:
   type: str
   help: "OAuth scope prefix (e.g. orders -> orders:read / orders:write)"
   default: "@< aggregate_plural >@"
+
+# ADR-0028 standalone/extractable toggle. Off (default) = monorepo-form: the reference services
+# and the ADR-0021 byte-identical dogfood are unchanged (keel-core as `workspace:*`). On =
+# standalone-form: a real `keel new` extracted to its own repo, keel-core by published version so
+# the service builds/tests outside the pnpm workspace. WAVE 1 covers the keel-core dependency only;
+# chart generation is WAVE 2.
+standalone:
+  type: bool
+  help: "Standalone-extractable service (ADR-0028): depend on a published keelyard instead of the pnpm workspace"
+  default: false
+
+# Published keelyard version the standalone render depends on (ignored when standalone is false).
+keel_core_version:
+  type: str
+  help: "Published keelyard version for the standalone render (e.g. 0.8.0)"
+  default: "0.1.0"

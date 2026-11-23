@@ -56,3 +56,93 @@ jobs:
     # No `secrets: inherit`: that would hand RELEASE_APP_PRIVATE_KEY to a job that
     # runs third-party build code. The image job needs only GITHUB_TOKEN (auto-
     # available to reusable workflows) and OIDC (granted via permissions above).
+
+  # Publish + sign the keel-service-base Helm LIBRARY chart to the GHCR OCI
+  # registry alongside the images, so the ADR-0028 standalone-form service charts
+  # (which depend on keel-service-base at oci://ghcr.io/<repo>/charts) resolve
+  # against a real registry. The chart is INDEPENDENTLY versioned: it publishes
+  # at its own Chart.yaml version, not the repo release tag, so republishing at
+  # each release is idempotent until that Chart.yaml bumps. No `tag` input: the
+  # chart job reads its version from deploy/charts/keel-service-base/Chart.yaml.
+  publish-chart:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    uses: ./.github/workflows/chart.yml
+    # No `secrets: inherit`, same reasoning as publish-image: the chart job needs
+    # only GITHUB_TOKEN (auto-available to reusable workflows) and OIDC.
+
+  # Tag keel-core-go as an independently-versioned Go submodule so the module proxy
+  # serves it (ADR-0028, #422 task 5). Go resolves a subdirectory module from a tag
+  # named `<subdir>/v<version>`; the version is the independent one in the module's
+  # VERSION file, NOT the repo release tag. Idempotent: skips if the tag already exists.
+  publish-go-module:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the module tag
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # need existing tags to test idempotency
+      - name: Tag keel-core-go module
+        run: |
+          set -euo pipefail
+          ver="$(tr -d '[:space:]' < packages/keel-core-go/VERSION)"
+          tag="packages/keel-core-go/v${ver}"
+          if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+            echo "tag ${tag} already exists; nothing to publish (idempotent)."
+            exit 0
+          fi
+          git tag "${tag}"
+          git push origin "${tag}"
+          echo "published Go module tag ${tag} (serves github.com/${{ github.repository }}/packages/keel-core-go@v${ver})"
+
+  # Publish keel-core to crates.io at its own independent version (ADR-0028, #422).
+  # Needs CARGO_REGISTRY_TOKEN, passed explicitly (not `secrets: inherit`) so the publish job
+  # only sees the one secret it needs. Idempotent on re-run.
+  publish-crates:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    uses: ./.github/workflows/publish-crates.yml
+    secrets:
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  # Publish keel-core-py to PyPI via OIDC trusted publishing (no secret). Needs a trusted
+  # publisher configured on PyPI for project `keel-core`. Idempotent on re-run.
+  publish-pypi:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/publish-pypi.yml
+
+  # Publish keelyard to npm. Needs NPM_TOKEN (an npm automation token for the publishing npm account),
+  # passed explicitly; the job skips cleanly if the secret is absent. Idempotent on re-run.
+  publish-npm:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    uses: ./.github/workflows/publish-npm.yml
+    secrets:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # Publish keel-core-java (+ the keel-java-parent pom) to Maven Central via the Sonatype Central
+  # Portal at its own independent version (ADR-0028, #422). Needs a Central Portal token
+  # (MAVEN_CENTRAL_USERNAME/PASSWORD) and a GPG signing key (MAVEN_GPG_PRIVATE_KEY/PASSPHRASE),
+  # passed explicitly (not `secrets: inherit`) so the publish job only sees the four secrets it
+  # needs - never RELEASE_APP_PRIVATE_KEY. The job skips cleanly if the secrets are absent, and is
+  # idempotent (a version already on Central is skipped). groupId is io.github.jeetparekh3005.
+  publish-maven:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    uses: ./.github/workflows/publish-maven.yml
+    secrets:
+      MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+      MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+      MAVEN_GPG_PRIVATE_KEY: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
+      MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}

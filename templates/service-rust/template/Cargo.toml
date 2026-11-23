@@ -1,10 +1,10 @@
 [package]
 name = "@< service_slug >@"
 description = "keel reference service (Rust vertical): a thin service over keel-core-rust."
-version.workspace = true
-edition.workspace = true
-license.workspace = true
-rust-version.workspace = true
+@< 'version = "0.1.0"' if standalone else "version.workspace = true" >@
+@< 'edition = "2021"' if standalone else "edition.workspace = true" >@
+@< 'license = "Apache-2.0"' if standalone else "license.workspace = true" >@
+@< 'rust-version = "1.82"' if standalone else "rust-version.workspace = true" >@
 
 [lib]
 name = "@< service_slug_snake >@"
@@ -15,7 +15,7 @@ name = "@< service_name >@"
 path = "src/main.rs"
 
 [dependencies]
-keel-core-rust = { path = "../../packages/keel-core-rust" }
+@< 'keel-core = "' ~ keel_core_version ~ '"' if standalone else 'keel-core = { path = "../../packages/keel-core-rust" }' >@
 axum = "0.8"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
 async-trait = "0.1"

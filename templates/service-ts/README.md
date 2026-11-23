@@ -1,7 +1,7 @@
 # keel TypeScript (NestJS) service template
 
 A [Copier](https://copier.readthedocs.io) template that scaffolds a new keel **TypeScript** service:
-a thin [NestJS](https://nestjs.com) service built on `@keel/core`, wired for the full
+a thin [NestJS](https://nestjs.com) service built on `keelyard`, wired for the full
 `platform.yaml` contract (deny-by-default auth, RFC 9457 errors, structured logs, OTel tracing,
 edge hardening, OIDC/JWT, Postgres persistence, conformance suite). It is the reference service
 with its service-specific identifiers turned into questions (ADR-0021, ADR-0009 Tier 2).
@@ -23,7 +23,7 @@ Questions:
 | `aggregate_plural` | `orders` | routes (`/v1/orders`), table, module/file names, scope prefix |
 | `scope_prefix` | `orders` | OAuth scopes (`orders:read` / `orders:write`) |
 
-The generated service depends on `@keel/core` as a workspace/package dependency, so platform fixes
+The generated service depends on `keelyard` as a workspace/package dependency, so platform fixes
 arrive as a dependency bump (ADR-0009 Tier 1) while template/boilerplate fixes arrive via
 `keel update`.
 

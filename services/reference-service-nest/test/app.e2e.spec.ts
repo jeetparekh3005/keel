@@ -1,6 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { Database, DATABASE, KeelCoreModule } from '@keel/core';
+import { Database, DATABASE, KeelCoreModule } from 'keelyard';
 import {
   assertCorsDenyByDefault,
   assertDeniesAnonymous,
@@ -8,8 +8,8 @@ import {
   assertProblemResponse,
   assertRequiresScope,
   assertSecurityHeaders,
-} from '@keel/core/conformance';
-import { principal, StubAuthenticator } from '@keel/core/testkit';
+} from 'keelyard/conformance';
+import { principal, StubAuthenticator } from 'keelyard/testkit';
 import type { Server } from 'node:http';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';

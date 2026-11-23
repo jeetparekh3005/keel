@@ -8,6 +8,21 @@ _subdirectory: template
 _answers_file: .copier-answers.yml
 _templates_suffix: ""
 
+# Re-run rustfmt on the rendered sources. The template sources are formatted for the reference
+# aggregate (item), so a longer aggregate name (e.g. order_line) pushes some lines past rustfmt's
+# width heuristics (max_width / fn_call_width / chain_width) and the generated service would fail
+# its own `cargo fmt --check` CI gate. rustfmt (not `cargo fmt`) is used so the format needs no
+# workspace or dependency resolution at scaffold time - it is a pure per-file reformat; --edition
+# 2021 matches the crate edition so the result equals `cargo fmt`. When rustfmt is absent we do NOT
+# fail generation (the byte-identical dogfood runs without the Rust toolchain, and the committed
+# reference is already fmt-clean), but we WARN loudly so a user who generated with a non-item
+# aggregate knows the output is unformatted. An explicit if/else keeps the "rustfmt missing" warning
+# distinct from a rustfmt that is present but FAILS (e.g. rendered Rust that will not parse): a flat
+# `A && B || C` would misreport a real rustfmt failure as "not found". A present-but-failing rustfmt
+# is surfaced, not masked; absent rustfmt only warns (soft, exit 0).
+_tasks:
+  - "if command -v rustfmt >/dev/null 2>&1; then rustfmt --edition 2021 src/*.rs || echo 'keel: rustfmt failed on the generated Rust sources (see the error above); fix them or the cargo fmt CI gate will fail.' >&2; else echo 'keel: rustfmt not found on PATH - generated Rust sources were NOT reformatted; run `cargo fmt` before committing or the cargo fmt CI gate will fail.' >&2; fi"
+
 # Delimiters @< >@ / @% %@ / @# #@. Rust angle generics (Vec<Item>) put a `<` immediately before
 # the aggregate, so << >> mis-lexes as <<<; Cargo.toml uses [[bin]], so [[ ]] collides too. The `@`
 # prefix never abuts Rust type syntax or TOML table headers, so these are collision-free.
@@ -58,3 +73,25 @@ scope_prefix:
   type: str
   help: "OAuth scope prefix (e.g. orders -> orders:read / orders:write)"
   default: "@< aggregate_plural >@"
+
+# ADR-0028 (standalone, extractable services). Off (default) renders the monorepo-form: the
+# reference service and the ADR-0021 byte-identical dogfood - keel-core-rust by workspace path
+# and the package fields inherited from the root [workspace.package]. On renders the standalone-
+# form: a self-contained crate that builds OUTSIDE the cargo workspace - keel-core-rust by
+# crates.io version and concrete package fields (no `.workspace = true`), so `cp -r` of the
+# generated directory is a buildable, testable repo on its own (extraction is a copy, not a
+# transform). WAVE 1 covers only the keel-core dependency + the package-field inheritance; charts
+# are WAVE 2. Default MUST stay false so the in-repo reference stays byte-identical.
+standalone:
+  type: bool
+  help: "Standalone-form (ADR-0028): self-contained crate that builds outside the monorepo"
+  default: false
+
+# The crates.io version of keel-core-rust the standalone-form depends on (only consulted when
+# standalone is true). Until keel-core-rust is published, the extracted-repo CI smoke resolves
+# this to a locally-built crate via `[patch.crates-io]` (ADR-0028 "locally-built CI stand-in").
+keel_core_version:
+  type: str
+  help: "keel-core-rust crates.io version for the standalone-form dependency"
+  default: "0.1.0"
+  when: "@< standalone >@"

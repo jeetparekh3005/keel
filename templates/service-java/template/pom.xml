@@ -5,10 +5,15 @@
   <modelVersion>4.0.0</modelVersion>
 
   <parent>
-    <groupId>io.keel</groupId>
+    <groupId>io.github.jeetparekh3005</groupId>
     <artifactId>keel-java-parent</artifactId>
+@%- if standalone %@
+    <version>@< keel_core_version >@</version>
+    <relativePath/>
+@%- else %@
     <version>0.1.0</version>
     <relativePath>../../pom.xml</relativePath>
+@%- endif %@
   </parent>
 
   <artifactId>@< service_name >@</artifactId>
@@ -25,9 +30,13 @@
 
   <dependencies>
     <dependency>
-      <groupId>io.keel</groupId>
+      <groupId>io.github.jeetparekh3005</groupId>
       <artifactId>keel-core</artifactId>
+@%- if standalone %@
+      <version>@< keel_core_version >@</version>
+@%- else %@
       <version>0.1.0</version>
+@%- endif %@
     </dependency>
     <dependency>
       <groupId>org.postgresql</groupId>

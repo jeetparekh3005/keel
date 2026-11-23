@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { Database, DATABASE, KeelCoreModule, OidcAuthenticator } from '@keel/core';
+import { Database, DATABASE, KeelCoreModule, OidcAuthenticator } from 'keelyard';
 
 import { InfraModule } from './infra.module.js';
 import { @< aggregate_pascal_plural >@Module } from './@< aggregate_plural >@/@< aggregate_plural >@.module.js';

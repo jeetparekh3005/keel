@@ -1,0 +1,106 @@
+name: publish-maven
+
+# Publishes keel-core-java (and the keel-java-parent pom it needs) to Maven Central at its own
+# independent version (ADR-0028, #422) via the modern Sonatype CENTRAL PORTAL
+# (central-publishing-maven-plugin, behind the `release` profile in pom.xml). Called from
+# release-please.yml at release; also runnable on demand. Skips cleanly when the credentials are
+# absent, so the workflow is safe before the Sonatype account + GPG key exist.
+#
+# groupId is io.github.jeetparekh3005 (NOT io.keel): the project owns no keel.io domain, and the
+# Central Portal auto-verifies a GitHub-based namespace (io.github.<github-user>) against the
+# GitHub account, so no DNS record is needed. See docs/STATUS.md and ADR-0028 for the one-time
+# user setup (verify the namespace, publish a GPG key, create a Central Portal token, add secrets).
+#
+# IDEMPOTENCY: Maven Central is immutable - it rejects re-publishing a version that already exists.
+# release-please cuts each version once, so the normal path publishes once. For a manual re-run the
+# check step below skips if the version is already on repo1 (best-effort: Central -> repo1 sync lags,
+# so a just-published version may still 404 here; the plugin itself is the hard guard and will fail
+# fast on a true duplicate rather than double-publishing).
+
+on:
+  workflow_call:
+    secrets:
+      MAVEN_CENTRAL_USERNAME:
+        required: false
+      MAVEN_CENTRAL_PASSWORD:
+        required: false
+      MAVEN_GPG_PRIVATE_KEY:
+        required: false
+      MAVEN_GPG_PASSPHRASE:
+        required: false
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      # Gate: the Central token (username + password) and the GPG private key must all be present,
+      # or there is nothing to publish with. Skip cleanly otherwise (the workflow stays green before
+      # the account exists), mirroring publish-npm / publish-crates.
+      - name: Check publish credentials are present
+        id: gate
+        env:
+          U: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          P: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          K: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${U:-}" ] || [ -z "${P:-}" ] || [ -z "${K:-}" ]; then
+            echo "Maven Central credentials or GPG key absent; skipping publish."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.gate.outputs.present == 'true'
+        with:
+          persist-credentials: false
+      # setup-java writes ~/.m2/settings.xml with <server id="central"> whose username/password come
+      # from the named env vars (resolved at mvn run time), and imports the GPG private key into the
+      # agent's keyring. gpg-passphrase names the env var the maven-gpg-plugin reads.
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        if: steps.gate.outputs.present == 'true'
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+          server-id: central
+          server-username: MAVEN_CENTRAL_USERNAME
+          server-password: MAVEN_CENTRAL_PASSWORD
+          gpg-private-key: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
+          gpg-passphrase: MAVEN_GPG_PASSPHRASE
+      # Idempotency guard (best-effort): skip if this exact version is already on Maven Central.
+      - name: Skip if this version is already on Maven Central
+        id: exists
+        if: steps.gate.outputs.present == 'true'
+        run: |
+          set -euo pipefail
+          ver="$(mvn -B -ntp -q -pl packages/keel-core-java -Dexpression=project.version -DforceStdout help:evaluate)"
+          echo "keel-core (Java) version: ${ver}"
+          code="$(curl -s -o /dev/null -w '%{http_code}' \
+            "https://repo1.maven.org/maven2/io/github/jeetparekh3005/keel-core/${ver}/keel-core-${ver}.pom")"
+          echo "repo1 returns ${code} for keel-core ${ver}"
+          if [ "$code" = "200" ]; then
+            echo "already published; skipping (idempotent)."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+      # Build (parent pom + keel-core only, via -pl ... -am), sign, and upload the bundle to the
+      # Central Portal. -DskipTests + -Djacoco.skip: the java.yml gate already ran the full suite on
+      # the PR; this job only produces the signed release artifacts. The `release` profile adds the
+      # sources jar, javadoc jar, GPG signatures, and the central-publishing-maven-plugin.
+      - name: Deploy keel-core-java to Maven Central (Central Portal)
+        if: steps.gate.outputs.present == 'true' && steps.exists.outputs.skip != 'true'
+        env:
+          MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          mvn -B -ntp -Prelease -pl packages/keel-core-java -am \
+            -DskipTests -Djacoco.skip=true deploy
+          echo "published keel-core (Java) to Maven Central (groupId io.github.jeetparekh3005)."

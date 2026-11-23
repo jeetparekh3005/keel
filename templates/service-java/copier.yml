@@ -8,6 +8,23 @@ _subdirectory: template
 _answers_file: .copier-answers.yml
 _templates_suffix: ""
 
+# Re-run the format gate (spotless / google-java-format, 100-col) on the rendered output. The
+# template sources are formatted for the reference aggregate (item); a longer multi-word aggregate
+# (e.g. order_line) grows identifiers past 100 cols so google-java-format reflows them, and the
+# generated service would otherwise fail its own `mvn verify` (spotless:check) CI gate. The spotless
+# plugin is declared on the keel-java-parent pom, which the generated pom inherits via its
+# <parent> relativePath (../../pom.xml), so `mvn spotless:apply` resolves and formats without the
+# reactor or the keel-core dependency (it is a source-only goal). When Maven is absent (the Java
+# dogfood CI job runs Copier + git only, with no JDK/Maven on PATH) we do NOT fail generation: the
+# byte-identical item dogfood is already gjf-canonical so spotless:apply is a no-op there, and a
+# user who generated a non-item aggregate is WARNED loudly to run the formatter before committing.
+# An explicit if/else keeps the "mvn missing" warning (soft, exit 0) distinct from a spotless:apply
+# that is present but FAILS (e.g. the parent pom is unresolvable because the service was generated
+# outside the repo); both continue generation, but the messages differ so a real failure is not
+# masked as "not found".
+_tasks:
+  - "if command -v mvn >/dev/null 2>&1; then mvn -B -q spotless:apply || echo 'keel: mvn spotless:apply failed on the generated Java sources (see the error above); run `mvn spotless:apply` before committing or the spotless:check CI gate will fail.' >&2; else echo 'keel: mvn not found on PATH - generated Java sources were NOT reformatted; run `mvn spotless:apply` before committing or the spotless:check CI gate will fail.' >&2; fi"
+
 # Delimiters @< >@ / @% %@ / @# #@. Java angle generics (List<Item>) put a `<` immediately before
 # the aggregate, so << >> mis-lexes as <<<; pom.xml is all <tags> and application.yml uses ${...}.
 # The `@` prefix never abuts Java type syntax, XML tags, or ${} placeholders (and never forms an
@@ -19,6 +36,24 @@ _envops:
   block_end_string: "%@"
   comment_start_string: "@#"
   comment_end_string: "#@"
+
+# Standalone (polyrepo) mode toggle (ADR-0028). Default false = monorepo-form: the generated
+# pom keeps a <parent> relativePath (../../pom.xml) and resolves keel-core via the reactor, so the
+# in-repo reference service (ADR-0021 dogfood) renders byte-identically to today. When true the pom
+# is self-contained: the keel-java-parent parent and the keel-core dependency are both pinned to
+# keel_core_version with NO relativePath, so Maven resolves them from the local repo (.m2)/Central
+# instead of a sibling directory - the service builds and tests extracted, outside the reactor.
+standalone:
+  type: bool
+  help: "Standalone (polyrepo) form: self-contained pom, keel-core/parent by version (ADR-0028)"
+  default: false
+
+# Published version of keel-core-java and the keel-java-parent pom the standalone-form pom targets
+# (parent <version> and the keel-core dependency <version>). Ignored when standalone is false.
+keel_core_version:
+  type: str
+  help: "Published keel-core-java / keel-java-parent version for standalone-form (ADR-0028)"
+  default: "0.1.0"
 
 service_slug:
   type: str

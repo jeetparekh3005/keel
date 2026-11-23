@@ -62,13 +62,54 @@ jobs:
           uv run --directory services/sample-service python -m pytest \
             tests/test_conformance.py tests/test_widgets.py tests/test_authz.py -q
 
+  # The five generator-<lang>-nonitem jobs below each scaffold a freshly generated service with a
+  # multi-word, non-item aggregate (order_line) IN-REPO - so the service is wired into its runtime's
+  # workspace and the template's post-generation formatter (the copier _tasks) runs - then prove the
+  # generated service passes its OWN reusable-workflow gate (format/lint + build + test). The item
+  # dogfood guarantees byte-identical regeneration; these guard the harder path a real user hits: a
+  # longer aggregate name reflows source past each formatter's width heuristics, which would ship a
+  # service that fails its own format gate unless the template re-formats the rendered output. They
+  # surfaced (and the merged template _tasks fixed) real format-gate drift in the Rust, Python, and
+  # Java templates; Go and TypeScript were already clean.
+
+  generator-python-nonitem:
+    name: Generator (new Python service, non-item multi-word aggregate, builds + conforms)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Scaffold a Python service with a multi-word aggregate (order_line)
+        # Rendered in-repo so the uv workspace (services/*) discovers it and the template's
+        # post-generation `ruff check --fix` + `ruff format` (_tasks) runs over the rendered sources.
+        run: |
+          uvx copier copy --defaults --trust \
+            --data service_name="Orders" \
+            --data service_slug=orders-service \
+            --data aggregate=order_line \
+            templates/service-python services/orders-service
+      - name: Build the generated service against keel-core
+        run: uv sync --all-packages
+      - name: The generated service passes its own ruff gate (format drift would fail here)
+        run: |
+          cd services/orders-service
+          uv run ruff check .
+          uv run ruff format --check .
+      - name: Run the generated service's conformance, CRUD, and authz tests
+        # The Postgres integration test skips without KEEL_TEST_DATABASE_URL, mirroring python-template.
+        run: |
+          uv run --directory services/orders-service python -m pytest \
+            tests/test_conformance.py tests/test_order_lines.py tests/test_authz.py -q
+
   generator-go-nonitem:
-    name: Generator (a Go service with a non-item aggregate is gofmt-clean)
+    name: Generator (a Go service with a non-item aggregate builds, tests, and is gofmt-clean)
     runs-on: ubuntu-latest
     # The Go dogfood only renders aggregate=item (byte-identical). Struct-tag alignment is
     # gofmt-width-dependent, so a different/longer aggregate name would otherwise ship a service
-    # that fails its own `gofmt -l` CI gate. This renders a non-item aggregate and asserts the
-    # generated output is gofmt-clean, catching that class here rather than in the user's first run.
+    # that fails its own `gofmt -l` CI gate. This scaffolds a non-item aggregate in-repo, wires it
+    # into the go workspace, asserts gofmt-clean, then builds and tests the generated service so the
+    # whole class (format + compile + behavior) is caught here rather than in the user's first run.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -77,18 +118,141 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: stable
-      - name: Scaffold a Go service with a multi-word aggregate and assert gofmt-clean
+      - name: Scaffold a Go service with a multi-word aggregate, wire it, and prove its gate
         run: |
           uvx copier copy --defaults --trust \
             --data service_slug=orders-service \
             --data service_name=orders \
             --data aggregate=order_line \
-            templates/service-go /tmp/go-order-line
-          unformatted=$(gofmt -l /tmp/go-order-line)
+            templates/service-go services/orders-service
+          go work use ./services/orders-service
+          unformatted=$(gofmt -l services/orders-service)
           if [ -n "$unformatted" ]; then
             echo "::error::a generated Go service is not gofmt-clean: $unformatted"
             exit 1
           fi
+          go -C services/orders-service build ./...
+          go -C services/orders-service test ./...
+
+  generator-rust-nonitem:
+    name: Generator (a Rust service with a non-item aggregate builds, tests, fmt + clippy clean)
+    runs-on: ubuntu-latest
+    # The Rust dogfood only renders aggregate=item. A longer aggregate (order_line) pushes some lines
+    # past rustfmt's width heuristics, so without the template's post-generation rustfmt (_tasks) the
+    # generated service would fail its own `cargo fmt --check` gate. Scaffold a non-item service
+    # in-repo, add it to the explicit [workspace].members, then run the generated crate's OWN gate:
+    # cargo fmt --check (no manual fmt), clippy -D warnings, build, and test.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Scaffold a Rust service with a multi-word aggregate, wire it, and prove its gate
+        run: |
+          uvx copier copy --defaults --overwrite --trust \
+            --data service_slug=orders-service \
+            --data service_name=reference-service \
+            --data aggregate=order_line \
+            templates/service-rust services/orders-service
+          rm -f services/orders-service/.copier-answers.yml
+          # Add the new crate to the explicit [workspace].members list (insert before the closing ]).
+          perl -0pi -e 's{(    "services/reference-service-rust",\n)}{$1    "services/orders-service",\n}' Cargo.toml
+          cargo fmt -p orders-service --check
+          cargo clippy -p orders-service --all-targets --all-features -- -D warnings
+          cargo build -p orders-service
+          cargo test -p orders-service
+
+  generator-java-nonitem:
+    name: Generator (a Java service with a non-item aggregate passes mvn verify)
+    runs-on: ubuntu-latest
+    # The Java dogfood only renders aggregate=item. A longer multi-word aggregate (order_line) grows
+    # identifiers past google-java-format's 100-col limit, so without the template's post-generation
+    # `mvn spotless:apply` (_tasks) the generated service would fail its own spotless:check gate.
+    # setup-java + setup-uv MUST come BEFORE the scaffold so the _tasks formatter actually runs at
+    # generation time. Postgres backs the DB-gated conformance/CRUD test, which the JaCoCo floors
+    # require to run (else `verify` fails on coverage). Then `mvn verify` runs spotless:check, the
+    # tests, ArchUnit (layering), and JaCoCo on the freshly generated non-item service.
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: keel
+          POSTGRES_PASSWORD: keel
+          POSTGRES_DB: reference
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U keel"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      KEEL_TEST_DATABASE_URL: postgres://keel:keel@localhost:5432/reference
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Scaffold a Java service with a multi-word aggregate (spotless:apply runs via _tasks)
+        run: |
+          uvx copier copy --defaults --trust \
+            --data service_slug=orders-service \
+            --data service_name=Orders \
+            --data service_pkg=orders \
+            --data service_pascal=Orders \
+            --data aggregate=order_line \
+            templates/service-java services/orders-service-java
+          rm -f services/orders-service-java/.copier-answers.yml
+          # Add the generated service to the reactor (insert before the closing </modules>).
+          perl -0pi -e 's{(    <module>services/reference-service-java</module>\n)}{$1    <module>services/orders-service-java</module>\n}' pom.xml
+      - name: The generated service passes mvn verify (spotless:check + tests + ArchUnit + JaCoCo)
+        run: mvn -B -pl services/orders-service-java -am verify
+
+  generator-ts-nonitem:
+    name: Generator (a TypeScript service with a non-item aggregate builds, lints, tests)
+    runs-on: ubuntu-latest
+    # The TS dogfood only renders aggregate=item. Scaffold a non-item multi-word aggregate in-repo,
+    # add it to the explicit pnpm workspace list, then run the generated service's OWN gate - the
+    # same steps service-ts.yml runs: build, typecheck, lint (eslint). eslint is the real gate; the
+    # TS template ships no prettier format:check, so none is run here.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Scaffold a TypeScript service with a multi-word aggregate and wire the workspace
+        run: |
+          uvx copier copy --defaults --trust \
+            --data service_slug=orders-service \
+            --data aggregate=order_line \
+            templates/service-ts services/orders-service
+          # Add the new package to the explicit pnpm workspace list.
+          perl -0pi -e 's{(  - "services/reference-service-nest"\n)}{$1  - "services/orders-service"\n}' pnpm-workspace.yaml
+      # --no-frozen-lockfile: the scaffolded orders-service is an ephemeral workspace member not in
+      # the committed pnpm-lock.yaml, so the CI-default frozen install would (correctly) reject it.
+      - run: pnpm install --no-frozen-lockfile
+      - name: Build keel-core, then build/typecheck/lint/test the generated service
+        run: |
+          pnpm -F keelyard build
+          pnpm -F orders-service build
+          pnpm -F orders-service typecheck
+          pnpm -F orders-service lint
+          pnpm -F orders-service test
 
   dogfood-reference:
     name: Dogfood (reference service regenerates byte-identically from the template)

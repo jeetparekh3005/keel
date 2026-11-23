@@ -108,7 +108,7 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   closed so far.
 - **TypeScript/NestJS vertical (v0.4)**: a fourth language vertical, same hexagonal
   boundaries, deliberately batteries-included (NestJS + DI) as the contrast to the stdlib-first
-  Go/Rust services (ADR-0019). Shared library `packages/keel-core-ts` (`@keel/core`) + thin
+  Go/Rust services (ADR-0019). Shared library `packages/keel-core-ts` (`keelyard`) + thin
   `services/reference-service-nest` in the repo-root pnpm workspace. Implements the full
   contract: typed `KEEL_`-prefixed config via **zod** (fail-fast), which also validates request
   DTOs (one typed validator, not class-validator); RFC 9457 errors with server-fault detail
@@ -184,7 +184,33 @@ contract is never read as a promise the code hasn't kept yet. Updated as gaps cl
   (`.github/workflows/service-<lang>.yml`) encapsulate each language's gate and generated services
   ship a `ci.yml` that references them by tag; in-tree the verticals are still covered by the central
   per-language workflows, so the reusable lanes are the mechanism for the polyrepo future (ADR-0011,
-  which also needs the keel-core packages published per language).
+  which also needs the keel-core packages published per language). A **`standalone` toggle**
+  (ADR-0028, default off) renders the **extractable, polyrepo form** of each template: keel-core by
+  published version (not the workspace/path/pseudo-version), a self-contained tool config, and a
+  **generated per-service Helm application chart** that depends on `keel-service-base` by version
+  from `oci://ghcr.io/jeetparekh3005/keel/charts` (the monorepo-form still emits no chart and uses
+  the hand-maintained `deploy/charts/*`, so the reference dogfood stays byte-identical). The
+  extracted-repo smoke (`extracted.yml`) proves the standalone form per vertical: generated outside
+  the workspace, keel-core wired to a locally-built stand-in, then built + tested, and the generated
+  chart `helm lint`ed + `helm template`d after vendoring `keel-service-base` with `helm package`
+  (the OCI-pull stand-in until the library chart is published). **The `keel-service-base` library
+  chart now publishes to `oci://ghcr.io/jeetparekh3005/keel/charts` at release** (`chart.yml`, wired
+  into `release-please.yml` as `publish-chart`, mirroring `publish-image`): it is packaged, pushed by
+  its own Chart.yaml version, and cosign-keyless-signed by digest. The chart is **independently
+  versioned** (not the repo release tag), so republishing at each release is idempotent and the
+  published version only advances when `deploy/charts/keel-service-base/Chart.yaml` bumps; this is
+  the registry the standalone service charts depend on. The push->pull->dependency-resolve logic is
+  proven locally against a throwaway OCI registry (`registry:2`): package, `helm push`, `helm pull`
+  (matching digest), then a generated standalone service's chart `helm dependency build`s
+  `keel-service-base` **from the registry** (recorded in `Chart.lock` as the OCI repo, vendored as a
+  pulled tgz) and `helm lint` + `helm template` render. The real ghcr push is **release-gated and
+  unproven against ghcr until the first v0.9 release fires `publish-chart`.**
+  **keel-core-go** is tagged as an independently-versioned Go submodule at release
+  (`publish-go-module` in `release-please.yml`, tag `packages/keel-core-go/v<VERSION>`), so the module
+  proxy serves `github.com/jeetparekh3005/keel/packages/keel-core-go@v0.1.0` (release-gated; task 5).
+  The per-language `keel_core_version` template defaults are set to each package's real independent
+  version (`0.1.0`), so a `standalone`-form `keel new` depends on the version that will be published;
+  the language-registry publishers: **crates.io is wired + token-backed** (`publish-crates.yml`, `keel-core` published at release, idempotent, dry-run-proven); **PyPI is wired via OIDC trusted publishing** (`publish-pypi.yml`, `keel-core` built + twine-clean, needs only a trusted-publisher config on PyPI, no secret); **npm is wired** (`publish-npm.yml`, keelyard built + npm-publish-dry-run-proven, gated on NPM_TOKEN); **Maven Central is wired** (`publish-maven.yml`, `keel-core` built + signed via the Sonatype Central Portal / `central-publishing-maven-plugin` behind the pom `release` profile, release-gated, idempotent, gated on `MAVEN_CENTRAL_USERNAME`/`PASSWORD` + `MAVEN_GPG_PRIVATE_KEY`/`PASSPHRASE`; locally proven through `mvn -Prelease verify` to produce the Central-required sources jar, javadoc jar, and `.asc` GPG signatures for keel-core + the parent pom). The Maven **groupId is `io.github.jeetparekh3005`**, not `io.keel`: the project owns no `keel.io` domain, so it uses the GitHub-verified `io.github.<user>` namespace the Central Portal auto-verifies (the Java package namespace stays `io.keel.*`, unchanged). The real Central upload is **unproven** until the one-time user setup exists: a Sonatype Central account with the `io.github.jeetparekh3005` namespace verified, a published GPG key, a Central Portal token, and the four repo secrets added.
 
 ## Cross-vertical parity matrix (v0.6 target)
 

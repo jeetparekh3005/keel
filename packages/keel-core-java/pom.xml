@@ -5,7 +5,7 @@
   <modelVersion>4.0.0</modelVersion>
 
   <parent>
-    <groupId>io.keel</groupId>
+    <groupId>io.github.jeetparekh3005</groupId>
     <artifactId>keel-java-parent</artifactId>
     <version>0.1.0</version>
     <relativePath>../../pom.xml</relativePath>

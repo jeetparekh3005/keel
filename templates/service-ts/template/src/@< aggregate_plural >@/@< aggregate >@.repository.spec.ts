@@ -1,4 +1,4 @@
-import { Database, DomainError, ErrorCategory } from '@keel/core';
+import { Database, DomainError, ErrorCategory } from 'keelyard';
 import type { Pool } from 'pg';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 

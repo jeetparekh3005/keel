@@ -1,4 +1,4 @@
-import { DomainError, ErrorCategory } from '@keel/core';
+import { DomainError, ErrorCategory } from 'keelyard';
 
 import type { @< aggregate_pascal >@, @< aggregate_pascal >@Repository } from '../src/@< aggregate_plural >@/@< aggregate >@.js';
 

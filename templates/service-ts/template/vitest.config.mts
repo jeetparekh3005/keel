@@ -13,7 +13,7 @@ export default defineConfig({
       provider: 'v8',
       include: ['src/**/*.ts'],
       exclude: ['src/main.ts', 'src/**/index.ts'],
-      // A floor so the service's coverage cannot silently regress. Set to @keel/core's parity
+      // A floor so the service's coverage cannot silently regress. Set to keelyard's parity
       // bar: the suite clears it WITHOUT Postgres. The repository is exercised by unit tests over
       // a fake pg pool (asserting the SQL/params, the row<->domain mapping, and the not-found /
       // error translation), and the composition root by a wiring e2e that boots AppModule with the

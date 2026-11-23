@@ -10,7 +10,7 @@ ENV CI=true
 RUN corepack enable
 
 # Install with a cached layer: only the workspace manifests change less often than source.
-# A filtered install pulls just the backend subtree (the service + @keel/core), not the
+# A filtered install pulls just the backend subtree (the service + keelyard), not the
 # frontend app, even though its manifest is present so the workspace graph resolves.
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 COPY apps/web/package.json apps/web/package.json
@@ -22,7 +22,7 @@ RUN pnpm install --frozen-lockfile --filter reference-service-nest...
 # plus its workspace dependency, prod deps only) that the runtime stage can run directly.
 COPY packages/keel-core-ts packages/keel-core-ts
 COPY services/reference-service-nest services/reference-service-nest
-RUN pnpm --filter @keel/core build \
+RUN pnpm --filter keelyard build \
   && pnpm --filter reference-service-nest build \
   && pnpm --filter reference-service-nest deploy --prod --legacy /app/out
 

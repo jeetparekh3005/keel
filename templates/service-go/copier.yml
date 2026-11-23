@@ -66,3 +66,19 @@ scope_prefix:
   type: str
   help: "OAuth scope prefix (e.g. orders -> orders:read / orders:write)"
   default: "<< aggregate_plural >>"
+
+# ADR-0028 standalone (polyrepo) mode. Default false = monorepo-form: the in-repo reference
+# service and the ADR-0021 byte-identical dogfood are unchanged. When true, the generated service
+# is extractable to its own repo and depends on keel-core-go by published version rather than the
+# monorepo commit pseudo-version resolved by the root go.work. For Go the only manifest difference
+# is the keel-core-go require line (see go.mod); extraction itself is a copy plus a `go mod replace`
+# onto a locally-built keel-core-go until the package is published (tasks #1-5).
+standalone:
+  type: bool
+  help: "Standalone/extractable repo (ADR-0028): depend on keel-core-go by published version, not the monorepo pseudo-version"
+  default: false
+
+keel_core_version:
+  type: str
+  help: "Published keel-core-go version for the standalone-form require directive (ignored in monorepo-form)"
+  default: "0.1.0"
