@@ -2739,7 +2739,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "keel-core"
+name = "keel-core-rs"
 version = "0.1.0"
 dependencies = [
  "async-nats",
@@ -3861,7 +3861,7 @@ dependencies = [
  "async-trait",
  "axum",
  "http-body-util",
- "keel-core",
+ "keel-core-rs",
  "serde",
  "serde_json",
  "sqlx",

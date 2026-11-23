@@ -1,5 +1,8 @@
 [package]
-name = "keel-core"
+# Published crate name. `keel-core` on crates.io is owned by an unrelated project,
+# so the Rust vertical publishes as `keel-core-rs` (parallels keel-core-go). The
+# library target stays `keel_core` (see [lib] below) so `use keel_core::` is unchanged.
+name = "keel-core-rs"
 description = "keel shared platform library for the Rust vertical (ADR-0009, ADR-0017)."
 version.workspace = true
 edition.workspace = true
