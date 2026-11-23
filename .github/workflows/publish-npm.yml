@@ -1,7 +1,7 @@
 name: publish-npm
 
-# Publishes @keel/core to npm at its own independent version (ADR-0028, #422). Needs an npm
-# automation token (NPM_TOKEN) for the @keel org. Called from release-please.yml at release;
+# Publishes keelyard to npm at its own independent version (ADR-0028, #422). Needs an npm
+# automation token (NPM_TOKEN) for the publishing npm account. Called from release-please.yml at release;
 # skips cleanly if the token is absent, and is idempotent (a version already on npm is skipped).
 
 on:
@@ -27,8 +27,8 @@ jobs:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
       - run: pnpm install --frozen-lockfile
-      - run: pnpm -F @keel/core build
-      - name: Publish @keel/core to npm
+      - run: pnpm -F keelyard build
+      - name: Publish keelyard to npm
         working-directory: packages/keel-core-ts
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -39,9 +39,9 @@ jobs:
             exit 0
           fi
           ver="$(node -p "require('./package.json').version")"
-          if npm view "@keel/core@${ver}" version >/dev/null 2>&1; then
-            echo "@keel/core@${ver} already published; skipping (idempotent)."
+          if npm view "keelyard@${ver}" version >/dev/null 2>&1; then
+            echo "keelyard@${ver} already published; skipping (idempotent)."
             exit 0
           fi
           npm publish --access public
-          echo "published @keel/core@${ver} to npm"
+          echo "published keelyard@${ver} to npm"

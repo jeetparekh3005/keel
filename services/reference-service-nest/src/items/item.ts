@@ -1,5 +1,5 @@
 // The items aggregate, its repository port, and the application service. The reference
-// service imports @keel/core and implements one aggregate against the platform contract
+// service imports keelyard and implements one aggregate against the platform contract
 // (ADR-0009, ADR-0019).
 
 /** The aggregate. */

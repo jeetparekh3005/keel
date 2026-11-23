@@ -162,10 +162,10 @@ def test_ts_getscopes_identifier_does_not_satisfy_authz(tmp_path: Path) -> None:
     # dropped "Scopes(" marker used to match getScopes(/hasScopes( and greenlight an unguarded app.
     (tmp_path / "src").mkdir()
     (tmp_path / "package.json").write_text(
-        '{"name":"x","dependencies":{"@keel/core":"workspace:*"}}', encoding="utf-8"
+        '{"name":"x","dependencies":{"keelyard":"workspace:*"}}', encoding="utf-8"
     )
     (tmp_path / "src" / "app.ts").write_text(
-        "import { KeelCoreModule, loadConfig } from '@keel/core';\n"
+        "import { KeelCoreModule, loadConfig } from 'keelyard';\n"
         "function scopesFor(u: User) { return getScopes(u); }\n",
         encoding="utf-8",
     )

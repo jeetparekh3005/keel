@@ -209,9 +209,6 @@ importers:
 
   services/reference-service-nest:
     dependencies:
-      '@keel/core':
-        specifier: workspace:*
-        version: link:../../packages/keel-core-ts
       '@nestjs/common':
         specifier: 12.4.2
         version: 12.4.2(reflect-metadata@0.2.2)(rxjs@7.8.2)
@@ -221,6 +218,9 @@ importers:
       '@nestjs/platform-express':
         specifier: 12.4.2
         version: 12.4.2(@nestjs/common@12.4.2(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.4.2)(rxjs@7.8.2)
+      keelyard:
+        specifier: workspace:*
+        version: link:../../packages/keel-core-ts
       pg:
         specifier: 8.23.1
         version: 8.23.1

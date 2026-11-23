@@ -1,6 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { Database, DATABASE } from '@keel/core';
+import { Database, DATABASE } from 'keelyard';
 import type { Pool } from 'pg';
 import type { Server } from 'node:http';
 import request from 'supertest';

@@ -1,4 +1,4 @@
-import { csvList, loadConfig } from '@keel/core';
+import { csvList, loadConfig } from 'keelyard';
 import { z } from 'zod';
 
 /**
