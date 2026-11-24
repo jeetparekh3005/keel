@@ -48,7 +48,7 @@
   "dependencies": {
     "@aws-sdk/client-secrets-manager": "3.1170.0",
     "@bufbuild/protobuf": "2.17.0",
-    "amqplib": "0.10.9",
+    "amqplib": "2.4.0",
     "@connectrpc/connect": "2.3.0",
     "@connectrpc/connect-node": "2.3.0",
     "@google-cloud/secret-manager": "8.0.0",
