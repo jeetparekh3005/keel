@@ -5,7 +5,7 @@ description = "keel platform core: ports, cross-cutting adapters, and test kit"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "pydantic-settings>=2.5",  # pulls pydantic; declare pydantic directly when a module imports it
+    "pydantic-settings>=2.16.3",  # pulls pydantic; declare pydantic directly when a module imports it
     "structlog>=24.4",
     "fastapi>=0.162.2",
     "sqlalchemy[asyncio]>=2.1.8",
