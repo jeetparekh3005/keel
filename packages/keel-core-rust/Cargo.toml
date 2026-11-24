@@ -51,7 +51,7 @@ sqlx = { version = "0.9", default-features = false, features = [
 # Optional NATS JetStream MessageBus adapter (the `nats` feature). Mirrors the Python
 # `keel-core[nats]` extra: the broker client is pulled in only when the feature is
 # enabled, so the default core build needs no broker and no NATS crates.
-async-nats = { version = "0.52", optional = true }
+async-nats = { version = "0.53", optional = true }
 futures = { version = "0.3", optional = true }
 # Non-optional (unlike the broker clients): the always-compiled `MessageBus`/`MessagePublisher`
 # port traits and the in-memory dev bus in `messaging` are object-safe (`Arc<dyn MessageBus>`),
