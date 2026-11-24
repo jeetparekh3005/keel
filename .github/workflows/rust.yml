@@ -125,7 +125,7 @@ jobs:
         # (see the two conditional test steps below). Skipping the install on PRs keeps the
         # fast PR gate lean.
         if: github.event_name != 'pull_request'
-        uses: taiki-e/install-action@4a76afe23f9e08d2d9550fb56e556444e8611d21 # v2.90.4
+        uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
         with:
           tool: cargo-llvm-cov
       - name: Format check
@@ -290,7 +290,7 @@ jobs:
             cargo llvm-cov --all --locked --features nats,grpc,vault,aws,gcp,rabbitmq,kafka --ignore-filename-regex genproto --fail-under-lines 85 -- --include-ignored
           fi
       - name: Install cargo-audit
-        uses: taiki-e/install-action@4a76afe23f9e08d2d9550fb56e556444e8611d21 # v2.90.4
+        uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
         with:
           tool: cargo-audit
       - name: Audit dependencies for RUSTSEC advisories (blocking)
@@ -299,7 +299,7 @@ jobs:
         # caught. Fails the build on any known-vulnerable dependency.
         run: cargo audit
       - name: Install cargo-deny
-        uses: taiki-e/install-action@4a76afe23f9e08d2d9550fb56e556444e8611d21 # v2.90.4
+        uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
         with:
           tool: cargo-deny
       - name: Enforce the ring-only TLS posture (cargo deny check bans, blocking)
