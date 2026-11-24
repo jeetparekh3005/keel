@@ -18,7 +18,7 @@ dependencies = [
 [project.optional-dependencies]
 # gRPC is opt-in: REST-only services should not pull the grpcio C-extension.
 grpc = [
-    "grpcio>=1.60",
+    "grpcio>=1.85.3",
     "opentelemetry-instrumentation-grpc>=0.48b0",
 ]
 # NATS JetStream is opt-in: REST-only services should not pull the client.
